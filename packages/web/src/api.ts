@@ -1,0 +1,86 @@
+export interface Session {
+  id: string;
+  agent: string;
+  sessionId: string;
+  logPath: string;
+  pwd: string;
+  firstPrompt?: string | null;
+  summary?: string | null;
+  messageCount?: number | null;
+  gitBranch?: string | null;
+  createdAt?: number | null;
+  modifiedAt?: number | null;
+}
+
+export interface TranscriptEvent {
+  ts?: number;
+  toolName?: string;
+  inputText?: string;
+  role?: 'user' | 'assistant' | 'system';
+  text?: string;
+}
+
+export interface PluginSchemaField {
+  name: string;
+  type: 'string' | 'number' | 'boolean';
+  required?: boolean;
+  description?: string;
+  default?: string | number | boolean;
+}
+
+export interface PluginInfo {
+  name: string;
+  title: string;
+  description?: string;
+  configSchema: PluginSchemaField[];
+}
+
+export interface Group {
+  id: string;
+  name: string;
+  pluginName: string;
+  pluginConfig: Record<string, unknown>;
+  createdAt: number;
+  lastRunAt?: number | null;
+  memberCount?: number;
+}
+
+async function j<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, {
+    ...init,
+    headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) },
+  });
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return res.json() as Promise<T>;
+}
+
+export const api = {
+  listSessions: (q: { q?: string; pwd?: string; limit?: number; offset?: number } = {}) => {
+    const sp = new URLSearchParams();
+    if (q.q) sp.set('q', q.q);
+    if (q.pwd) sp.set('pwd', q.pwd);
+    if (q.limit) sp.set('limit', String(q.limit));
+    if (q.offset) sp.set('offset', String(q.offset));
+    return j<{ items: Session[]; total: number }>(`/api/sessions?${sp}`);
+  },
+  getSession: (id: string) => j<Session>(`/api/sessions/${encodeURIComponent(id)}`),
+  getTranscript: (id: string, opts: { offset?: number; limit?: number } = {}) => {
+    const sp = new URLSearchParams();
+    if (opts.offset) sp.set('offset', String(opts.offset));
+    if (opts.limit) sp.set('limit', String(opts.limit));
+    return j<{ items: TranscriptEvent[]; offset: number; limit: number }>(`/api/sessions/${encodeURIComponent(id)}/transcript?${sp}`);
+  },
+  listPlugins: () => j<{ items: PluginInfo[] }>('/api/plugins'),
+  previewPlugin: (name: string, config: Record<string, unknown>, limit = 500) =>
+    j<{ items: { sessionId: string; evidence?: string | null }[]; total: number }>(
+      `/api/plugins/${encodeURIComponent(name)}/preview`,
+      { method: 'POST', body: JSON.stringify({ config, limit }) },
+    ),
+  listGroups: () => j<{ items: Group[] }>('/api/groups'),
+  getGroup: (id: string) => j<Group & { members: Session[] }>(`/api/groups/${encodeURIComponent(id)}`),
+  createGroup: (g: { name: string; pluginName: string; pluginConfig: Record<string, unknown> }) =>
+    j<Group>('/api/groups', { method: 'POST', body: JSON.stringify(g) }),
+  deleteGroup: (id: string) => j<{ ok: true }>(`/api/groups/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  reindex: (full = false) => j<{ ok: boolean }>(`/api/reindex${full ? '?full=1' : ''}`, { method: 'POST' }),
+  progress: () => j<{ phase: string; total: number; done: number }>('/api/progress'),
+};
