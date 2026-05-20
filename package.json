@@ -1,0 +1,19 @@
+{
+  "name": "road42",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "pnpm -r --filter=./packages/* run build",
+    "dev": "pnpm --filter=@road42/cli run dev",
+    "start": "node packages/cli/dist/index.js",
+    "typecheck": "pnpm -r run typecheck"
+  },
+  "packageManager": "pnpm@9.0.0",
+  "engines": {
+    "node": ">=20"
+  }
+}
