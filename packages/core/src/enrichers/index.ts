@@ -4,6 +4,7 @@ import { collectReferencedEnrichers } from '../query/validate.js';
 import type { Session } from '../types.js';
 import { bashCliCountsEnricher } from './bash-cli-counts.js';
 import { eventCountEnricher } from './event-count.js';
+import { fingerprintEnricher } from './fingerprint.js';
 import { hasErrorsEnricher } from './has-errors.js';
 import { readUserEnrichers } from './loader.js';
 import { toolCountsEnricher } from './tool-counts.js';
@@ -14,6 +15,7 @@ const BUILTINS: Enricher[] = [
   eventCountEnricher,
   hasErrorsEnricher,
   bashCliCountsEnricher,
+  fingerprintEnricher,
 ];
 
 const registry: Enricher[] = [...BUILTINS];

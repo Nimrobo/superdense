@@ -14,6 +14,15 @@ export {
   clearEnricherCache,
 } from './enrichers/index.js';
 export type { Enricher, EnricherContext } from './enrichers/types.js';
+export {
+  listCompactors,
+  registerCompactor,
+  getCompactor,
+  compactSession,
+  traceCompactor,
+  salienceCompactor,
+} from './compactors/index.js';
+export type { Compactor, CompactorContext } from './compactors/types.js';
 export { compilePredicate } from './query/compile.js';
 export { validatePredicate, ValidationError } from './query/validate.js';
 export type {
