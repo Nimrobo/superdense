@@ -37,11 +37,25 @@ export interface PluginInfo {
   configSchema: PluginSchemaField[];
 }
 
-export interface Group {
+export interface EnricherInfo {
+  name: string;
+  version: number;
+  returns: 'string' | 'int' | 'bool' | 'json';
+  jsonSchema?: object;
+  description?: string;
+}
+
+export type Predicate =
+  | { and: Predicate[] }
+  | { or: Predicate[] }
+  | { not: Predicate }
+  | { field: string; op: string; value?: unknown; path?: string; intOp?: string }
+  | { plugin: { name: string; config: Record<string, unknown> } };
+
+export interface Query {
   id: string;
   name: string;
-  pluginName: string;
-  pluginConfig: Record<string, unknown>;
+  predicate: Predicate;
   createdAt: number;
   lastRunAt?: number | null;
   memberCount?: number;
@@ -53,12 +67,12 @@ export interface Stats {
     sessionsLast7d: number;
     distinctPwds: number;
     distinctAgents: number;
-    groups: number;
+    queries: number;
   };
   lastIndexedAt: number | null;
   perDay: Array<{ date: string; count: number }>;
   topPwds: Array<{ pwd: string; count: number }>;
-  topGroups: Array<{ id: string; name: string; memberCount: number }>;
+  topQueries: Array<{ id: string; name: string; memberCount: number }>;
   topTools: Array<{ tool: string; count: number }>;
   recentSessions: Session[];
 }
@@ -89,16 +103,23 @@ export const api = {
     return j<{ items: TranscriptEvent[]; offset: number; limit: number }>(`/api/sessions/${encodeURIComponent(id)}/transcript?${sp}`);
   },
   listPlugins: () => j<{ items: PluginInfo[] }>('/api/plugins'),
+  listEnrichers: () => j<{ items: EnricherInfo[] }>('/api/enrichers'),
   previewPlugin: (name: string, config: Record<string, unknown>, limit = 500) =>
     j<{ items: { sessionId: string; evidence?: string | null }[]; total: number }>(
       `/api/plugins/${encodeURIComponent(name)}/preview`,
       { method: 'POST', body: JSON.stringify({ config, limit }) },
     ),
-  listGroups: () => j<{ items: Group[] }>('/api/groups'),
-  getGroup: (id: string) => j<Group & { members: Session[] }>(`/api/groups/${encodeURIComponent(id)}`),
-  createGroup: (g: { name: string; pluginName: string; pluginConfig: Record<string, unknown> }) =>
-    j<Group>('/api/groups', { method: 'POST', body: JSON.stringify(g) }),
-  deleteGroup: (id: string) => j<{ ok: true }>(`/api/groups/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  listQueries: () => j<{ items: Query[] }>('/api/queries'),
+  getQuery: (id: string) => j<Query & { members: Session[] }>(`/api/queries/${encodeURIComponent(id)}`),
+  createQuery: (q: { name: string; predicate: Predicate }) =>
+    j<Query>('/api/queries', { method: 'POST', body: JSON.stringify(q) }),
+  previewQuery: (predicate: Predicate, limit = 500) =>
+    j<{ items: { sessionId: string; evidence?: string | null }[]; total: number; referencedEnrichers: string[]; missingEnrichments: string[] }>(
+      '/api/queries/preview',
+      { method: 'POST', body: JSON.stringify({ predicate, limit }) },
+    ),
+  runQuery: (id: string) => j<{ matched: number }>(`/api/queries/${encodeURIComponent(id)}/run`, { method: 'POST' }),
+  deleteQuery: (id: string) => j<{ ok: true }>(`/api/queries/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   reindex: (full = false) => j<{ ok: boolean }>(`/api/reindex${full ? '?full=1' : ''}`, { method: 'POST' }),
   progress: () => j<{ phase: string; total: number; done: number }>('/api/progress'),
   stats: () => j<Stats>('/api/stats'),

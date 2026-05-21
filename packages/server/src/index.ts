@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
 import { registerSessionsRoutes } from './routes/sessions.js';
 import { registerPluginsRoutes } from './routes/plugins.js';
-import { registerGroupsRoutes } from './routes/groups.js';
+import { registerQueriesRoutes } from './routes/queries.js';
 import { registerReindexRoutes } from './routes/reindex.js';
 import { registerStatsRoutes } from './routes/stats.js';
 
@@ -20,7 +20,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<{ url: stri
 
   await registerSessionsRoutes(app);
   await registerPluginsRoutes(app);
-  await registerGroupsRoutes(app);
+  await registerQueriesRoutes(app);
   await registerReindexRoutes(app);
   await registerStatsRoutes(app);
 

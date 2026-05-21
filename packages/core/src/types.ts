@@ -1,3 +1,5 @@
+import type { Predicate } from './query/types.js';
+
 export interface Session {
   id: string;
   agent: string;
@@ -74,18 +76,17 @@ export interface GroupingPlugin {
   ): Promise<MatchResult>;
 }
 
-export interface Group {
+export interface Query {
   id: string;
   name: string;
-  pluginName: string;
-  pluginConfig: Record<string, unknown>;
+  predicate: Predicate;
   createdAt: number;
   lastRunAt?: number | null;
   memberCount?: number;
 }
 
-export interface GroupItem {
-  groupId: string;
+export interface QueryMatch {
+  queryId: string;
   sessionId: string;
   addedAt: number;
   evidence?: string | null;

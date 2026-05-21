@@ -22,11 +22,11 @@ vi.mock('recharts', async () => {
 });
 
 const mockStats = {
-  totals: { sessions: 42, sessionsLast7d: 10, distinctPwds: 5, distinctAgents: 3, groups: 2 },
+  totals: { sessions: 42, sessionsLast7d: 10, distinctPwds: 5, distinctAgents: 3, queries: 2 },
   lastIndexedAt: null,
   perDay: [{ date: '2025-01-15', count: 5 }],
   topPwds: [{ pwd: '/home/user/project', count: 15 }],
-  topGroups: [{ id: 'g1', name: 'My Group', memberCount: 8 }],
+  topQueries: [{ id: 'q1', name: 'My Query', memberCount: 8 }],
   topTools: [{ tool: 'bash', count: 100 }],
   recentSessions: [
     {
@@ -45,7 +45,7 @@ const defaultProps = {
   progress: null as null,
   onReindex: vi.fn(),
   onOpenSession: vi.fn(),
-  onOpenGroup: vi.fn(),
+  onOpenQuery: vi.fn(),
   onOpenSessions: vi.fn(),
 };
 
@@ -85,10 +85,10 @@ describe('DashboardView', () => {
     });
   });
 
-  it('displays group name', async () => {
+  it('displays query name', async () => {
     render(<DashboardView {...defaultProps} />);
     await waitFor(() => {
-      expect(screen.getByText('My Group')).toBeDefined();
+      expect(screen.getByText('My Query')).toBeDefined();
     });
   });
 
@@ -121,12 +121,12 @@ describe('DashboardView', () => {
     });
   });
 
-  it('calls onOpenGroup when a group row is clicked', async () => {
-    const onOpenGroup = vi.fn();
-    render(<DashboardView {...defaultProps} onOpenGroup={onOpenGroup} />);
-    await waitFor(() => screen.getByText('My Group'));
-    fireEvent.click(screen.getByText('My Group'));
-    expect(onOpenGroup).toHaveBeenCalledWith('g1');
+  it('calls onOpenQuery when a query row is clicked', async () => {
+    const onOpenQuery = vi.fn();
+    render(<DashboardView {...defaultProps} onOpenQuery={onOpenQuery} />);
+    await waitFor(() => screen.getByText('My Query'));
+    fireEvent.click(screen.getByText('My Query'));
+    expect(onOpenQuery).toHaveBeenCalledWith('q1');
   });
 
   it('calls onOpenSession when a recent session row is clicked', async () => {
@@ -144,11 +144,11 @@ describe('DashboardView', () => {
     });
   });
 
-  it('shows no groups placeholder', async () => {
-    vi.mocked(apiModule.api.stats).mockResolvedValue({ ...mockStats, topGroups: [] });
+  it('shows no queries placeholder', async () => {
+    vi.mocked(apiModule.api.stats).mockResolvedValue({ ...mockStats, topQueries: [] });
     render(<DashboardView {...defaultProps} />);
     await waitFor(() => {
-      expect(screen.getByText('No groups yet')).toBeDefined();
+      expect(screen.getByText('No queries yet')).toBeDefined();
     });
   });
 });

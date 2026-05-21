@@ -1,18 +1,18 @@
-import type { Group, PluginInfo } from '../api.js';
+import type { Query, PluginInfo } from '../api.js';
 import type { View } from '../App.js';
 
 interface Props {
   view: View;
   setView: (v: View) => void;
   plugins: PluginInfo[];
-  groups: Group[];
+  queries: Query[];
   search: string;
   setSearch: (s: string) => void;
   progress: { phase: string; total: number; done: number } | null;
   onReindex: () => void;
 }
 
-export function Sidebar({ view, setView, plugins, groups, search, setSearch, progress, onReindex }: Props) {
+export function Sidebar({ view, setView, plugins, queries, search, setSearch, progress, onReindex }: Props) {
   const active = (test: boolean) => (test ? 'nav-item active' : 'nav-item');
   const busy = progress && progress.phase !== 'idle';
   return (
@@ -61,16 +61,22 @@ export function Sidebar({ view, setView, plugins, groups, search, setSearch, pro
         </div>
 
         <div className="sidebar-section">
-          <div className="sidebar-section-title">Saved groups</div>
-          {groups.length === 0 && <div className="nav-item muted">None yet</div>}
-          {groups.map((g) => (
+          <div className="sidebar-section-title">Saved queries</div>
+          <div
+            className={active(view.type === 'query-builder')}
+            onClick={() => setView({ type: 'query-builder' })}
+          >
+            <span>New query</span>
+          </div>
+          {queries.length === 0 && <div className="nav-item muted">None yet</div>}
+          {queries.map((q) => (
             <div
-              key={g.id}
-              className={active(view.type === 'group' && view.id === g.id)}
-              onClick={() => setView({ type: 'group', id: g.id })}
+              key={q.id}
+              className={active(view.type === 'query' && view.id === q.id)}
+              onClick={() => setView({ type: 'query', id: q.id })}
             >
-              <span>{g.name}</span>
-              <span className="count">{g.memberCount ?? 0}</span>
+              <span>{q.name}</span>
+              <span className="count">{q.memberCount ?? 0}</span>
             </div>
           ))}
         </div>

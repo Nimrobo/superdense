@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { clearPluginCache, getProgress, indexAll, runDiscovery, runGroupEvaluation } from '@road42/core';
+import { clearPluginCache, getProgress, runDiscovery, runQueryEvaluation } from '@road42/core';
 
 let running = false;
 
@@ -15,7 +15,7 @@ export async function registerReindexRoutes(app: FastifyInstance): Promise<void>
       try {
         clearPluginCache();
         await runDiscovery();
-        await runGroupEvaluation({ full });
+        await runQueryEvaluation({ full });
       } catch (err) {
         console.error('[road42] reindex failed:', err);
       } finally {

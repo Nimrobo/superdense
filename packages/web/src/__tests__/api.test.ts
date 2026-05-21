@@ -19,7 +19,7 @@ beforeEach(() => mockFetch.mockClear());
 
 describe('api.stats', () => {
   it('calls /api/stats', async () => {
-    mockOk({ totals: {}, lastIndexedAt: null, perDay: [], topPwds: [], topGroups: [], topTools: [], recentSessions: [] });
+    mockOk({ totals: {}, lastIndexedAt: null, perDay: [], topPwds: [], topQueries: [], topTools: [], recentSessions: [] });
     const result = await api.stats();
     expect(mockFetch).toHaveBeenCalledWith('/api/stats', expect.objectContaining({ headers: expect.anything() }));
     expect(result).toMatchObject({ totals: {}, perDay: [] });
@@ -94,25 +94,26 @@ describe('api.reindex', () => {
   });
 });
 
-describe('api.createGroup', () => {
+describe('api.createQuery', () => {
   it('sends POST with JSON body', async () => {
-    mockOk({ id: 'g1' });
-    await api.createGroup({ name: 'G', pluginName: 'keyword', pluginConfig: { k: 'v' } });
+    const predicate = { plugin: { name: 'keyword', config: { k: 'v' } } };
+    mockOk({ id: 'q1' });
+    await api.createQuery({ name: 'Q', predicate });
     expect(mockFetch).toHaveBeenCalledWith(
-      '/api/groups',
+      '/api/queries',
       expect.objectContaining({
         method: 'POST',
-        body: JSON.stringify({ name: 'G', pluginName: 'keyword', pluginConfig: { k: 'v' } }),
+        body: JSON.stringify({ name: 'Q', predicate }),
       }),
     );
   });
 });
 
-describe('api.deleteGroup', () => {
+describe('api.deleteQuery', () => {
   it('sends DELETE request', async () => {
     mockOk({ ok: true });
-    await api.deleteGroup('g1');
-    expect(mockFetch).toHaveBeenCalledWith('/api/groups/g1', expect.objectContaining({ method: 'DELETE' }));
+    await api.deleteQuery('q1');
+    expect(mockFetch).toHaveBeenCalledWith('/api/queries/q1', expect.objectContaining({ method: 'DELETE' }));
   });
 });
 
