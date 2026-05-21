@@ -189,29 +189,40 @@ function* extractEvents(obj: any): Generator<TranscriptEvent> {
   const content = message?.content;
   // Text content
   if (typeof content === 'string') {
-    yield { ts, role, text: content, raw: obj };
+    yield { ts, kind: 'text', role, text: content, raw: obj };
     return;
   }
   if (Array.isArray(content)) {
     for (const part of content) {
       if (!part || typeof part !== 'object') continue;
       if (part.type === 'text' && typeof part.text === 'string') {
-        yield { ts, role, text: part.text };
+        yield { ts, kind: 'text', role, text: part.text };
       } else if (part.type === 'tool_use') {
         let inputText = '';
         try { inputText = JSON.stringify(part.input ?? {}); } catch { inputText = ''; }
-        yield { ts, role, toolName: typeof part.name === 'string' ? part.name : undefined, inputText };
+        yield {
+          ts,
+          kind: 'tool_call',
+          role,
+          toolCallId: typeof part.id === 'string' ? part.id : undefined,
+          toolName: typeof part.name === 'string' ? part.name : undefined,
+          inputText,
+        };
       } else if (part.type === 'tool_result') {
         let text = '';
         if (typeof part.content === 'string') text = part.content;
         else if (Array.isArray(part.content)) {
           text = part.content.map((c: any) => typeof c?.text === 'string' ? c.text : '').join('\n');
         }
-        yield { ts, role, text };
+        yield {
+          ts,
+          kind: 'tool_result',
+          role,
+          toolCallId: typeof part.tool_use_id === 'string' ? part.tool_use_id : undefined,
+          text,
+        };
       }
     }
     return;
   }
-  // fallback
-  yield { ts, role, raw: obj };
 }
