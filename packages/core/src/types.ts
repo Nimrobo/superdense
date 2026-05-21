@@ -31,6 +31,8 @@ export interface DiscoveredSession {
 
 export interface TranscriptEvent {
   ts?: number;
+  kind?: 'text' | 'tool_call' | 'tool_result';
+  toolCallId?: string;
   toolName?: string;
   inputText?: string;
   role?: 'user' | 'assistant' | 'system';
