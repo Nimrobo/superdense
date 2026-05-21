@@ -52,6 +52,10 @@ describe('hasErrorsEnricher', () => {
     expect(await hasErrorsEnricher.run(makeCtx([{ text: 'Build failed' }]))).toBe(true);
   });
 
+  it('detects named error classes', async () => {
+    expect(await hasErrorsEnricher.run(makeCtx([{ text: 'AssertionError: expected 200' }]))).toBe(true);
+  });
+
   it('detects "fatal"', async () => {
     expect(await hasErrorsEnricher.run(makeCtx([{ text: 'fatal: not a git repo' }]))).toBe(true);
   });

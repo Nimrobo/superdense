@@ -1,6 +1,6 @@
 import type { Enricher } from './types.js';
 
-const ERROR_RE = /\b(error|exception|traceback|failed|fatal)\b/i;
+const ERROR_RE = /\b([A-Za-z]+Error|error|exception|traceback|failed|fatal)\b/i;
 
 export const hasErrorsEnricher: Enricher = {
   name: 'has_errors',
