@@ -1,4 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
+import Database from 'better-sqlite3';
 
 vi.mock('../paths.js', () => ({
   DB_PATH: ':memory:',
@@ -35,6 +36,7 @@ import {
   getTopQueries,
   getTopTools,
   listRecentSessions,
+  _migrateForTests,
 } from '../db.js';
 import type { Session, Query } from '../types.js';
 import type { Predicate } from '../query/types.js';
@@ -45,6 +47,7 @@ const BASE: Session = {
   sessionId: 'abc123',
   logPath: '/tmp/logs/abc123.jsonl',
   pwd: '/home/user/project',
+  projectKey: '/home/user/project',
 };
 
 const PRED: Predicate = { plugin: { name: 'keyword', config: { keyword: 'react' } } };
@@ -71,12 +74,69 @@ describe('sessions', () => {
     expect(got!.id).toBe('sess-1');
     expect(got!.agent).toBe('claude-code');
     expect(got!.pwd).toBe('/home/user/project');
+    expect(got!.projectKey).toBe('/home/user/project');
   });
 
   it('updates existing session on conflict', () => {
     upsertSession(BASE);
-    upsertSession({ ...BASE, pwd: '/updated/path' });
-    expect(getSession('sess-1')!.pwd).toBe('/updated/path');
+    upsertSession({ ...BASE, pwd: '/Users/x/conductor/workspaces/road42/provo-v1/packages/core' });
+    expect(getSession('sess-1')!.pwd).toBe('/Users/x/conductor/workspaces/road42/provo-v1/packages/core');
+    expect(getSession('sess-1')!.projectKey).toBe('/Users/x/conductor/workspaces/road42');
+  });
+
+  it('backfills projectKey when migrating a v1 database', () => {
+    const db = new Database(':memory:');
+    try {
+      db.exec(`
+        CREATE TABLE sessions (
+          id              TEXT PRIMARY KEY,
+          agent           TEXT NOT NULL,
+          session_id      TEXT NOT NULL,
+          log_path        TEXT NOT NULL,
+          pwd             TEXT NOT NULL,
+          first_prompt    TEXT,
+          summary         TEXT,
+          message_count   INTEGER,
+          git_branch      TEXT,
+          created_at      INTEGER,
+          modified_at     INTEGER,
+          is_sidechain    INTEGER DEFAULT 0,
+          file_mtime      INTEGER,
+          last_indexed_at INTEGER
+        );
+        PRAGMA user_version = 1;
+      `);
+      db.prepare(`
+        INSERT INTO sessions (
+          id, agent, session_id, log_path, pwd, first_prompt, summary,
+          message_count, git_branch, created_at, modified_at, is_sidechain,
+          file_mtime, last_indexed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        'old',
+        'claude-code',
+        'abc',
+        '/tmp/abc.jsonl',
+        '/Users/x/conductor/workspaces/road42/provo-v1/packages/core',
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        0,
+        null,
+        null,
+      );
+
+      _migrateForTests(db);
+
+      expect(db.pragma('user_version', { simple: true })).toBe(2);
+      expect(db.prepare('SELECT project_key FROM sessions WHERE id = ?').get('old'))
+        .toEqual({ project_key: '/Users/x/conductor/workspaces/road42' });
+    } finally {
+      db.close();
+    }
   });
 
   it('returns null for unknown id', () => {
@@ -325,6 +385,14 @@ describe('stats aggregates', () => {
     expect(totals.queries).toBe(1);
   });
 
+  it('getStatsTotals counts Conductor sibling workspaces as one project', () => {
+    upsertSession({ ...BASE, id: 's1', pwd: '/Users/x/conductor/workspaces/road42/provo-v1' });
+    upsertSession({ ...BASE, id: 's2', pwd: '/Users/x/conductor/workspaces/road42/provo-v2/packages/core' });
+    upsertSession({ ...BASE, id: 's3', pwd: '/Users/x/conductor/workspaces/other/provo-v1' });
+
+    expect(getStatsTotals().distinctPwds).toBe(2);
+  });
+
   it('sessionsLast7d counts only sessions modified within 7 days', () => {
     const now = Date.now();
     upsertSession({ ...BASE, id: 's1', modifiedAt: now - 1000 });
@@ -351,6 +419,17 @@ describe('stats aggregates', () => {
     const tops = getTopPwds(5);
     expect(tops[0]).toEqual({ pwd: '/a', count: 2 });
     expect(tops[1]).toEqual({ pwd: '/b', count: 1 });
+  });
+
+  it('getTopPwds groups Conductor sibling workspaces by projectKey', () => {
+    upsertSession({ ...BASE, id: 's1', pwd: '/Users/x/conductor/workspaces/road42/provo-v1' });
+    upsertSession({ ...BASE, id: 's2', pwd: '/Users/x/conductor/workspaces/road42/provo-v2/packages/core' });
+    upsertSession({ ...BASE, id: 's3', pwd: '/Users/x/conductor/workspaces/other/provo-v1' });
+
+    const tops = getTopPwds(5);
+
+    expect(tops[0]).toEqual({ pwd: '/Users/x/conductor/workspaces/road42', count: 2 });
+    expect(tops[1]).toEqual({ pwd: '/Users/x/conductor/workspaces/other', count: 1 });
   });
 
   it('getTopPwds respects limit', () => {

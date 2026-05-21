@@ -21,6 +21,7 @@ const BASE: Session = {
   sessionId: 'abc',
   logPath: '/tmp/x.jsonl',
   pwd: '/proj/a',
+  projectKey: '/proj/a',
 };
 
 function clearDb() {
@@ -44,6 +45,15 @@ describe('getHeaderTotals', () => {
     expect(t.distinctPwds).toBe(2);
     expect(t.activeDays).toBe(2);
     expect(t.distinctAgents).toBe(2);
+  });
+
+  it('counts Conductor sibling workspaces as one header project', () => {
+    const now = utcNoon(2026, 5, 21);
+    upsertSession({ ...BASE, id: 's1', pwd: '/Users/x/conductor/workspaces/road42/provo-v1', modifiedAt: now });
+    upsertSession({ ...BASE, id: 's2', pwd: '/Users/x/conductor/workspaces/road42/provo-v2', modifiedAt: now });
+    upsertSession({ ...BASE, id: 's3', pwd: '/Users/x/conductor/workspaces/other/provo-v1', modifiedAt: now });
+
+    expect(getHeaderTotals().distinctPwds).toBe(2);
   });
 });
 
@@ -169,5 +179,20 @@ describe('getWindowMetrics', () => {
     expect(w.window.activeProjects[0]!.pwd).toBe('/a');
     expect(w.window.activeProjects[0]!.count).toBe(3);
     expect(w.window.repeatedReturnProjects.map((p) => p.pwd)).toContain('/a');
+  });
+
+  it('groups active projects by Conductor projectKey', () => {
+    const now = utcNoon(2026, 5, 21);
+    upsertSession({ ...BASE, id: 's1', pwd: '/Users/x/conductor/workspaces/road42/provo-v1', modifiedAt: now - 1 * DAY });
+    upsertSession({ ...BASE, id: 's2', pwd: '/Users/x/conductor/workspaces/road42/provo-v2', modifiedAt: now - 2 * DAY });
+    upsertSession({ ...BASE, id: 's3', pwd: '/Users/x/conductor/workspaces/other/provo-v1', modifiedAt: now - 1 * DAY });
+
+    const w = getWindowMetrics(7, now);
+
+    expect(w.window.projects).toBe(2);
+    expect(w.window.activeProjects[0]).toMatchObject({
+      pwd: '/Users/x/conductor/workspaces/road42',
+      count: 2,
+    });
   });
 });

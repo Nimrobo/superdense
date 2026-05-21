@@ -103,14 +103,14 @@ export function getComebackProjects(now: number = Date.now()): ComebackProject[]
   const dormancyThreshold = 14 * DAY_MS;
   const rows = getDb()
     .prepare(`
-      SELECT pwd,
+      SELECT COALESCE(NULLIF(project_key, ''), pwd) AS pwd,
              MAX(CASE WHEN modified_at >= ? THEN modified_at END) AS recent_max,
              MIN(CASE WHEN modified_at >= ? THEN modified_at END) AS recent_min,
              MAX(CASE WHEN modified_at <  ? THEN modified_at END) AS prior_max,
              SUM(CASE WHEN modified_at >= ? THEN 1 ELSE 0 END)   AS recent_count
         FROM sessions
        WHERE modified_at IS NOT NULL
-       GROUP BY pwd
+       GROUP BY COALESCE(NULLIF(project_key, ''), pwd)
       HAVING recent_count > 0 AND prior_max IS NOT NULL
     `)
     .all(recentStart, recentStart, recentStart, recentStart) as Array<{
@@ -142,7 +142,7 @@ export function getDayKinds(now: number = Date.now(), days = 30): DayKind[] {
     .prepare(`
       SELECT date(modified_at / 1000, 'unixepoch') AS d,
              COUNT(*) AS sessions,
-             COUNT(DISTINCT pwd) AS pwds
+             COUNT(DISTINCT COALESCE(NULLIF(project_key, ''), pwd)) AS pwds
         FROM sessions
        WHERE modified_at IS NOT NULL AND modified_at >= ?
        GROUP BY d

@@ -19,6 +19,7 @@ const session = {
   sessionId: 'abc',
   logPath: '/tmp/abc.jsonl',
   pwd: '/repo/app',
+  projectKey: '/repo/app',
   firstPrompt: 'Fix errors',
   summary: 'Summary',
   messageCount: 12,

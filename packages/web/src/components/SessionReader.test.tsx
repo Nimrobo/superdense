@@ -21,6 +21,7 @@ const baseSession: Session = {
   sessionId: 'session-1',
   logPath: '/tmp/session-1.jsonl',
   pwd: '/tmp/project',
+  projectKey: '/tmp/project',
   firstPrompt: 'Build the thing',
   summary: 'A useful session summary',
   messageCount: 3,

@@ -52,7 +52,9 @@ function utcDayStart(ms: number): number {
 export function getHeaderTotals(): HeaderTotals {
   const db = getDb();
   const sessions = (db.prepare('SELECT COUNT(*) AS c FROM sessions').get() as { c: number }).c;
-  const distinctPwds = (db.prepare('SELECT COUNT(DISTINCT pwd) AS c FROM sessions').get() as { c: number }).c;
+  const distinctPwds = (db
+    .prepare("SELECT COUNT(DISTINCT COALESCE(NULLIF(project_key, ''), pwd)) AS c FROM sessions")
+    .get() as { c: number }).c;
   const activeDays = (db.prepare(`
     SELECT COUNT(DISTINCT date(modified_at / 1000, 'unixepoch')) AS c
       FROM sessions
@@ -163,7 +165,11 @@ function computeWindowMetrics(db: ReturnType<typeof getDb>, startMs: number, end
     .get(startMs, endMs) as { c: number }).c;
 
   const projects = (db
-    .prepare(`SELECT COUNT(DISTINCT pwd) AS c FROM sessions WHERE modified_at IS NOT NULL AND modified_at >= ? AND modified_at < ?`)
+    .prepare(`
+      SELECT COUNT(DISTINCT COALESCE(NULLIF(project_key, ''), pwd)) AS c
+        FROM sessions
+       WHERE modified_at IS NOT NULL AND modified_at >= ? AND modified_at < ?
+    `)
     .get(startMs, endMs) as { c: number }).c;
 
   const activeDays = (db
@@ -202,13 +208,13 @@ function computeWindowMetrics(db: ReturnType<typeof getDb>, startMs: number, end
 
   const activeProjectRows = db
     .prepare(`
-      SELECT pwd,
+      SELECT COALESCE(NULLIF(project_key, ''), pwd) AS pwd,
              COUNT(*) AS c,
              COUNT(DISTINCT date(modified_at / 1000, 'unixepoch')) AS active_days,
              MAX(modified_at) AS last_active_at
         FROM sessions
        WHERE modified_at IS NOT NULL AND modified_at >= ? AND modified_at < ?
-       GROUP BY pwd
+       GROUP BY COALESCE(NULLIF(project_key, ''), pwd)
        ORDER BY c DESC, last_active_at DESC
        LIMIT 6
     `)
@@ -222,13 +228,13 @@ function computeWindowMetrics(db: ReturnType<typeof getDb>, startMs: number, end
 
   const repeatedRows = db
     .prepare(`
-      SELECT pwd,
+      SELECT COALESCE(NULLIF(project_key, ''), pwd) AS pwd,
              COUNT(DISTINCT date(modified_at / 1000, 'unixepoch')) AS active_days,
              COUNT(*) AS sessions,
              MAX(modified_at) AS last_active_at
         FROM sessions
        WHERE modified_at IS NOT NULL AND modified_at >= ? AND modified_at < ?
-       GROUP BY pwd
+       GROUP BY COALESCE(NULLIF(project_key, ''), pwd)
       HAVING active_days >= 3
        ORDER BY active_days DESC, sessions DESC, last_active_at DESC
        LIMIT 6
