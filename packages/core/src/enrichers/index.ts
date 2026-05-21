@@ -2,13 +2,19 @@ import { iterSessionEvents } from '../adapters/index.js';
 import { getEnrichment, listQueries, upsertEnrichment } from '../db.js';
 import { collectReferencedEnrichers } from '../query/validate.js';
 import type { Session } from '../types.js';
+import { bashCliCountsEnricher } from './bash-cli-counts.js';
 import { eventCountEnricher } from './event-count.js';
 import { hasErrorsEnricher } from './has-errors.js';
 import { readUserEnrichers } from './loader.js';
 import { toolCountsEnricher } from './tool-counts.js';
 import type { Enricher } from './types.js';
 
-const BUILTINS: Enricher[] = [toolCountsEnricher, eventCountEnricher, hasErrorsEnricher];
+const BUILTINS: Enricher[] = [
+  toolCountsEnricher,
+  eventCountEnricher,
+  hasErrorsEnricher,
+  bashCliCountsEnricher,
+];
 
 const registry: Enricher[] = [...BUILTINS];
 let userLoaded = false;
@@ -91,11 +97,10 @@ async function runOne(enricher: Enricher, session: Session): Promise<void> {
   }
 }
 
-/** Run only the enrichers that are referenced by at least one live query. */
+/** Run enrichers for a session: any flagged alwaysRun, plus those referenced by a live query. */
 export async function runEnrichersForSession(session: Session): Promise<void> {
-  if (activeNames.size === 0) return;
   for (const enricher of registry) {
-    if (!activeNames.has(enricher.name)) continue;
+    if (!enricher.alwaysRun && !activeNames.has(enricher.name)) continue;
     await runOne(enricher, session);
   }
 }

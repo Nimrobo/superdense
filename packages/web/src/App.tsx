@@ -60,7 +60,6 @@ export function App() {
             progress={progress}
             onReindex={doReindex}
             onOpenSession={(id) => setView({ type: 'session', id })}
-            onOpenQuery={(id) => setView({ type: 'query', id })}
             onOpenSessions={() => setView({ type: 'sessions' })}
           />
         )}

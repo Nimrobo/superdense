@@ -2,12 +2,17 @@ import { vi, describe, it, expect, beforeEach } from 'vitest';
 import Fastify from 'fastify';
 
 vi.mock('@road42/core', () => ({
+  getContributions: vi.fn(),
+  getHeaderTotals: vi.fn(),
+  getInsightsBundle: vi.fn(),
   getStatsTotals: vi.fn(),
   getMaxLastIndexedAt: vi.fn(),
   getSessionsPerDay: vi.fn(),
+  getStreaks: vi.fn(),
   getTopPwds: vi.fn(),
   getTopQueries: vi.fn(),
   getTopTools: vi.fn(),
+  getWindowMetrics: vi.fn(),
   listRecentSessions: vi.fn(),
 }));
 
@@ -23,6 +28,30 @@ const mockTotals = {
 };
 
 beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(core.getHeaderTotals).mockReturnValue({ sessions: 10, distinctPwds: 4, activeDays: 6, distinctAgents: 2 });
+  vi.mocked(core.getStreaks).mockReturnValue({ current: 3, longest: 5, longestRange: { start: '2026-01-01', end: '2026-01-05' } });
+  vi.mocked(core.getContributions).mockReturnValue([{ date: '2026-05-21', count: 2 }]);
+  vi.mocked(core.getWindowMetrics).mockReturnValue({
+    days: 7,
+    window: {
+      sessions: 4,
+      projects: 2,
+      activeDays: 3,
+      avgPerActiveDay: 1.33,
+      adapterMix: [],
+      topClis: [],
+      activeProjects: [],
+      repeatedReturnProjects: [],
+    },
+  });
+  vi.mocked(core.getInsightsBundle).mockReturnValue({
+    hourDowHeatmap: [],
+    workRhythm: { peakHour: null, mostConsistentWeekday: null },
+    comebackProjects: [],
+    dayKinds: [],
+    personalRecords: { bestDay: null, longestSession: null, mostCliInSession: null },
+  });
   vi.mocked(core.getStatsTotals).mockReturnValue(mockTotals);
   vi.mocked(core.getMaxLastIndexedAt).mockReturnValue(12345);
   vi.mocked(core.getSessionsPerDay).mockReturnValue([{ date: '2025-01-01', count: 5 }]);
@@ -90,5 +119,30 @@ describe('GET /api/stats', () => {
     const app = await buildApp();
     const res = await app.inject({ method: 'GET', url: '/api/other' });
     expect(res.statusCode).toBe(404);
+  });
+});
+
+describe('dashboard stats routes', () => {
+  it('returns header stats without top queries', async () => {
+    const app = await buildApp();
+    const res = await app.inject({ method: 'GET', url: '/api/stats/header' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.totals.activeDays).toBe(6);
+    expect(body.topQueries).toBeUndefined();
+    expect(body.contributions).toHaveLength(1);
+  });
+
+  it('returns selected-window metrics and falls back to 7 days', async () => {
+    const app = await buildApp();
+    await app.inject({ method: 'GET', url: '/api/stats/window?days=99' });
+    expect(core.getWindowMetrics).toHaveBeenCalledWith(7);
+  });
+
+  it('returns insights bundle', async () => {
+    const app = await buildApp();
+    const res = await app.inject({ method: 'GET', url: '/api/stats/insights' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().workRhythm).toEqual({ peakHour: null, mostConsistentWeekday: null });
   });
 });

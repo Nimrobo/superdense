@@ -15,5 +15,8 @@ export interface Enricher {
   returns: EnrichReturn;
   jsonSchema?: object;
   description?: string;
+  /** When true, the enricher runs on every session during discovery,
+   *  not only when referenced by a live query. Used for dashboard signals. */
+  alwaysRun?: boolean;
   run(ctx: EnricherContext): Promise<unknown>;
 }

@@ -26,3 +26,32 @@ export type {
   EnrichReturn,
 } from './query/types.js';
 export { runQueryEvaluation, backfillQuery, previewPredicate, evaluateQuery } from './queryeval.js';
+export {
+  getHeaderTotals,
+  getStreaks,
+  getContributions,
+  getWindowMetrics,
+} from './stats/motivation.js';
+export type {
+  HeaderTotals,
+  Streaks,
+  ContributionDay,
+  WindowMetrics,
+  WindowBundle,
+} from './stats/motivation.js';
+export {
+  getHourDowHeatmap,
+  getWorkRhythm,
+  getComebackProjects,
+  getDayKinds,
+  getPersonalRecords,
+  getInsightsBundle,
+} from './stats/insights.js';
+export type {
+  HeatmapCell,
+  ComebackProject,
+  WorkRhythm,
+  DayKind,
+  PersonalRecords,
+  InsightsBundle,
+} from './stats/insights.js';

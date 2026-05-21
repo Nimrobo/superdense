@@ -6,6 +6,7 @@ export const hasErrorsEnricher: Enricher = {
   name: 'has_errors',
   version: 1,
   returns: 'bool',
+  alwaysRun: true,
   description: 'True if any transcript event text matches a common error/exception keyword.',
   async run(ctx) {
     for await (const ev of ctx.iterEvents(ctx.logPath)) {

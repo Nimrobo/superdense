@@ -1,17 +1,20 @@
-import { useEffect, useState } from 'react';
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { api, type Stats } from '../api.js';
+import { useEffect, useMemo, useState } from 'react';
+import { api, type HeaderStats, type Insights, type WindowBundle } from '../api.js';
+
+type WindowDays = 7 | 14 | 30;
+type HeatmapRange = '30D' | '6M';
 
 interface Props {
   progress: { phase: string; total: number; done: number } | null;
   onReindex: () => void;
   onOpenSession: (id: string) => void;
-  onOpenQuery: (id: string) => void;
   onOpenSessions: () => void;
 }
 
+const DOWS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
 function relTime(ms?: number | null): string {
-  if (!ms) return '—';
+  if (!ms) return '-';
   const d = Date.now() - ms;
   const s = Math.floor(d / 1000);
   if (s < 60) return `${s}s ago`;
@@ -24,146 +27,546 @@ function relTime(ms?: number | null): string {
   return new Date(ms).toLocaleDateString();
 }
 
-function shortDate(d: string): string {
-  const [, m, day] = d.split('-');
-  return m && day ? `${m}/${day}` : d;
-}
-
 function basename(p: string): string {
   const parts = p.split('/').filter(Boolean);
-  return parts.length ? parts[parts.length - 1] : p;
+  return parts.length ? parts[parts.length - 1]! : p;
 }
 
-export function DashboardView({ progress, onReindex, onOpenSession, onOpenQuery, onOpenSessions }: Props) {
-  const [stats, setStats] = useState<Stats | null>(null);
+function formatDuration(ms: number): string {
+  const m = Math.floor(ms / 60000);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  const rem = m % 60;
+  return rem ? `${h}h ${rem}m` : `${h}h`;
+}
+
+function ymdToLabel(ymd: string): string {
+  const [y, m, d] = ymd.split('-').map((n) => Number(n));
+  if (!y || !m || !d) return ymd;
+  const date = new Date(Date.UTC(y, m - 1, d));
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+export function DashboardView({ progress, onReindex, onOpenSession, onOpenSessions }: Props) {
+  const [header, setHeader] = useState<HeaderStats | null>(null);
+  const [windowDays, setWindowDays] = useState<WindowDays>(7);
+  const [windowData, setWindowData] = useState<WindowBundle | null>(null);
+  const [insights, setInsights] = useState<Insights | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = () => {
-    api.stats()
-      .then((s) => { setStats(s); setError(null); })
+  const refreshAll = () => {
+    Promise.all([api.statsHeader(), api.statsWindow(windowDays), api.statsInsights()])
+      .then(([h, w, i]) => {
+        setHeader(h);
+        setWindowData(w);
+        setInsights(i);
+        setError(null);
+      })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
   };
 
-  useEffect(() => { refresh(); }, []);
+  useEffect(() => { refreshAll(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+  useEffect(() => {
+    api.statsWindow(windowDays).then(setWindowData).catch((e) => setError(e instanceof Error ? e.message : String(e)));
+  }, [windowDays]);
 
   if (error) return <div className="dashboard"><div className="error">Failed to load: {error}</div></div>;
-  if (!stats) return <div className="dashboard"><div className="muted">Loading…</div></div>;
+  if (!header) return <div className="dashboard"><div className="muted">Loading...</div></div>;
 
   const busy = progress && progress.phase !== 'idle';
-  const t = stats.totals;
+
+  if (header.totals.sessions === 0) {
+    return (
+      <div className="dashboard">
+        <div className="dashboard-header"><h1>Dashboard</h1></div>
+        <div className="card">
+          <div className="card-title">No sessions yet</div>
+          <p className="muted">Run a reindex to discover your agent transcripts.</p>
+          <button className="reindex-btn" onClick={onReindex} disabled={!!busy}>
+            {busy ? `${progress!.phase} ${progress!.done}/${progress!.total}` : 'Reindex'}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="dashboard">
       <div className="dashboard-header">
         <h1>Dashboard</h1>
-        <button className="reindex-btn" onClick={refresh}>Refresh</button>
+        <div className="dashboard-header-actions">
+          <span className="muted small">indexed {relTime(header.lastIndexedAt)}</span>
+          <button className="reindex-btn" onClick={onReindex} disabled={!!busy}>
+            {busy ? `${progress!.phase} ${progress!.done}/${progress!.total}` : 'Reindex'}
+          </button>
+          <button className="reindex-btn" onClick={refreshAll}>Refresh</button>
+        </div>
       </div>
 
-      <div className="stat-row">
-        <Stat label="Sessions" value={t.sessions} />
-        <Stat label="Last 7 days" value={t.sessionsLast7d} />
-        <Stat label="Projects" value={t.distinctPwds} />
-        <Stat label="Agents" value={t.distinctAgents} />
-        <Stat label="Queries" value={t.queries} />
+      <TotalsRow totals={header.totals} />
+
+      <MomentumHero streaks={header.streaks} records={insights?.personalRecords ?? null} />
+
+      <div className="activity-rhythm-row">
+        <ContributionHeatmap contributions={header.contributions} />
+        {insights && <WorkRhythmCard cells={insights.hourDowHeatmap} rhythm={insights.workRhythm} />}
       </div>
 
-      <div className="dashboard-grid">
-        <div className="card">
-          <div className="card-title">Indexing</div>
-          <div className="kv">
-            <span>Last indexed</span>
-            <strong>{relTime(stats.lastIndexedAt)}</strong>
-          </div>
-          <div className="kv">
-            <span>Status</span>
-            <strong>
-              {busy
-                ? `${progress!.phase} ${progress!.done}/${progress!.total}`
-                : 'idle'}
-            </strong>
-          </div>
-          <button className="reindex-btn" onClick={onReindex} disabled={!!busy}>Reindex</button>
-        </div>
+      <WindowMetricsCard
+        windowDays={windowDays}
+        setWindowDays={setWindowDays}
+        data={windowData}
+      />
 
-        <div className="card card-wide">
-          <div className="card-title">Sessions per day (last 30)</div>
-          <ResponsiveContainer width="100%" height={180}>
-            <BarChart data={stats.perDay.map((d) => ({ date: shortDate(d.date), count: d.count }))}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-              <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-              <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
-              <Tooltip />
-              <Bar dataKey="count" fill="var(--accent, #4f8cff)" />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+      {windowData && insights && (
+        <ProjectMomentumCard
+          activeProjects={windowData.window.activeProjects}
+          repeatedReturnProjects={windowData.window.repeatedReturnProjects}
+          comebackProjects={insights.comebackProjects}
+        />
+      )}
 
-        <div className="card card-wide">
-          <div className="card-title">Top tools used</div>
-          {stats.topTools.length === 0 ? (
-            <div className="muted">No tool data yet — run a reindex.</div>
-          ) : (
-            <ResponsiveContainer width="100%" height={Math.max(120, stats.topTools.length * 24)}>
-              <BarChart data={stats.topTools} layout="vertical" margin={{ left: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} />
-                <YAxis type="category" dataKey="tool" width={100} tick={{ fontSize: 11 }} />
-                <Tooltip />
-                <Bar dataKey="count" fill="var(--accent, #4f8cff)" />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </div>
+      {insights && <FocusPatternCard items={insights.dayKinds} />}
 
-        <div className="card">
-          <div className="card-title">Top working directories</div>
-          {stats.topPwds.length === 0 && <div className="muted">None</div>}
-          <ul className="list">
-            {stats.topPwds.map((p) => (
-              <li key={p.pwd} className="list-row clickable" onClick={onOpenSessions} title={p.pwd}>
-                <span className="ellipsis">{basename(p.pwd)}</span>
-                <span className="count">{p.count}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
+      {insights && (
+        <PersonalRecordsCard
+          streaks={header.streaks}
+          records={insights.personalRecords}
+          onOpenSession={onOpenSession}
+        />
+      )}
 
-        <div className="card">
-          <div className="card-title">Top queries</div>
-          {stats.topQueries.length === 0 && <div className="muted">No queries yet</div>}
-          <ul className="list">
-            {stats.topQueries.map((q) => (
-              <li key={q.id} className="list-row clickable" onClick={() => onOpenQuery(q.id)}>
-                <span className="ellipsis">{q.name}</span>
-                <span className="count">{q.memberCount}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
+      <RecentWorkCard
+        recentSessions={header.recentSessions}
+        onOpenSession={onOpenSession}
+        onOpenSessions={onOpenSessions}
+      />
+    </div>
+  );
+}
 
-        <div className="card card-wide">
-          <div className="card-title">Recent sessions</div>
-          <ul className="list">
-            {stats.recentSessions.map((s) => (
-              <li key={s.id} className="list-row clickable" onClick={() => onOpenSession(s.id)}>
-                <span className="ellipsis">
-                  {s.firstPrompt?.trim() || s.summary?.trim() || '(no prompt)'}
-                </span>
-                <span className="muted small">{relTime(s.modifiedAt)}</span>
-              </li>
-            ))}
-          </ul>
+function TotalsRow({ totals }: { totals: HeaderStats['totals'] }) {
+  return (
+    <div className="totals-row">
+      <Total label="Overall sessions" value={totals.sessions} />
+      <Total label="Projects worked on" value={totals.distinctPwds} />
+      <Total label="Active days" value={totals.activeDays} />
+      <Total label="Agents used" value={totals.distinctAgents} />
+    </div>
+  );
+}
+
+function Total({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="total">
+      <div className="total-value">{value.toLocaleString()}</div>
+      <div className="total-label">{label}</div>
+    </div>
+  );
+}
+
+function MomentumHero({
+  streaks,
+  records,
+}: {
+  streaks: HeaderStats['streaks'];
+  records: Insights['personalRecords'] | null;
+}) {
+  return (
+    <div className="card momentum-card">
+      <div className="momentum-main">
+        <div className="momentum-number">{streaks.current}</div>
+        <div>
+          <div className="momentum-label">current day streak</div>
+          {streaks.current > 0 && streaks.current >= streaks.longest && <div className="momentum-badge">New record pace</div>}
+        </div>
+      </div>
+      <div className="momentum-stats">
+        <RecordTile label="Longest streak" value={`${streaks.longest}d`} detail={streaks.longestRange ? `${ymdToLabel(streaks.longestRange.start)} - ${ymdToLabel(streaks.longestRange.end)}` : undefined} />
+        <RecordTile label="Best day" value={records?.bestDay ? `${records.bestDay.sessions}` : '-'} detail={records?.bestDay ? ymdToLabel(records.bestDay.date) : undefined} />
+        <RecordTile label="Longest focused session" value={records?.longestSession ? formatDuration(records.longestSession.durationMs) : '-'} />
+      </div>
+    </div>
+  );
+}
+
+function RecordTile({ label, value, detail }: { label: string; value: string; detail?: string }) {
+  return (
+    <div className="record-tile">
+      <div className="record-value">{value}</div>
+      <div className="record-label">{label}</div>
+      {detail && <div className="record-detail">{detail}</div>}
+    </div>
+  );
+}
+
+function ContributionHeatmap({ contributions }: { contributions: HeaderStats['contributions'] }) {
+  const [range, setRange] = useState<HeatmapRange>('30D');
+  const visible = useMemo(
+    () => (range === '30D' ? contributions.slice(-30) : contributions.slice(-180)),
+    [contributions, range],
+  );
+
+  const { weeks, max } = useMemo(() => {
+    const max = visible.reduce((m, c) => Math.max(m, c.count), 0);
+    if (visible.length === 0) return { weeks: [] as Array<Array<{ date: string; count: number } | null>>, max };
+    const first = visible[0]!;
+    const firstDow = new Date(`${first.date}T00:00:00Z`).getUTCDay();
+    const cells: Array<{ date: string; count: number } | null> = [];
+    for (let i = 0; i < firstDow; i++) cells.push(null);
+    for (const c of visible) cells.push(c);
+    const weeks: Array<Array<{ date: string; count: number } | null>> = [];
+    for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+    return { weeks, max };
+  }, [visible]);
+
+  const bucket = (count: number): number => {
+    if (count === 0 || max === 0) return 0;
+    const r = count / max;
+    if (r > 0.66) return 4;
+    if (r > 0.33) return 3;
+    if (r > 0.1) return 2;
+    return 1;
+  };
+
+  const totalDays = visible.filter((c) => c.count > 0).length;
+
+  return (
+    <div className="card">
+      <div className="window-header">
+        <div className="card-title" style={{ margin: 0 }}>Contribution heatmap · {totalDays} active days</div>
+        <div className="segmented">
+          {(['30D', '6M'] as HeatmapRange[]).map((r) => (
+            <button
+              key={r}
+              className={`seg ${range === r ? 'active' : ''}`}
+              onClick={() => setRange(r)}
+            >
+              {r}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="heatmap">
+        <div className="heatmap-dows">
+          <span></span><span>Mon</span><span></span><span>Wed</span><span></span><span>Fri</span><span></span>
+        </div>
+        <div className="heatmap-grid">
+          {weeks.map((week, wi) => (
+            <div key={wi} className="heatmap-col">
+              {Array.from({ length: 7 }).map((_, di) => {
+                const cell = week[di];
+                if (!cell) return <div key={di} className="heatmap-cell empty" />;
+                return (
+                  <div
+                    key={di}
+                    className={`heatmap-cell b${bucket(cell.count)}`}
+                    title={`${ymdToLabel(cell.date)} - ${cell.count} session${cell.count === 1 ? '' : 's'}`}
+                  />
+                );
+              })}
+            </div>
+          ))}
+        </div>
+        <div className="heatmap-legend">
+          <span className="muted small">Less</span>
+          <div className="heatmap-cell b0" />
+          <div className="heatmap-cell b1" />
+          <div className="heatmap-cell b2" />
+          <div className="heatmap-cell b3" />
+          <div className="heatmap-cell b4" />
+          <span className="muted small">More</span>
         </div>
       </div>
     </div>
   );
 }
 
-function Stat({ label, value }: { label: string; value: number }) {
+function WorkRhythmCard({ cells, rhythm }: { cells: Insights['hourDowHeatmap']; rhythm: Insights['workRhythm'] }) {
+  const max = cells.reduce((m, c) => Math.max(m, c.count), 0);
+  const intensity = (n: number) => (max === 0 ? 0 : n / max);
   return (
-    <div className="stat">
-      <div className="stat-value">{value.toLocaleString()}</div>
-      <div className="stat-label">{label}</div>
+    <div className="card">
+      <div className="card-title">Work rhythm</div>
+      <div className="hourdow">
+        {Array.from({ length: 7 }).map((_, dow) => (
+          <div key={dow} className="hourdow-row">
+            <span className="hourdow-label muted small">{DOWS[dow]}</span>
+            {Array.from({ length: 24 }).map((_, h) => {
+              const cell = cells.find((c) => c.dow === dow && c.hour === h) ?? { count: 0 };
+              const op = intensity(cell.count);
+              return (
+                <div
+                  key={h}
+                  className="hourdow-cell"
+                  style={{ opacity: op === 0 ? 0.08 : 0.2 + op * 0.8 }}
+                  title={`${DOWS[dow]} ${h}:00 - ${cell.count}`}
+                />
+              );
+            })}
+          </div>
+        ))}
+      </div>
+      <div className="rhythm-summary">
+        <span>{rhythm.peakHour ? `Peak: ${DOWS[rhythm.peakHour.dow]} ${String(rhythm.peakHour.hour).padStart(2, '0')}:00` : 'Peak: -'}</span>
+        <span>{rhythm.mostConsistentWeekday ? `Most consistent: ${DOWS[rhythm.mostConsistentWeekday.dow]}` : 'Most consistent: -'}</span>
+      </div>
+    </div>
+  );
+}
+
+function WindowMetricsCard({
+  windowDays,
+  setWindowDays,
+  data,
+}: {
+  windowDays: WindowDays;
+  setWindowDays: (d: WindowDays) => void;
+  data: WindowBundle | null;
+}) {
+  return (
+    <div className="card">
+      <div className="window-header">
+        <div className="card-title" style={{ margin: 0 }}>Selected window</div>
+        <div className="segmented">
+          {([7, 14, 30] as WindowDays[]).map((d) => (
+            <button
+              key={d}
+              className={`seg ${windowDays === d ? 'active' : ''}`}
+              onClick={() => setWindowDays(d)}
+            >
+              {d}D
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {!data ? (
+        <div className="muted">Loading...</div>
+      ) : (
+        <>
+          <div className="window-grid">
+            <Tile label="Sessions" value={data.window.sessions} />
+            <Tile label="Projects touched" value={data.window.projects} />
+            <Tile label="Active days" value={data.window.activeDays} />
+            <Tile label="Sessions / active day" value={data.window.avgPerActiveDay.toFixed(1)} />
+          </div>
+          {data.window.topClis.length > 0 && (
+            <div className="inline-list-block">
+              <div className="card-subtitle">Top CLIs used</div>
+              <ul className="chip-list">
+                {data.window.topClis.map((c) => (
+                  <li key={c.cli} className="chip">
+                    <span className="mono">{c.cli}</span>
+                    <span className="count">{c.count}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <AdapterMixBar mix={data.window.adapterMix} />
+        </>
+      )}
+    </div>
+  );
+}
+
+function Tile({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div className="tile">
+      <div className="tile-value">{typeof value === 'number' ? value.toLocaleString() : value}</div>
+      <div className="tile-label">{label}</div>
+    </div>
+  );
+}
+
+function AdapterMixBar({ mix }: { mix: Array<{ agent: string; count: number }> }) {
+  if (mix.length <= 1) return null;
+  const total = mix.reduce((s, m) => s + m.count, 0);
+  if (total === 0) return null;
+  const palette = ['var(--accent)', '#10b981', '#f59e0b', '#8b5cf6'];
+  return (
+    <div className="adapter-mix">
+      <div className="card-subtitle">Adapter mix</div>
+      <div className="bar">
+        {mix.map((m, i) => (
+          <div
+            key={m.agent}
+            className="bar-seg"
+            style={{
+              width: `${(m.count / total) * 100}%`,
+              background: palette[i % palette.length],
+            }}
+            title={`${m.agent}: ${m.count}`}
+          />
+        ))}
+      </div>
+      <div className="bar-legend">
+        {mix.map((m, i) => (
+          <span key={m.agent} className="bar-legend-item">
+            <span className="bar-legend-dot" style={{ background: palette[i % palette.length] }} />
+            {m.agent} <span className="muted">{((m.count / total) * 100).toFixed(0)}%</span>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ProjectMomentumCard({
+  activeProjects,
+  repeatedReturnProjects,
+  comebackProjects,
+}: {
+  activeProjects: WindowBundle['window']['activeProjects'];
+  repeatedReturnProjects: WindowBundle['window']['repeatedReturnProjects'];
+  comebackProjects: Insights['comebackProjects'];
+}) {
+  if (activeProjects.length === 0 && repeatedReturnProjects.length === 0 && comebackProjects.length === 0) return null;
+
+  return (
+    <div className="card">
+      <div className="card-title">Project momentum</div>
+      <div className="three-col">
+        <ProjectList
+          title="Most active"
+          empty="No project activity"
+          items={activeProjects}
+          renderMeta={(p) => `${p.count} sessions · ${p.activeDays}d`}
+        />
+        <ProjectList
+          title="Comebacks"
+          empty="No dormant projects resumed"
+          items={comebackProjects}
+          renderMeta={(p) => `${p.dormantDays}d dormant · ${p.sessions7d} sessions`}
+        />
+        <ProjectList
+          title="Repeated returns"
+          empty="No 3-day returns yet"
+          items={repeatedReturnProjects}
+          renderMeta={(p) => `${p.activeDays} active days · ${p.sessions} sessions`}
+        />
+      </div>
+    </div>
+  );
+}
+
+function ProjectList<T extends { pwd: string }>({
+  title,
+  empty,
+  items,
+  renderMeta,
+}: {
+  title: string;
+  empty: string;
+  items: T[];
+  renderMeta: (item: T) => string;
+}) {
+  return (
+    <div className="project-list">
+      <div className="card-subtitle">{title}</div>
+      {items.length === 0 ? (
+        <div className="muted small">{empty}</div>
+      ) : (
+        <ul className="list">
+          {items.slice(0, 5).map((p) => (
+            <li key={p.pwd} className="list-row" title={p.pwd}>
+              <span className="ellipsis">{basename(p.pwd)}</span>
+              <span className="muted small">{renderMeta(p)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function FocusPatternCard({ items }: { items: Insights['dayKinds'] }) {
+  const focus = items.filter((d) => d.kind === 'focus').length;
+  const scatter = items.filter((d) => d.kind === 'scatter').length;
+  if (items.length === 0) return null;
+
+  return (
+    <div className="card">
+      <div className="card-title">Focus pattern</div>
+      <div className="window-grid focus-grid">
+        <Tile label="Focus days" value={focus} />
+        <Tile label="Scatter days" value={scatter} />
+      </div>
+      <div className="spread-calendar" aria-label="project spread calendar">
+        {items.slice(-30).map((d) => (
+          <div
+            key={d.date}
+            className={`spread-cell kind-${d.kind}`}
+            style={{ height: `${Math.max(10, Math.min(36, d.sessions * 6))}px` }}
+            title={`${d.date}: ${d.sessions} sessions / ${d.pwds} projects`}
+          />
+        ))}
+      </div>
+      <div className="muted small">Focus = 3+ sessions on 1 project. Scatter = 3+ sessions across 3+ projects.</div>
+    </div>
+  );
+}
+
+function PersonalRecordsCard({
+  streaks,
+  records,
+  onOpenSession,
+}: {
+  streaks: HeaderStats['streaks'];
+  records: Insights['personalRecords'];
+  onOpenSession: (id: string) => void;
+}) {
+  return (
+    <div className="card">
+      <div className="card-title">Personal records</div>
+      <div className="records-grid">
+        <RecordTile label="Best day ever" value={records.bestDay ? `${records.bestDay.sessions} sessions` : '-'} detail={records.bestDay ? ymdToLabel(records.bestDay.date) : undefined} />
+        <RecordTile label="Longest streak" value={`${streaks.longest}d`} detail={streaks.longestRange ? `${ymdToLabel(streaks.longestRange.start)} - ${ymdToLabel(streaks.longestRange.end)}` : undefined} />
+        <button
+          className="record-tile record-button"
+          disabled={!records.longestSession}
+          onClick={() => records.longestSession && onOpenSession(records.longestSession.sessionId)}
+        >
+          <span className="record-value">{records.longestSession ? formatDuration(records.longestSession.durationMs) : '-'}</span>
+          <span className="record-label">Longest session under 24h</span>
+        </button>
+        <button
+          className="record-tile record-button"
+          disabled={!records.mostCliInSession}
+          onClick={() => records.mostCliInSession && onOpenSession(records.mostCliInSession.sessionId)}
+        >
+          <span className="record-value">{records.mostCliInSession ? records.mostCliInSession.total : '-'}</span>
+          <span className="record-label">Most CLI-heavy session</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function RecentWorkCard({
+  recentSessions,
+  onOpenSession,
+  onOpenSessions,
+}: {
+  recentSessions: HeaderStats['recentSessions'];
+  onOpenSession: (id: string) => void;
+  onOpenSessions: () => void;
+}) {
+  return (
+    <div className="card">
+      <div className="window-header">
+        <div className="card-title" style={{ margin: 0 }}>Recent work</div>
+        <button className="reindex-btn" onClick={onOpenSessions}>All sessions</button>
+      </div>
+      <ul className="list">
+        {recentSessions.map((s) => (
+          <li key={s.id} className="list-row clickable" onClick={() => onOpenSession(s.id)}>
+            <span className="ellipsis">{s.firstPrompt?.trim() || s.summary?.trim() || '(no prompt)'}</span>
+            <span className="muted small">{relTime(s.modifiedAt)}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
