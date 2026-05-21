@@ -1,4 +1,4 @@
-import { claudeCodeAdapter } from '../adapters/claude-code.js';
+import { iterSessionEvents } from '../adapters/index.js';
 import { getEnrichment, listQueries, upsertEnrichment } from '../db.js';
 import { collectReferencedEnrichers } from '../query/validate.js';
 import type { Session } from '../types.js';
@@ -82,7 +82,7 @@ async function runOne(enricher: Enricher, session: Session): Promise<void> {
     const value = await enricher.run({
       session,
       logPath: session.logPath,
-      iterEvents: (p) => claudeCodeAdapter.iterEvents(p),
+      iterEvents: () => iterSessionEvents(session),
     });
     upsertEnrichment(session.id, enricher.name, enricher.version, value, Date.now());
   } catch (err) {

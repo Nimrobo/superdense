@@ -148,6 +148,10 @@ export const claudeCodeAdapter: Adapter = {
   iterEvents(logPath: string): AsyncIterable<TranscriptEvent> {
     return iterJsonlEvents(logPath);
   },
+
+  sourceMtime(session: DiscoveredSession): Promise<number | undefined> {
+    return statLogFile(session.logPath);
+  },
 };
 
 export async function statLogFile(logPath: string): Promise<number | undefined> {

@@ -1,7 +1,6 @@
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { adapters } from './adapters/index.js';
-import { statLogFile } from './adapters/claude-code.js';
 import {
   getQuery,
   getSession,
@@ -43,7 +42,7 @@ export async function runDiscovery(): Promise<{ discovered: number }> {
     progress.total += found.length;
     for (const d of found) {
       const id = `${adapter.name}:${d.sessionId}`;
-      const fileMtime = (await statLogFile(d.logPath)) ?? d.modifiedAt ?? null;
+      const fileMtime = (await adapter.sourceMtime?.(d)) ?? d.modifiedAt ?? null;
       const session: Session = {
         id,
         agent: adapter.name,

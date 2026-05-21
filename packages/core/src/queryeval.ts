@@ -1,4 +1,4 @@
-import { claudeCodeAdapter } from './adapters/claude-code.js';
+import { iterSessionEvents } from './adapters/index.js';
 import {
   clearQueryMatches,
   getDb,
@@ -21,11 +21,7 @@ import {
   isPluginLeaf,
 } from './query/types.js';
 import { collectReferencedEnrichers } from './query/validate.js';
-import type { GroupingPlugin, PluginHelpers, Query, Session } from './types.js';
-
-const helpers: PluginHelpers = {
-  iterEvents: (p) => claudeCodeAdapter.iterEvents(p),
-};
+import type { GroupingPlugin, Query, Session } from './types.js';
 
 async function backfillEnricher(name: string): Promise<void> {
   const sessions = listAllSessionsForBackfill();
@@ -166,6 +162,7 @@ async function evalPredicateJs(
     if (!plugin) return { match: false };
     try {
       if (plugin.prefilter && !plugin.prefilter(s, p.plugin.config)) return { match: false };
+      const helpers = { iterEvents: () => iterSessionEvents(s) };
       const r = await plugin.matches(s, s.logPath, p.plugin.config, helpers);
       const matched = r === true || (typeof r === 'object' && r.match === true);
       const evidence = typeof r === 'object' && r !== null ? r.evidence ?? null : null;
