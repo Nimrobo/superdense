@@ -1,0 +1,15 @@
+import type { Enricher } from './types.js';
+
+const ERROR_RE = /\b(error|exception|traceback|failed|fatal)\b/i;
+
+export const hasErrorsEnricher: Enricher = {
+  name: 'has_errors',
+  version: 1,
+  async run(ctx) {
+    for await (const ev of ctx.iterEvents(ctx.logPath)) {
+      if (ev.text && ERROR_RE.test(ev.text)) return true;
+      if (ev.inputText && ERROR_RE.test(ev.inputText)) return true;
+    }
+    return false;
+  },
+};

@@ -45,6 +45,22 @@ export interface Group {
   memberCount?: number;
 }
 
+export interface Stats {
+  totals: {
+    sessions: number;
+    sessionsLast7d: number;
+    distinctPwds: number;
+    distinctAgents: number;
+    groups: number;
+  };
+  lastIndexedAt: number | null;
+  perDay: Array<{ date: string; count: number }>;
+  topPwds: Array<{ pwd: string; count: number }>;
+  topGroups: Array<{ id: string; name: string; memberCount: number }>;
+  topTools: Array<{ tool: string; count: number }>;
+  recentSessions: Session[];
+}
+
 async function j<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     ...init,
@@ -83,4 +99,5 @@ export const api = {
   deleteGroup: (id: string) => j<{ ok: true }>(`/api/groups/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   reindex: (full = false) => j<{ ok: boolean }>(`/api/reindex${full ? '?full=1' : ''}`, { method: 'POST' }),
   progress: () => j<{ phase: string; total: number; done: number }>('/api/progress'),
+  stats: () => j<Stats>('/api/stats'),
 };

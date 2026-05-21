@@ -17,6 +17,7 @@ import {
 } from './db.js';
 import { GROUPS_DIR } from './paths.js';
 import { loadPlugins } from './plugins/index.js';
+import { runEnrichersForSession } from './enrichers/index.js';
 import type { Adapter, Group, GroupingPlugin, PluginHelpers, Session } from './types.js';
 
 export interface IndexProgress {
@@ -75,6 +76,7 @@ export async function runDiscovery(): Promise<{ discovered: number }> {
         session.lastIndexedAt = existing.lastIndexedAt ?? null;
       }
       upsertSession(session);
+      await runEnrichersForSession(session);
       count++;
       progress.done++;
     }

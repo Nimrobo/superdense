@@ -54,6 +54,16 @@ function migrate(db: Database.Database): void {
       PRIMARY KEY (group_id, session_id)
     );
     CREATE INDEX IF NOT EXISTS idx_group_items_session ON group_items(session_id);
+
+    CREATE TABLE IF NOT EXISTS session_enrichments (
+      session_id  TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+      name        TEXT NOT NULL,
+      version     INTEGER NOT NULL,
+      value       TEXT NOT NULL,
+      computed_at INTEGER NOT NULL,
+      PRIMARY KEY (session_id, name)
+    );
+    CREATE INDEX IF NOT EXISTS idx_enrich_name ON session_enrichments(name);
   `);
 }
 
@@ -288,4 +298,120 @@ export function listAllSessionsForBackfill(): Session[] {
   const db = getDb();
   const rows = db.prepare('SELECT * FROM sessions').all() as SessionRow[];
   return rows.map(rowToSession);
+}
+
+// ---- enrichments
+
+export interface EnrichmentRow {
+  version: number;
+  value: unknown;
+  computedAt: number;
+}
+
+export function upsertEnrichment(
+  sessionId: string,
+  name: string,
+  version: number,
+  value: unknown,
+  computedAt: number,
+): void {
+  getDb().prepare(`
+    INSERT INTO session_enrichments (session_id, name, version, value, computed_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(session_id, name) DO UPDATE SET
+      version=excluded.version,
+      value=excluded.value,
+      computed_at=excluded.computed_at
+  `).run(sessionId, name, version, JSON.stringify(value), computedAt);
+}
+
+export function getEnrichment(sessionId: string, name: string): EnrichmentRow | null {
+  const row = getDb()
+    .prepare('SELECT version, value, computed_at FROM session_enrichments WHERE session_id = ? AND name = ?')
+    .get(sessionId, name) as { version: number; value: string; computed_at: number } | undefined;
+  if (!row) return null;
+  let parsed: unknown = null;
+  try { parsed = JSON.parse(row.value); } catch { parsed = null; }
+  return { version: row.version, value: parsed, computedAt: row.computed_at };
+}
+
+// ---- stats / aggregates
+
+export interface StatsTotals {
+  sessions: number;
+  sessionsLast7d: number;
+  distinctPwds: number;
+  distinctAgents: number;
+  groups: number;
+}
+
+export function getStatsTotals(now: number = Date.now()): StatsTotals {
+  const db = getDb();
+  const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
+  const sessions = (db.prepare('SELECT COUNT(*) AS c FROM sessions').get() as { c: number }).c;
+  const sessionsLast7d = (db
+    .prepare('SELECT COUNT(*) AS c FROM sessions WHERE modified_at IS NOT NULL AND modified_at >= ?')
+    .get(sevenDaysAgo) as { c: number }).c;
+  const distinctPwds = (db.prepare('SELECT COUNT(DISTINCT pwd) AS c FROM sessions').get() as { c: number }).c;
+  const distinctAgents = (db.prepare('SELECT COUNT(DISTINCT agent) AS c FROM sessions').get() as { c: number }).c;
+  const groups = (db.prepare('SELECT COUNT(*) AS c FROM groups').get() as { c: number }).c;
+  return { sessions, sessionsLast7d, distinctPwds, distinctAgents, groups };
+}
+
+export function getMaxLastIndexedAt(): number | null {
+  const row = getDb()
+    .prepare('SELECT MAX(last_indexed_at) AS m FROM sessions')
+    .get() as { m: number | null };
+  return row.m;
+}
+
+export function getSessionsPerDay(days: number): Array<{ date: string; count: number }> {
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT date(modified_at / 1000, 'unixepoch') AS d, COUNT(*) AS c
+      FROM sessions
+     WHERE modified_at IS NOT NULL
+     GROUP BY d
+     ORDER BY d DESC
+     LIMIT ?
+  `).all(days) as Array<{ d: string; c: number }>;
+  return rows.map((r) => ({ date: r.d, count: r.c })).reverse();
+}
+
+export function getTopPwds(limit: number): Array<{ pwd: string; count: number }> {
+  const rows = getDb().prepare(`
+    SELECT pwd, COUNT(*) AS c FROM sessions
+     GROUP BY pwd ORDER BY c DESC LIMIT ?
+  `).all(limit) as Array<{ pwd: string; c: number }>;
+  return rows.map((r) => ({ pwd: r.pwd, count: r.c }));
+}
+
+export function getTopGroups(limit: number): Array<{ id: string; name: string; memberCount: number }> {
+  const rows = getDb().prepare(`
+    SELECT g.id, g.name,
+           (SELECT COUNT(*) FROM group_items gi WHERE gi.group_id = g.id) AS member_count
+      FROM groups g
+     ORDER BY member_count DESC
+     LIMIT ?
+  `).all(limit) as Array<{ id: string; name: string; member_count: number }>;
+  return rows.map((r) => ({ id: r.id, name: r.name, memberCount: r.member_count }));
+}
+
+export function listRecentSessions(limit: number): Session[] {
+  const rows = getDb().prepare(`
+    SELECT * FROM sessions ORDER BY COALESCE(modified_at, 0) DESC LIMIT ?
+  `).all(limit) as SessionRow[];
+  return rows.map(rowToSession);
+}
+
+export function getTopTools(limit: number): Array<{ tool: string; count: number }> {
+  const rows = getDb().prepare(`
+    SELECT je.key AS tool, SUM(CAST(je.value AS INTEGER)) AS c
+      FROM session_enrichments se, json_each(se.value) je
+     WHERE se.name = 'tool_counts'
+     GROUP BY je.key
+     ORDER BY c DESC
+     LIMIT ?
+  `).all(limit) as Array<{ tool: string; c: number }>;
+  return rows.map((r) => ({ tool: r.tool, count: r.c }));
 }
