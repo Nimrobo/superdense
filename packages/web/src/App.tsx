@@ -5,15 +5,17 @@ import { SessionsView } from './components/SessionsView.js';
 import { SessionReader } from './components/SessionReader.js';
 import { PluginRunner } from './components/PluginRunner.js';
 import { GroupView } from './components/GroupView.js';
+import { DashboardView } from './components/DashboardView.js';
 
 export type View =
+  | { type: 'dashboard' }
   | { type: 'sessions' }
   | { type: 'session'; id: string }
   | { type: 'plugin'; name: string }
   | { type: 'group'; id: string };
 
 export function App() {
-  const [view, setView] = useState<View>({ type: 'sessions' });
+  const [view, setView] = useState<View>({ type: 'dashboard' });
   const [plugins, setPlugins] = useState<PluginInfo[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [search, setSearch] = useState('');
@@ -51,6 +53,15 @@ export function App() {
         onReindex={doReindex}
       />
       <main className="work">
+        {view.type === 'dashboard' && (
+          <DashboardView
+            progress={progress}
+            onReindex={doReindex}
+            onOpenSession={(id) => setView({ type: 'session', id })}
+            onOpenGroup={(id) => setView({ type: 'group', id })}
+            onOpenSessions={() => setView({ type: 'sessions' })}
+          />
+        )}
         {view.type === 'sessions' && <SessionsView search={search} onOpen={(id) => setView({ type: 'session', id })} />}
         {view.type === 'session' && <SessionReader id={view.id} onBack={() => setView({ type: 'sessions' })} />}
         {view.type === 'plugin' && (

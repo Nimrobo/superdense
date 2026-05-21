@@ -32,6 +32,12 @@ export function Sidebar({ view, setView, plugins, groups, search, setSearch, pro
         <div className="sidebar-section">
           <div className="sidebar-section-title">Browse</div>
           <div
+            className={active(view.type === 'dashboard')}
+            onClick={() => setView({ type: 'dashboard' })}
+          >
+            <span>Dashboard</span>
+          </div>
+          <div
             className={active(view.type === 'sessions')}
             onClick={() => setView({ type: 'sessions' })}
           >

@@ -10,7 +10,8 @@
     "build": "pnpm -r --filter=./packages/* run build",
     "dev": "pnpm --filter=@road42/cli run dev",
     "start": "node packages/cli/dist/index.js",
-    "typecheck": "pnpm -r run typecheck"
+    "typecheck": "pnpm -r run typecheck",
+    "test": "pnpm -r run test"
   },
   "packageManager": "pnpm@9.0.0",
   "engines": {

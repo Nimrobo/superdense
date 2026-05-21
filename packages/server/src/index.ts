@@ -7,6 +7,7 @@ import { registerSessionsRoutes } from './routes/sessions.js';
 import { registerPluginsRoutes } from './routes/plugins.js';
 import { registerGroupsRoutes } from './routes/groups.js';
 import { registerReindexRoutes } from './routes/reindex.js';
+import { registerStatsRoutes } from './routes/stats.js';
 
 export interface ServerOptions {
   port?: number;
@@ -21,6 +22,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<{ url: stri
   await registerPluginsRoutes(app);
   await registerGroupsRoutes(app);
   await registerReindexRoutes(app);
+  await registerStatsRoutes(app);
 
   const here = dirname(fileURLToPath(import.meta.url));
   const candidates = [
