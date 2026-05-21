@@ -6,7 +6,7 @@ vi.mock('@road42/core', () => ({
   getMaxLastIndexedAt: vi.fn(),
   getSessionsPerDay: vi.fn(),
   getTopPwds: vi.fn(),
-  getTopGroups: vi.fn(),
+  getTopQueries: vi.fn(),
   getTopTools: vi.fn(),
   listRecentSessions: vi.fn(),
 }));
@@ -19,7 +19,7 @@ const mockTotals = {
   sessionsLast7d: 3,
   distinctPwds: 4,
   distinctAgents: 2,
-  groups: 1,
+  queries: 1,
 };
 
 beforeEach(() => {
@@ -27,7 +27,7 @@ beforeEach(() => {
   vi.mocked(core.getMaxLastIndexedAt).mockReturnValue(12345);
   vi.mocked(core.getSessionsPerDay).mockReturnValue([{ date: '2025-01-01', count: 5 }]);
   vi.mocked(core.getTopPwds).mockReturnValue([{ pwd: '/home/user', count: 3 }]);
-  vi.mocked(core.getTopGroups).mockReturnValue([{ id: 'g1', name: 'Test', memberCount: 2 }]);
+  vi.mocked(core.getTopQueries).mockReturnValue([{ id: 'q1', name: 'Test', memberCount: 2 }]);
   vi.mocked(core.getTopTools).mockReturnValue([{ tool: 'bash', count: 10 }]);
   vi.mocked(core.listRecentSessions).mockReturnValue([]);
 });
@@ -48,7 +48,7 @@ describe('GET /api/stats', () => {
     expect(body.lastIndexedAt).toBe(12345);
     expect(body.perDay).toHaveLength(1);
     expect(body.topPwds).toHaveLength(1);
-    expect(body.topGroups).toHaveLength(1);
+    expect(body.topQueries).toHaveLength(1);
     expect(body.topTools).toHaveLength(1);
     expect(Array.isArray(body.recentSessions)).toBe(true);
   });
@@ -58,7 +58,7 @@ describe('GET /api/stats', () => {
     await app.inject({ method: 'GET', url: '/api/stats' });
     expect(core.getSessionsPerDay).toHaveBeenCalledWith(30);
     expect(core.getTopPwds).toHaveBeenCalledWith(5);
-    expect(core.getTopGroups).toHaveBeenCalledWith(5);
+    expect(core.getTopQueries).toHaveBeenCalledWith(5);
     expect(core.getTopTools).toHaveBeenCalledWith(10);
     expect(core.listRecentSessions).toHaveBeenCalledWith(8);
   });
@@ -73,7 +73,7 @@ describe('GET /api/stats', () => {
   it('returns empty arrays when there is no data', async () => {
     vi.mocked(core.getSessionsPerDay).mockReturnValue([]);
     vi.mocked(core.getTopPwds).mockReturnValue([]);
-    vi.mocked(core.getTopGroups).mockReturnValue([]);
+    vi.mocked(core.getTopQueries).mockReturnValue([]);
     vi.mocked(core.getTopTools).mockReturnValue([]);
     vi.mocked(core.listRecentSessions).mockReturnValue([]);
     const app = await buildApp();
@@ -81,7 +81,7 @@ describe('GET /api/stats', () => {
     const body = res.json();
     expect(body.perDay).toEqual([]);
     expect(body.topPwds).toEqual([]);
-    expect(body.topGroups).toEqual([]);
+    expect(body.topQueries).toEqual([]);
     expect(body.topTools).toEqual([]);
     expect(body.recentSessions).toEqual([]);
   });

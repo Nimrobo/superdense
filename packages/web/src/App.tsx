@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { api, type Group, type PluginInfo } from './api.js';
+import { api, type Query, type PluginInfo } from './api.js';
 import { Sidebar } from './components/Sidebar.js';
 import { SessionsView } from './components/SessionsView.js';
 import { SessionReader } from './components/SessionReader.js';
 import { PluginRunner } from './components/PluginRunner.js';
-import { GroupView } from './components/GroupView.js';
+import { QueryView } from './components/QueryView.js';
+import { QueryBuilder } from './components/QueryBuilder.js';
 import { DashboardView } from './components/DashboardView.js';
 
 export type View =
@@ -12,19 +13,20 @@ export type View =
   | { type: 'sessions' }
   | { type: 'session'; id: string }
   | { type: 'plugin'; name: string }
-  | { type: 'group'; id: string };
+  | { type: 'query-builder' }
+  | { type: 'query'; id: string };
 
 export function App() {
   const [view, setView] = useState<View>({ type: 'dashboard' });
   const [plugins, setPlugins] = useState<PluginInfo[]>([]);
-  const [groups, setGroups] = useState<Group[]>([]);
+  const [queries, setQueries] = useState<Query[]>([]);
   const [search, setSearch] = useState('');
   const [progress, setProgress] = useState<{ phase: string; total: number; done: number } | null>(null);
 
   const refresh = async () => {
-    const [p, g] = await Promise.all([api.listPlugins(), api.listGroups()]);
+    const [p, q] = await Promise.all([api.listPlugins(), api.listQueries()]);
     setPlugins(p.items);
-    setGroups(g.items);
+    setQueries(q.items);
   };
 
   useEffect(() => { refresh().catch(console.error); }, []);
@@ -46,7 +48,7 @@ export function App() {
         view={view}
         setView={setView}
         plugins={plugins}
-        groups={groups}
+        queries={queries}
         search={search}
         setSearch={setSearch}
         progress={progress}
@@ -58,7 +60,7 @@ export function App() {
             progress={progress}
             onReindex={doReindex}
             onOpenSession={(id) => setView({ type: 'session', id })}
-            onOpenGroup={(id) => setView({ type: 'group', id })}
+            onOpenQuery={(id) => setView({ type: 'query', id })}
             onOpenSessions={() => setView({ type: 'sessions' })}
           />
         )}
@@ -67,12 +69,18 @@ export function App() {
         {view.type === 'plugin' && (
           <PluginRunner
             plugin={plugins.find((p) => p.name === view.name)!}
-            onSaved={async (g) => { await refresh(); setView({ type: 'group', id: g.id }); }}
+            onSaved={async (q) => { await refresh(); setView({ type: 'query', id: q.id }); }}
             onOpenSession={(id) => setView({ type: 'session', id })}
           />
         )}
-        {view.type === 'group' && (
-          <GroupView
+        {view.type === 'query-builder' && (
+          <QueryBuilder
+            onSaved={async (q) => { await refresh(); setView({ type: 'query', id: q.id }); }}
+            onOpenSession={(id) => setView({ type: 'session', id })}
+          />
+        )}
+        {view.type === 'query' && (
+          <QueryView
             id={view.id}
             onBack={() => setView({ type: 'sessions' })}
             onOpenSession={(id) => setView({ type: 'session', id })}

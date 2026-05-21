@@ -5,6 +5,8 @@ const ERROR_RE = /\b(error|exception|traceback|failed|fatal)\b/i;
 export const hasErrorsEnricher: Enricher = {
   name: 'has_errors',
   version: 1,
+  returns: 'bool',
+  description: 'True if any transcript event text matches a common error/exception keyword.',
   async run(ctx) {
     for await (const ev of ctx.iterEvents(ctx.logPath)) {
       if (ev.text && ERROR_RE.test(ev.text)) return true;

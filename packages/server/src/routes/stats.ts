@@ -3,7 +3,7 @@ import {
   getMaxLastIndexedAt,
   getSessionsPerDay,
   getStatsTotals,
-  getTopGroups,
+  getTopQueries,
   getTopPwds,
   getTopTools,
   listRecentSessions,
@@ -16,7 +16,7 @@ export async function registerStatsRoutes(app: FastifyInstance): Promise<void> {
       lastIndexedAt: getMaxLastIndexedAt(),
       perDay: getSessionsPerDay(30),
       topPwds: getTopPwds(5),
-      topGroups: getTopGroups(5),
+      topQueries: getTopQueries(5),
       topTools: getTopTools(10),
       recentSessions: listRecentSessions(8),
     };

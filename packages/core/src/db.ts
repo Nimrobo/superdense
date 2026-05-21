@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import { DB_PATH, ensureRoad42Dirs } from './paths.js';
-import type { Group, GroupItem, Session } from './types.js';
+import type { Predicate } from './query/types.js';
+import type { Query, QueryMatch, Session } from './types.js';
 
 let dbInstance: Database.Database | null = null;
 
@@ -10,10 +11,28 @@ export function getDb(): Database.Database {
   const db = new Database(DB_PATH);
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
+  db.function('REGEXP', { deterministic: true }, (pattern: unknown, value: unknown) => {
+    if (value == null || pattern == null) return 0;
+    try {
+      return new RegExp(String(pattern)).test(String(value)) ? 1 : 0;
+    } catch {
+      return 0;
+    }
+  });
   migrate(db);
   dbInstance = db;
   return db;
 }
+
+/** Test-only: reset the cached instance so a fresh :memory: DB can be opened. */
+export function _resetDbForTests(): void {
+  if (dbInstance) {
+    try { dbInstance.close(); } catch { /* ignore */ }
+  }
+  dbInstance = null;
+}
+
+const SCHEMA_VERSION = 1;
 
 function migrate(db: Database.Database): void {
   db.exec(`
@@ -37,25 +56,24 @@ function migrate(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_sessions_agent ON sessions(agent);
     CREATE INDEX IF NOT EXISTS idx_sessions_modified ON sessions(modified_at);
 
-    CREATE TABLE IF NOT EXISTS groups (
-      id            TEXT PRIMARY KEY,
-      name          TEXT NOT NULL,
-      plugin_name   TEXT NOT NULL,
-      plugin_config TEXT,
-      created_at    INTEGER,
-      last_run_at   INTEGER
+    CREATE TABLE IF NOT EXISTS queries (
+      id          TEXT PRIMARY KEY,
+      name        TEXT NOT NULL,
+      predicate   TEXT NOT NULL,
+      created_at  INTEGER,
+      last_run_at INTEGER
     );
 
-    CREATE TABLE IF NOT EXISTS group_items (
-      group_id    TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
-      session_id  TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-      added_at    INTEGER,
-      evidence    TEXT,
-      PRIMARY KEY (group_id, session_id)
+    CREATE TABLE IF NOT EXISTS query_matches (
+      query_id   TEXT NOT NULL REFERENCES queries(id) ON DELETE CASCADE,
+      session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+      added_at   INTEGER,
+      evidence   TEXT,
+      PRIMARY KEY (query_id, session_id)
     );
-    CREATE INDEX IF NOT EXISTS idx_group_items_session ON group_items(session_id);
+    CREATE INDEX IF NOT EXISTS idx_query_matches_session ON query_matches(session_id);
 
-    CREATE TABLE IF NOT EXISTS session_enrichments (
+    CREATE TABLE IF NOT EXISTS query_enrich (
       session_id  TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
       name        TEXT NOT NULL,
       version     INTEGER NOT NULL,
@@ -63,8 +81,70 @@ function migrate(db: Database.Database): void {
       computed_at INTEGER NOT NULL,
       PRIMARY KEY (session_id, name)
     );
-    CREATE INDEX IF NOT EXISTS idx_enrich_name ON session_enrichments(name);
+    CREATE INDEX IF NOT EXISTS idx_qenrich_name ON query_enrich(name);
   `);
+
+  const currentVersion = (db.pragma('user_version', { simple: true }) as number) ?? 0;
+  if (currentVersion < SCHEMA_VERSION) {
+    runDataMigrationV1(db);
+    db.pragma(`user_version = ${SCHEMA_VERSION}`);
+  }
+}
+
+function tableExists(db: Database.Database, name: string): boolean {
+  const row = db
+    .prepare("SELECT 1 AS x FROM sqlite_master WHERE type='table' AND name = ?")
+    .get(name) as { x: number } | undefined;
+  return !!row;
+}
+
+function runDataMigrationV1(db: Database.Database): void {
+  const hasOldGroups = tableExists(db, 'groups');
+  const hasOldItems = tableExists(db, 'group_items');
+  const hasOldEnrich = tableExists(db, 'session_enrichments');
+  if (!hasOldGroups && !hasOldItems && !hasOldEnrich) return;
+
+  const migrateTx = db.transaction(() => {
+    if (hasOldGroups) {
+      const oldGroups = db
+        .prepare('SELECT id, name, plugin_name, plugin_config, created_at, last_run_at FROM groups')
+        .all() as Array<{
+          id: string;
+          name: string;
+          plugin_name: string;
+          plugin_config: string | null;
+          created_at: number | null;
+          last_run_at: number | null;
+        }>;
+      const insertQuery = db.prepare(
+        'INSERT OR IGNORE INTO queries (id, name, predicate, created_at, last_run_at) VALUES (?, ?, ?, ?, ?)',
+      );
+      for (const g of oldGroups) {
+        const cfg = g.plugin_config ? JSON.parse(g.plugin_config) : {};
+        const predicate: Predicate = { plugin: { name: g.plugin_name, config: cfg } };
+        insertQuery.run(g.id, g.name, JSON.stringify(predicate), g.created_at, g.last_run_at);
+      }
+    }
+
+    if (hasOldItems) {
+      db.exec(`
+        INSERT OR IGNORE INTO query_matches (query_id, session_id, added_at, evidence)
+        SELECT group_id, session_id, added_at, evidence FROM group_items;
+      `);
+    }
+
+    if (hasOldEnrich) {
+      db.exec(`
+        INSERT OR IGNORE INTO query_enrich (session_id, name, version, value, computed_at)
+        SELECT session_id, name, version, value, computed_at FROM session_enrichments;
+      `);
+    }
+
+    if (hasOldItems) db.exec('DROP TABLE group_items;');
+    if (hasOldGroups) db.exec('DROP TABLE groups;');
+    if (hasOldEnrich) db.exec('DROP TABLE session_enrichments;');
+  });
+  migrateTx();
 }
 
 interface SessionRow {
@@ -173,7 +253,7 @@ export function listSessions(filter: SessionFilter = {}): Session[] {
   `;
   params.limit = filter.limit ?? 200;
   params.offset = filter.offset ?? 0;
-  return db.prepare(sql).all(params).map((r) => rowToSession(r as SessionRow));
+  return db.prepare(sql).all(params).map((r: unknown) => rowToSession(r as SessionRow));
 }
 
 export function countSessions(filter: SessionFilter = {}): number {
@@ -209,88 +289,94 @@ export function markIndexed(sessionId: string, now: number): void {
   getDb().prepare('UPDATE sessions SET last_indexed_at = ? WHERE id = ?').run(now, sessionId);
 }
 
-// ---- groups
+// ---- queries
 
-interface GroupRow {
+interface QueryRow {
   id: string;
   name: string;
-  plugin_name: string;
-  plugin_config: string | null;
+  predicate: string;
   created_at: number | null;
   last_run_at: number | null;
 }
 
-function rowToGroup(r: GroupRow, memberCount?: number): Group {
+function rowToQuery(r: QueryRow, memberCount?: number): Query {
   return {
     id: r.id,
     name: r.name,
-    pluginName: r.plugin_name,
-    pluginConfig: r.plugin_config ? JSON.parse(r.plugin_config) : {},
+    predicate: JSON.parse(r.predicate) as Predicate,
     createdAt: r.created_at ?? 0,
     lastRunAt: r.last_run_at,
     memberCount,
   };
 }
 
-export function createGroup(g: Omit<Group, 'memberCount' | 'lastRunAt'>): void {
+export function createQuery(q: Omit<Query, 'memberCount' | 'lastRunAt'>): void {
   getDb().prepare(`
-    INSERT INTO groups (id, name, plugin_name, plugin_config, created_at)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(g.id, g.name, g.pluginName, JSON.stringify(g.pluginConfig ?? {}), g.createdAt);
+    INSERT INTO queries (id, name, predicate, created_at)
+    VALUES (?, ?, ?, ?)
+  `).run(q.id, q.name, JSON.stringify(q.predicate), q.createdAt);
 }
 
-export function listGroups(): Group[] {
+export function updateQueryPredicate(id: string, predicate: Predicate): void {
+  getDb().prepare('UPDATE queries SET predicate = ? WHERE id = ?').run(JSON.stringify(predicate), id);
+}
+
+export function listQueries(): Query[] {
   const db = getDb();
   const rows = db.prepare(`
-    SELECT g.*, (SELECT COUNT(*) FROM group_items gi WHERE gi.group_id = g.id) AS member_count
-    FROM groups g ORDER BY g.created_at DESC
-  `).all() as (GroupRow & { member_count: number })[];
-  return rows.map((r) => rowToGroup(r, r.member_count));
+    SELECT q.*, (SELECT COUNT(*) FROM query_matches qm WHERE qm.query_id = q.id) AS member_count
+    FROM queries q ORDER BY q.created_at DESC
+  `).all() as (QueryRow & { member_count: number })[];
+  return rows.map((r) => rowToQuery(r, r.member_count));
 }
 
-export function getGroup(id: string): Group | null {
+export function getQuery(id: string): Query | null {
   const db = getDb();
   const row = db.prepare(`
-    SELECT g.*, (SELECT COUNT(*) FROM group_items gi WHERE gi.group_id = g.id) AS member_count
-    FROM groups g WHERE g.id = ?
-  `).get(id) as (GroupRow & { member_count: number }) | undefined;
-  return row ? rowToGroup(row, row.member_count) : null;
+    SELECT q.*, (SELECT COUNT(*) FROM query_matches qm WHERE qm.query_id = q.id) AS member_count
+    FROM queries q WHERE q.id = ?
+  `).get(id) as (QueryRow & { member_count: number }) | undefined;
+  return row ? rowToQuery(row, row.member_count) : null;
 }
 
-export function deleteGroup(id: string): void {
-  getDb().prepare('DELETE FROM groups WHERE id = ?').run(id);
+export function deleteQuery(id: string): void {
+  getDb().prepare('DELETE FROM queries WHERE id = ?').run(id);
 }
 
-export function listGroupMembers(groupId: string): Session[] {
+export function listQueryMatches(queryId: string): Session[] {
   const db = getDb();
   const rows = db.prepare(`
     SELECT s.* FROM sessions s
-    INNER JOIN group_items gi ON gi.session_id = s.id
-    WHERE gi.group_id = ?
+    INNER JOIN query_matches qm ON qm.session_id = s.id
+    WHERE qm.query_id = ?
     ORDER BY COALESCE(s.modified_at, 0) DESC
-  `).all(groupId) as SessionRow[];
+  `).all(queryId) as SessionRow[];
   return rows.map(rowToSession);
 }
 
-export function upsertGroupItem(item: GroupItem): void {
+export function upsertQueryMatch(item: QueryMatch): void {
   getDb().prepare(`
-    INSERT INTO group_items (group_id, session_id, added_at, evidence)
+    INSERT INTO query_matches (query_id, session_id, added_at, evidence)
     VALUES (?, ?, ?, ?)
-    ON CONFLICT(group_id, session_id) DO UPDATE SET evidence=excluded.evidence
-  `).run(item.groupId, item.sessionId, item.addedAt, item.evidence ?? null);
+    ON CONFLICT(query_id, session_id) DO UPDATE SET evidence=excluded.evidence
+  `).run(item.queryId, item.sessionId, item.addedAt, item.evidence ?? null);
 }
 
-export function dropGroupItem(groupId: string, sessionId: string): void {
-  getDb().prepare('DELETE FROM group_items WHERE group_id = ? AND session_id = ?').run(groupId, sessionId);
+export function dropQueryMatch(queryId: string, sessionId: string): void {
+  getDb().prepare('DELETE FROM query_matches WHERE query_id = ? AND session_id = ?').run(queryId, sessionId);
 }
 
-export function markGroupRun(groupId: string, now: number): void {
-  getDb().prepare('UPDATE groups SET last_run_at = ? WHERE id = ?').run(now, groupId);
+export function clearQueryMatches(queryId: string): void {
+  getDb().prepare('DELETE FROM query_matches WHERE query_id = ?').run(queryId);
 }
 
-export function isGroupMember(groupId: string, sessionId: string): boolean {
+export function markQueryRun(queryId: string, now: number): void {
+  getDb().prepare('UPDATE queries SET last_run_at = ? WHERE id = ?').run(now, queryId);
+}
+
+export function isQueryMatch(queryId: string, sessionId: string): boolean {
   const db = getDb();
-  const r = db.prepare('SELECT 1 AS x FROM group_items WHERE group_id = ? AND session_id = ?').get(groupId, sessionId);
+  const r = db.prepare('SELECT 1 AS x FROM query_matches WHERE query_id = ? AND session_id = ?').get(queryId, sessionId);
   return !!r;
 }
 
@@ -300,7 +386,7 @@ export function listAllSessionsForBackfill(): Session[] {
   return rows.map(rowToSession);
 }
 
-// ---- enrichments
+// ---- enrichments (stored in query_enrich)
 
 export interface EnrichmentRow {
   version: number;
@@ -316,7 +402,7 @@ export function upsertEnrichment(
   computedAt: number,
 ): void {
   getDb().prepare(`
-    INSERT INTO session_enrichments (session_id, name, version, value, computed_at)
+    INSERT INTO query_enrich (session_id, name, version, value, computed_at)
     VALUES (?, ?, ?, ?, ?)
     ON CONFLICT(session_id, name) DO UPDATE SET
       version=excluded.version,
@@ -327,7 +413,7 @@ export function upsertEnrichment(
 
 export function getEnrichment(sessionId: string, name: string): EnrichmentRow | null {
   const row = getDb()
-    .prepare('SELECT version, value, computed_at FROM session_enrichments WHERE session_id = ? AND name = ?')
+    .prepare('SELECT version, value, computed_at FROM query_enrich WHERE session_id = ? AND name = ?')
     .get(sessionId, name) as { version: number; value: string; computed_at: number } | undefined;
   if (!row) return null;
   let parsed: unknown = null;
@@ -342,7 +428,7 @@ export interface StatsTotals {
   sessionsLast7d: number;
   distinctPwds: number;
   distinctAgents: number;
-  groups: number;
+  queries: number;
 }
 
 export function getStatsTotals(now: number = Date.now()): StatsTotals {
@@ -354,8 +440,8 @@ export function getStatsTotals(now: number = Date.now()): StatsTotals {
     .get(sevenDaysAgo) as { c: number }).c;
   const distinctPwds = (db.prepare('SELECT COUNT(DISTINCT pwd) AS c FROM sessions').get() as { c: number }).c;
   const distinctAgents = (db.prepare('SELECT COUNT(DISTINCT agent) AS c FROM sessions').get() as { c: number }).c;
-  const groups = (db.prepare('SELECT COUNT(*) AS c FROM groups').get() as { c: number }).c;
-  return { sessions, sessionsLast7d, distinctPwds, distinctAgents, groups };
+  const queries = (db.prepare('SELECT COUNT(*) AS c FROM queries').get() as { c: number }).c;
+  return { sessions, sessionsLast7d, distinctPwds, distinctAgents, queries };
 }
 
 export function getMaxLastIndexedAt(): number | null {
@@ -386,11 +472,11 @@ export function getTopPwds(limit: number): Array<{ pwd: string; count: number }>
   return rows.map((r) => ({ pwd: r.pwd, count: r.c }));
 }
 
-export function getTopGroups(limit: number): Array<{ id: string; name: string; memberCount: number }> {
+export function getTopQueries(limit: number): Array<{ id: string; name: string; memberCount: number }> {
   const rows = getDb().prepare(`
-    SELECT g.id, g.name,
-           (SELECT COUNT(*) FROM group_items gi WHERE gi.group_id = g.id) AS member_count
-      FROM groups g
+    SELECT q.id, q.name,
+           (SELECT COUNT(*) FROM query_matches qm WHERE qm.query_id = q.id) AS member_count
+      FROM queries q
      ORDER BY member_count DESC
      LIMIT ?
   `).all(limit) as Array<{ id: string; name: string; member_count: number }>;
@@ -407,8 +493,8 @@ export function listRecentSessions(limit: number): Session[] {
 export function getTopTools(limit: number): Array<{ tool: string; count: number }> {
   const rows = getDb().prepare(`
     SELECT je.key AS tool, SUM(CAST(je.value AS INTEGER)) AS c
-      FROM session_enrichments se, json_each(se.value) je
-     WHERE se.name = 'tool_counts'
+      FROM query_enrich qe, json_each(qe.value) je
+     WHERE qe.name = 'tool_counts'
      GROUP BY je.key
      ORDER BY c DESC
      LIMIT ?

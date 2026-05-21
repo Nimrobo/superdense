@@ -3,8 +3,9 @@ import { vi, describe, it, expect, beforeEach } from 'vitest';
 vi.mock('../paths.js', () => ({
   DB_PATH: ':memory:',
   ROAD42_HOME: '/tmp/road42-test',
-  GROUPS_DIR: '/tmp/road42-test/groups',
+  GROUPS_DIR: '/tmp/road42-test/queries',
   USER_PLUGINS_DIR: '/tmp/road42-test/plugins',
+  USER_ENRICHERS_DIR: '/tmp/road42-test/enrichers',
   ensureRoad42Dirs: vi.fn(),
 }));
 
@@ -16,26 +17,27 @@ import {
   countSessions,
   getDirtySessions,
   markIndexed,
-  createGroup,
-  listGroups,
-  getGroup,
-  deleteGroup,
-  listGroupMembers,
-  upsertGroupItem,
-  dropGroupItem,
-  markGroupRun,
-  isGroupMember,
+  createQuery,
+  listQueries,
+  getQuery,
+  deleteQuery,
+  listQueryMatches,
+  upsertQueryMatch,
+  dropQueryMatch,
+  markQueryRun,
+  isQueryMatch,
   upsertEnrichment,
   getEnrichment,
   getStatsTotals,
   getMaxLastIndexedAt,
   getSessionsPerDay,
   getTopPwds,
-  getTopGroups,
+  getTopQueries,
   getTopTools,
   listRecentSessions,
 } from '../db.js';
-import type { Session, Group, GroupItem } from '../types.js';
+import type { Session, Query } from '../types.js';
+import type { Predicate } from '../query/types.js';
 
 const BASE: Session = {
   id: 'sess-1',
@@ -45,17 +47,18 @@ const BASE: Session = {
   pwd: '/home/user/project',
 };
 
-const BASE_GROUP: Omit<Group, 'memberCount' | 'lastRunAt'> = {
-  id: 'g1',
-  name: 'Test Group',
-  pluginName: 'keyword',
-  pluginConfig: { keyword: 'react' },
+const PRED: Predicate = { plugin: { name: 'keyword', config: { keyword: 'react' } } };
+
+const BASE_QUERY: Omit<Query, 'memberCount' | 'lastRunAt'> = {
+  id: 'q1',
+  name: 'Test Query',
+  predicate: PRED,
   createdAt: 1000,
 };
 
 function clearDb() {
   const db = getDb();
-  db.exec('DELETE FROM group_items; DELETE FROM session_enrichments; DELETE FROM sessions; DELETE FROM groups;');
+  db.exec('DELETE FROM query_matches; DELETE FROM query_enrich; DELETE FROM sessions; DELETE FROM queries;');
 }
 
 describe('sessions', () => {
@@ -163,89 +166,96 @@ describe('sessions', () => {
   });
 });
 
-describe('groups', () => {
+describe('queries', () => {
   beforeEach(clearDb);
 
-  it('creates and retrieves a group', () => {
-    createGroup(BASE_GROUP);
-    const got = getGroup('g1');
+  it('creates and retrieves a query', () => {
+    createQuery(BASE_QUERY);
+    const got = getQuery('q1');
     expect(got).not.toBeNull();
-    expect(got!.name).toBe('Test Group');
-    expect(got!.pluginConfig).toEqual({ keyword: 'react' });
+    expect(got!.name).toBe('Test Query');
+    expect(got!.predicate).toEqual(PRED);
     expect(got!.memberCount).toBe(0);
   });
 
-  it('returns null for unknown group', () => {
-    expect(getGroup('nope')).toBeNull();
+  it('returns null for unknown query', () => {
+    expect(getQuery('nope')).toBeNull();
   });
 
-  it('listGroups returns all groups ordered by createdAt desc', () => {
-    createGroup({ ...BASE_GROUP, id: 'g1', createdAt: 1000 });
-    createGroup({ ...BASE_GROUP, id: 'g2', name: 'G2', createdAt: 2000 });
-    const list = listGroups();
+  it('listQueries returns all queries ordered by createdAt desc', () => {
+    createQuery({ ...BASE_QUERY, id: 'q1', createdAt: 1000 });
+    createQuery({ ...BASE_QUERY, id: 'q2', name: 'Q2', createdAt: 2000 });
+    const list = listQueries();
     expect(list).toHaveLength(2);
-    expect(list[0].id).toBe('g2');
+    expect(list[0].id).toBe('q2');
   });
 
-  it('deleteGroup removes the group', () => {
-    createGroup(BASE_GROUP);
-    deleteGroup('g1');
-    expect(getGroup('g1')).toBeNull();
-    expect(listGroups()).toHaveLength(0);
+  it('deleteQuery removes the query', () => {
+    createQuery(BASE_QUERY);
+    deleteQuery('q1');
+    expect(getQuery('q1')).toBeNull();
+    expect(listQueries()).toHaveLength(0);
   });
 
-  it('markGroupRun updates lastRunAt', () => {
-    createGroup(BASE_GROUP);
-    markGroupRun('g1', 7777);
-    expect(getGroup('g1')!.lastRunAt).toBe(7777);
+  it('markQueryRun updates lastRunAt', () => {
+    createQuery(BASE_QUERY);
+    markQueryRun('q1', 7777);
+    expect(getQuery('q1')!.lastRunAt).toBe(7777);
   });
 });
 
-describe('group membership', () => {
+describe('query matches', () => {
   beforeEach(clearDb);
 
   function setup() {
-    createGroup(BASE_GROUP);
+    createQuery(BASE_QUERY);
     upsertSession({ ...BASE, id: 's1' });
     upsertSession({ ...BASE, id: 's2' });
   }
 
-  it('upsertGroupItem and isGroupMember', () => {
+  it('upsertQueryMatch and isQueryMatch', () => {
     setup();
-    upsertGroupItem({ groupId: 'g1', sessionId: 's1', addedAt: 100 });
-    expect(isGroupMember('g1', 's1')).toBe(true);
-    expect(isGroupMember('g1', 's2')).toBe(false);
+    upsertQueryMatch({ queryId: 'q1', sessionId: 's1', addedAt: 100 });
+    expect(isQueryMatch('q1', 's1')).toBe(true);
+    expect(isQueryMatch('q1', 's2')).toBe(false);
   });
 
-  it('dropGroupItem removes membership', () => {
+  it('dropQueryMatch removes membership', () => {
     setup();
-    upsertGroupItem({ groupId: 'g1', sessionId: 's1', addedAt: 100 });
-    dropGroupItem('g1', 's1');
-    expect(isGroupMember('g1', 's1')).toBe(false);
+    upsertQueryMatch({ queryId: 'q1', sessionId: 's1', addedAt: 100 });
+    dropQueryMatch('q1', 's1');
+    expect(isQueryMatch('q1', 's1')).toBe(false);
   });
 
-  it('listGroupMembers returns sessions in group', () => {
+  it('listQueryMatches returns sessions in query', () => {
     setup();
-    upsertGroupItem({ groupId: 'g1', sessionId: 's1', addedAt: 100 });
-    const members = listGroupMembers('g1');
+    upsertQueryMatch({ queryId: 'q1', sessionId: 's1', addedAt: 100 });
+    const members = listQueryMatches('q1');
     expect(members).toHaveLength(1);
     expect(members[0].id).toBe('s1');
   });
 
   it('memberCount reflects current membership', () => {
     setup();
-    upsertGroupItem({ groupId: 'g1', sessionId: 's1', addedAt: 100 });
-    upsertGroupItem({ groupId: 'g1', sessionId: 's2', addedAt: 200 });
-    expect(getGroup('g1')!.memberCount).toBe(2);
-    dropGroupItem('g1', 's1');
-    expect(getGroup('g1')!.memberCount).toBe(1);
+    upsertQueryMatch({ queryId: 'q1', sessionId: 's1', addedAt: 100 });
+    upsertQueryMatch({ queryId: 'q1', sessionId: 's2', addedAt: 200 });
+    expect(getQuery('q1')!.memberCount).toBe(2);
+    dropQueryMatch('q1', 's1');
+    expect(getQuery('q1')!.memberCount).toBe(1);
   });
 
-  it('upsertGroupItem is idempotent (updates evidence)', () => {
+  it('upsertQueryMatch is idempotent (updates evidence)', () => {
     setup();
-    upsertGroupItem({ groupId: 'g1', sessionId: 's1', addedAt: 100, evidence: 'first' });
-    upsertGroupItem({ groupId: 'g1', sessionId: 's1', addedAt: 200, evidence: 'second' });
-    expect(getGroup('g1')!.memberCount).toBe(1);
+    upsertQueryMatch({ queryId: 'q1', sessionId: 's1', addedAt: 100, evidence: 'first' });
+    upsertQueryMatch({ queryId: 'q1', sessionId: 's1', addedAt: 200, evidence: 'second' });
+    expect(getQuery('q1')!.memberCount).toBe(1);
+  });
+
+  it('deleteQuery cascades to query_matches', () => {
+    setup();
+    upsertQueryMatch({ queryId: 'q1', sessionId: 's1', addedAt: 100 });
+    deleteQuery('q1');
+    expect(getDb().prepare('SELECT COUNT(*) AS c FROM query_matches').get()).toEqual({ c: 0 });
   });
 });
 
@@ -301,18 +311,18 @@ describe('stats aggregates', () => {
     expect(totals.sessionsLast7d).toBe(0);
     expect(totals.distinctPwds).toBe(0);
     expect(totals.distinctAgents).toBe(0);
-    expect(totals.groups).toBe(0);
+    expect(totals.queries).toBe(0);
   });
 
-  it('getStatsTotals counts sessions, agents, pwds, and groups', () => {
+  it('getStatsTotals counts sessions, agents, pwds, and queries', () => {
     upsertSession({ ...BASE, id: 's1', agent: 'a', pwd: '/x' });
     upsertSession({ ...BASE, id: 's2', agent: 'b', pwd: '/y' });
-    createGroup(BASE_GROUP);
+    createQuery(BASE_QUERY);
     const totals = getStatsTotals();
     expect(totals.sessions).toBe(2);
     expect(totals.distinctAgents).toBe(2);
     expect(totals.distinctPwds).toBe(2);
-    expect(totals.groups).toBe(1);
+    expect(totals.queries).toBe(1);
   });
 
   it('sessionsLast7d counts only sessions modified within 7 days', () => {
@@ -358,14 +368,14 @@ describe('stats aggregates', () => {
     expect(recent[1].id).toBe('s2');
   });
 
-  it('getTopGroups ranks by member count', () => {
-    createGroup({ ...BASE_GROUP, id: 'g1', name: 'Small' });
-    createGroup({ ...BASE_GROUP, id: 'g2', name: 'Large', createdAt: 2000 });
+  it('getTopQueries ranks by member count', () => {
+    createQuery({ ...BASE_QUERY, id: 'q1', name: 'Small' });
+    createQuery({ ...BASE_QUERY, id: 'q2', name: 'Large', createdAt: 2000 });
     upsertSession({ ...BASE, id: 's1' });
     upsertSession({ ...BASE, id: 's2' });
-    upsertGroupItem({ groupId: 'g2', sessionId: 's1', addedAt: 1 });
-    upsertGroupItem({ groupId: 'g2', sessionId: 's2', addedAt: 2 });
-    const tops = getTopGroups(5);
+    upsertQueryMatch({ queryId: 'q2', sessionId: 's1', addedAt: 1 });
+    upsertQueryMatch({ queryId: 'q2', sessionId: 's2', addedAt: 2 });
+    const tops = getTopQueries(5);
     expect(tops[0].name).toBe('Large');
     expect(tops[0].memberCount).toBe(2);
   });

@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { api, type Group, type PluginInfo } from '../api.js';
+import { api, type Query, type PluginInfo } from '../api.js';
 
 interface Props {
   plugin: PluginInfo;
-  onSaved: (g: Group) => void;
+  onSaved: (q: Query) => void;
   onOpenSession: (id: string) => void;
 }
 
@@ -37,8 +37,8 @@ export function PluginRunner({ plugin, onSaved, onOpenSession }: Props) {
     setSaving(true);
     try {
       const cfg = coerce(config, plugin);
-      const g = await api.createGroup({ name: name.trim(), pluginName: plugin.name, pluginConfig: cfg });
-      onSaved(g);
+      const q = await api.createQuery({ name: name.trim(), predicate: { plugin: { name: plugin.name, config: cfg } } });
+      onSaved(q);
     } finally {
       setSaving(false);
     }
@@ -91,15 +91,15 @@ export function PluginRunner({ plugin, onSaved, onOpenSession }: Props) {
                   ))}
                   {results.length > 200 && <div className="muted" style={{ marginTop: 6 }}>… and {results.length - 200} more</div>}
                 </div>
-                <h3 style={{ fontSize: 12, color: 'var(--text-muted)', margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Save as group</h3>
+                <h3 style={{ fontSize: 12, color: 'var(--text-muted)', margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Save as query</h3>
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center', maxWidth: 520 }}>
                   <input
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    placeholder="Group name"
+                    placeholder="Query name"
                     style={{ flex: 1, padding: '7px 9px', border: '1px solid var(--border-strong)', borderRadius: 6 }}
                   />
-                  <button className="btn" onClick={save} disabled={!name.trim() || saving}>{saving ? 'Saving…' : 'Save group'}</button>
+                  <button className="btn" onClick={save} disabled={!name.trim() || saving}>{saving ? 'Saving...' : 'Save query'}</button>
                 </div>
               </>
             )}

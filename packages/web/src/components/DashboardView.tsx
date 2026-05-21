@@ -6,7 +6,7 @@ interface Props {
   progress: { phase: string; total: number; done: number } | null;
   onReindex: () => void;
   onOpenSession: (id: string) => void;
-  onOpenGroup: (id: string) => void;
+  onOpenQuery: (id: string) => void;
   onOpenSessions: () => void;
 }
 
@@ -34,7 +34,7 @@ function basename(p: string): string {
   return parts.length ? parts[parts.length - 1] : p;
 }
 
-export function DashboardView({ progress, onReindex, onOpenSession, onOpenGroup, onOpenSessions }: Props) {
+export function DashboardView({ progress, onReindex, onOpenSession, onOpenQuery, onOpenSessions }: Props) {
   const [stats, setStats] = useState<Stats | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -64,7 +64,7 @@ export function DashboardView({ progress, onReindex, onOpenSession, onOpenGroup,
         <Stat label="Last 7 days" value={t.sessionsLast7d} />
         <Stat label="Projects" value={t.distinctPwds} />
         <Stat label="Agents" value={t.distinctAgents} />
-        <Stat label="Groups" value={t.groups} />
+        <Stat label="Queries" value={t.queries} />
       </div>
 
       <div className="dashboard-grid">
@@ -129,13 +129,13 @@ export function DashboardView({ progress, onReindex, onOpenSession, onOpenGroup,
         </div>
 
         <div className="card">
-          <div className="card-title">Top groups</div>
-          {stats.topGroups.length === 0 && <div className="muted">No groups yet</div>}
+          <div className="card-title">Top queries</div>
+          {stats.topQueries.length === 0 && <div className="muted">No queries yet</div>}
           <ul className="list">
-            {stats.topGroups.map((g) => (
-              <li key={g.id} className="list-row clickable" onClick={() => onOpenGroup(g.id)}>
-                <span className="ellipsis">{g.name}</span>
-                <span className="count">{g.memberCount}</span>
+            {stats.topQueries.map((q) => (
+              <li key={q.id} className="list-row clickable" onClick={() => onOpenQuery(q.id)}>
+                <span className="ellipsis">{q.name}</span>
+                <span className="count">{q.memberCount}</span>
               </li>
             ))}
           </ul>
