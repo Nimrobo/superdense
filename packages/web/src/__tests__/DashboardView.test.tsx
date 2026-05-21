@@ -1,135 +1,125 @@
-import React from 'react';
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, fireEvent, cleanup } from '@testing-library/react';
 import { DashboardView } from '../components/DashboardView.js';
 import * as apiModule from '../api.js';
 
 vi.mock('../api.js', () => ({
-  api: { stats: vi.fn() },
+  api: {
+    statsHeader: vi.fn(),
+    statsWindow: vi.fn(),
+    statsInsights: vi.fn(),
+  },
 }));
 
-vi.mock('recharts', async () => {
-  const { createElement } = await import('react');
-  return {
-    BarChart: ({ children }: { children?: React.ReactNode }) => createElement('div', { 'data-testid': 'bar-chart' }, children),
-    Bar: () => null,
-    CartesianGrid: () => null,
-    ResponsiveContainer: ({ children }: { children?: React.ReactNode }) => createElement('div', null, children),
-    Tooltip: () => null,
-    XAxis: () => null,
-    YAxis: () => null,
-  };
-});
-
-const mockStats = {
-  totals: { sessions: 42, sessionsLast7d: 10, distinctPwds: 5, distinctAgents: 3, queries: 2 },
-  lastIndexedAt: null,
-  perDay: [{ date: '2025-01-15', count: 5 }],
-  topPwds: [{ pwd: '/home/user/project', count: 15 }],
-  topQueries: [{ id: 'q1', name: 'My Query', memberCount: 8 }],
-  topTools: [{ tool: 'bash', count: 100 }],
+const mockHeader: apiModule.HeaderStats = {
+  totals: { sessions: 42, distinctPwds: 5, activeDays: 18, distinctAgents: 3 },
+  streaks: { current: 4, longest: 9, longestRange: { start: '2026-01-01', end: '2026-01-09' } },
+  contributions: Array.from({ length: 180 }).map((_, i) => ({
+    date: `2026-01-${String((i % 28) + 1).padStart(2, '0')}`,
+    count: i % 5,
+  })),
+  lastIndexedAt: Date.now() - 60_000,
   recentSessions: [
     {
       id: 's1',
       agent: 'claude-code',
       sessionId: 'abc',
       logPath: '/tmp/abc',
-      pwd: '/home',
+      pwd: '/home/u/project',
       firstPrompt: 'Fix the bug',
       modifiedAt: Date.now() - 30_000,
     },
   ],
+  topPwds: [{ pwd: '/home/u/project', count: 15 }],
+};
+
+const mockWindow: apiModule.WindowBundle = {
+  days: 7,
+  window: {
+    sessions: 12, projects: 3, activeDays: 5, avgPerActiveDay: 2.4,
+    adapterMix: [{ agent: 'claude-code', count: 8 }, { agent: 'codex', count: 4 }],
+    topClis: [{ cli: 'git', count: 30 }, { cli: 'gh', count: 12 }],
+    activeProjects: [{ pwd: '/home/u/project', count: 6, activeDays: 3, lastActiveAt: Date.now() }],
+    repeatedReturnProjects: [{ pwd: '/home/u/project', activeDays: 3, sessions: 6, lastActiveAt: Date.now() }],
+  },
+};
+
+const mockInsights: apiModule.Insights = {
+  hourDowHeatmap: Array.from({ length: 7 * 24 }).map((_, i) => ({
+    dow: Math.floor(i / 24), hour: i % 24, count: 0,
+  })),
+  workRhythm: { peakHour: null, mostConsistentWeekday: null },
+  comebackProjects: [],
+  dayKinds: [{ date: '2026-05-21', sessions: 3, pwds: 1, kind: 'focus' }],
+  personalRecords: { bestDay: { date: '2026-05-21', sessions: 8 }, mostCliInSession: null, longestSession: null },
 };
 
 const defaultProps = {
   progress: null as null,
   onReindex: vi.fn(),
   onOpenSession: vi.fn(),
-  onOpenQuery: vi.fn(),
   onOpenSessions: vi.fn(),
 };
 
 describe('DashboardView', () => {
   beforeEach(() => {
-    vi.mocked(apiModule.api.stats).mockResolvedValue(mockStats);
+    vi.mocked(apiModule.api.statsHeader).mockResolvedValue(mockHeader);
+    vi.mocked(apiModule.api.statsWindow).mockResolvedValue(mockWindow);
+    vi.mocked(apiModule.api.statsInsights).mockResolvedValue(mockInsights);
   });
 
   afterEach(() => cleanup());
 
   it('shows loading state before stats arrive', () => {
-    vi.mocked(apiModule.api.stats).mockImplementation(() => new Promise(() => {}));
+    vi.mocked(apiModule.api.statsHeader).mockImplementation(() => new Promise(() => {}));
     render(<DashboardView {...defaultProps} />);
-    expect(screen.getByText('Loading…')).toBeDefined();
+    expect(screen.getByText('Loading...')).toBeDefined();
   });
 
-  it('shows error state when api.stats fails', async () => {
-    vi.mocked(apiModule.api.stats).mockRejectedValue(new Error('Network error'));
+  it('shows error state when api.statsHeader fails', async () => {
+    vi.mocked(apiModule.api.statsHeader).mockRejectedValue(new Error('Network error'));
     render(<DashboardView {...defaultProps} />);
     await waitFor(() => {
-      expect(screen.getByText('Failed to load: Network error')).toBeDefined();
+      expect(screen.getByText(/Failed to load/)).toBeDefined();
     });
   });
 
-  it('displays session count in stat cards', async () => {
+  it('displays totals row values', async () => {
     render(<DashboardView {...defaultProps} />);
     await waitFor(() => {
-      expect(screen.getByText('Sessions')).toBeDefined();
       expect(screen.getByText('42')).toBeDefined();
     });
   });
 
-  it('displays top working directory basename', async () => {
+  it('renders the streak number', async () => {
     render(<DashboardView {...defaultProps} />);
     await waitFor(() => {
-      expect(screen.getByText('project')).toBeDefined();
+      expect(screen.getByText('4')).toBeDefined();
+      expect(screen.getByText(/day streak/)).toBeDefined();
     });
   });
 
-  it('displays query name', async () => {
+  it('renders the 7/14/30 segmented toggle and switches', async () => {
+    render(<DashboardView {...defaultProps} />);
+    await waitFor(() => screen.getByText('7D'));
+    fireEvent.click(screen.getByText('14D'));
+    await waitFor(() => {
+      expect(vi.mocked(apiModule.api.statsWindow)).toHaveBeenCalledWith(14);
+    });
+  });
+
+  it('renders the empty state when there are zero sessions', async () => {
+    vi.mocked(apiModule.api.statsHeader).mockResolvedValue({
+      ...mockHeader,
+      totals: { sessions: 0, distinctPwds: 0, activeDays: 0, distinctAgents: 0 },
+    });
     render(<DashboardView {...defaultProps} />);
     await waitFor(() => {
-      expect(screen.getByText('My Query')).toBeDefined();
+      expect(screen.getByText('No sessions yet')).toBeDefined();
     });
   });
 
-  it('displays recent session first prompt', async () => {
-    render(<DashboardView {...defaultProps} />);
-    await waitFor(() => {
-      expect(screen.getByText('Fix the bug')).toBeDefined();
-    });
-  });
-
-  it('shows idle status when progress is null', async () => {
-    render(<DashboardView {...defaultProps} progress={null} />);
-    await waitFor(() => {
-      expect(screen.getByText('idle')).toBeDefined();
-    });
-  });
-
-  it('shows indexing progress when busy', async () => {
-    render(<DashboardView {...defaultProps} progress={{ phase: 'discover', total: 100, done: 42 }} />);
-    await waitFor(() => {
-      expect(screen.getByText('discover 42/100')).toBeDefined();
-    });
-  });
-
-  it('disables Reindex button when indexing is in progress', async () => {
-    render(<DashboardView {...defaultProps} progress={{ phase: 'discover', total: 10, done: 5 }} />);
-    await waitFor(() => {
-      const btn = screen.getByRole('button', { name: 'Reindex' });
-      expect((btn as HTMLButtonElement).disabled).toBe(true);
-    });
-  });
-
-  it('calls onOpenQuery when a query row is clicked', async () => {
-    const onOpenQuery = vi.fn();
-    render(<DashboardView {...defaultProps} onOpenQuery={onOpenQuery} />);
-    await waitFor(() => screen.getByText('My Query'));
-    fireEvent.click(screen.getByText('My Query'));
-    expect(onOpenQuery).toHaveBeenCalledWith('q1');
-  });
-
-  it('calls onOpenSession when a recent session row is clicked', async () => {
+  it('clicking a recent session calls onOpenSession', async () => {
     const onOpenSession = vi.fn();
     render(<DashboardView {...defaultProps} onOpenSession={onOpenSession} />);
     await waitFor(() => screen.getByText('Fix the bug'));
@@ -137,18 +127,13 @@ describe('DashboardView', () => {
     expect(onOpenSession).toHaveBeenCalledWith('s1');
   });
 
-  it('shows dash for lastIndexedAt when null', async () => {
+  it('renders revised dashboard sections and no top queries', async () => {
     render(<DashboardView {...defaultProps} />);
-    await waitFor(() => {
-      expect(screen.getByText('—')).toBeDefined();
-    });
-  });
-
-  it('shows no queries placeholder', async () => {
-    vi.mocked(apiModule.api.stats).mockResolvedValue({ ...mockStats, topQueries: [] });
-    render(<DashboardView {...defaultProps} />);
-    await waitFor(() => {
-      expect(screen.getByText('No queries yet')).toBeDefined();
-    });
+    await waitFor(() => screen.getByText(/Contribution heatmap/));
+    expect(screen.getByText('Work rhythm')).toBeDefined();
+    expect(screen.getByText('Project momentum')).toBeDefined();
+    expect(screen.getByText('Focus pattern')).toBeDefined();
+    expect(screen.getByText('Personal records')).toBeDefined();
+    expect(screen.queryByText('Top queries')).toBeNull();
   });
 });

@@ -61,6 +61,50 @@ export interface Query {
   memberCount?: number;
 }
 
+export interface HeaderStats {
+  totals: { sessions: number; distinctPwds: number; activeDays: number; distinctAgents: number };
+  streaks: {
+    current: number;
+    longest: number;
+    longestRange: { start: string; end: string } | null;
+  };
+  contributions: Array<{ date: string; count: number }>;
+  lastIndexedAt: number | null;
+  recentSessions: Session[];
+  topPwds: Array<{ pwd: string; count: number }>;
+}
+
+export interface WindowMetrics {
+  sessions: number;
+  projects: number;
+  activeDays: number;
+  avgPerActiveDay: number;
+  adapterMix: Array<{ agent: string; count: number }>;
+  topClis: Array<{ cli: string; count: number }>;
+  activeProjects: Array<{ pwd: string; count: number; activeDays: number; lastActiveAt: number }>;
+  repeatedReturnProjects: Array<{ pwd: string; activeDays: number; sessions: number; lastActiveAt: number }>;
+}
+
+export interface WindowBundle {
+  days: number;
+  window: WindowMetrics;
+}
+
+export interface Insights {
+  hourDowHeatmap: Array<{ dow: number; hour: number; count: number }>;
+  workRhythm: {
+    peakHour: { dow: number; hour: number; count: number } | null;
+    mostConsistentWeekday: { dow: number; activeWeeks: number } | null;
+  };
+  comebackProjects: Array<{ pwd: string; dormantDays: number; resumedAt: number; sessions7d: number }>;
+  dayKinds: Array<{ date: string; sessions: number; pwds: number; kind: 'focus' | 'scatter' | 'normal' }>;
+  personalRecords: {
+    bestDay: { date: string; sessions: number } | null;
+    mostCliInSession: { sessionId: string; total: number } | null;
+    longestSession: { sessionId: string; durationMs: number } | null;
+  };
+}
+
 export interface Stats {
   totals: {
     sessions: number;
@@ -123,4 +167,7 @@ export const api = {
   reindex: (full = false) => j<{ ok: boolean }>(`/api/reindex${full ? '?full=1' : ''}`, { method: 'POST' }),
   progress: () => j<{ phase: string; total: number; done: number }>('/api/progress'),
   stats: () => j<Stats>('/api/stats'),
+  statsHeader: () => j<HeaderStats>('/api/stats/header'),
+  statsWindow: (days: 7 | 14 | 30) => j<WindowBundle>(`/api/stats/window?days=${days}`),
+  statsInsights: () => j<Insights>('/api/stats/insights'),
 };
