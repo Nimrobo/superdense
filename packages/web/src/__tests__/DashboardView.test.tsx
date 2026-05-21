@@ -26,6 +26,7 @@ const mockHeader: apiModule.HeaderStats = {
       sessionId: 'abc',
       logPath: '/tmp/abc',
       pwd: '/home/u/project',
+      projectKey: '/home/u/project',
       firstPrompt: 'Fix the bug',
       modifiedAt: Date.now() - 30_000,
     },

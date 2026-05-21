@@ -6,6 +6,7 @@ export interface Session {
   sessionId: string;
   logPath: string;
   pwd: string;
+  projectKey: string;
   firstPrompt?: string | null;
   summary?: string | null;
   messageCount?: number | null;

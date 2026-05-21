@@ -1,4 +1,5 @@
 import type { GroupingPlugin } from '../types.js';
+import { resolveProjectKey } from '../util/project-key.js';
 
 export const byPwdAndTool: GroupingPlugin = {
   name: 'by-pwd-and-tool',
@@ -11,7 +12,7 @@ export const byPwdAndTool: GroupingPlugin = {
   ],
   prefilter(session, config) {
     const target = String(config.pwd ?? '');
-    return !!target && session.pwd === target;
+    return !!target && session.projectKey === resolveProjectKey(target);
   },
   async matches(_session, jsonlPath, config, helpers) {
     const keyword = String(config.keyword ?? '');

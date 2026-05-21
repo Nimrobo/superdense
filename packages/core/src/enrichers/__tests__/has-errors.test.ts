@@ -9,6 +9,7 @@ const baseSession: Session = {
   sessionId: 'abc',
   logPath: '/tmp/abc.jsonl',
   pwd: '/home/user',
+  projectKey: '/home/user',
 };
 
 function makeCtx(events: Partial<TranscriptEvent>[]): EnricherContext {

@@ -17,6 +17,7 @@ const session = {
   sessionId: 'session-1',
   logPath: 'unknown-source',
   pwd: '/repo',
+  projectKey: '/repo',
 };
 
 async function* emptyEvents() {

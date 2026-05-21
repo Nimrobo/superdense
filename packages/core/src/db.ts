@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import { DB_PATH, ensureRoad42Dirs } from './paths.js';
 import type { Predicate } from './query/types.js';
 import type { Query, QueryMatch, Session } from './types.js';
+import { resolveProjectKey } from './util/project-key.js';
 
 let dbInstance: Database.Database | null = null;
 
@@ -32,7 +33,7 @@ export function _resetDbForTests(): void {
   dbInstance = null;
 }
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 function migrate(db: Database.Database): void {
   db.exec(`
@@ -42,6 +43,7 @@ function migrate(db: Database.Database): void {
       session_id      TEXT NOT NULL,
       log_path        TEXT NOT NULL,
       pwd             TEXT NOT NULL,
+      project_key     TEXT NOT NULL DEFAULT '',
       first_prompt    TEXT,
       summary         TEXT,
       message_count   INTEGER,
@@ -85,9 +87,13 @@ function migrate(db: Database.Database): void {
   `);
 
   const currentVersion = (db.pragma('user_version', { simple: true }) as number) ?? 0;
-  if (currentVersion < SCHEMA_VERSION) {
+  if (currentVersion < 1) {
     runDataMigrationV1(db);
-    db.pragma(`user_version = ${SCHEMA_VERSION}`);
+    db.pragma('user_version = 1');
+  }
+  if (currentVersion < 2) {
+    runDataMigrationV2(db);
+    db.pragma('user_version = 2');
   }
 }
 
@@ -96,6 +102,11 @@ function tableExists(db: Database.Database, name: string): boolean {
     .prepare("SELECT 1 AS x FROM sqlite_master WHERE type='table' AND name = ?")
     .get(name) as { x: number } | undefined;
   return !!row;
+}
+
+function columnExists(db: Database.Database, table: string, column: string): boolean {
+  const rows = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  return rows.some((r) => r.name === column);
 }
 
 function runDataMigrationV1(db: Database.Database): void {
@@ -147,12 +158,30 @@ function runDataMigrationV1(db: Database.Database): void {
   migrateTx();
 }
 
+function runDataMigrationV2(db: Database.Database): void {
+  const migrateTx = db.transaction(() => {
+    if (!columnExists(db, 'sessions', 'project_key')) {
+      db.exec("ALTER TABLE sessions ADD COLUMN project_key TEXT NOT NULL DEFAULT '';");
+    }
+
+    const rows = db.prepare('SELECT id, pwd FROM sessions').all() as Array<{ id: string; pwd: string }>;
+    const update = db.prepare('UPDATE sessions SET project_key = ? WHERE id = ?');
+    for (const row of rows) update.run(resolveProjectKey(row.pwd), row.id);
+  });
+  migrateTx();
+}
+
+export function _migrateForTests(db: Database.Database): void {
+  migrate(db);
+}
+
 interface SessionRow {
   id: string;
   agent: string;
   session_id: string;
   log_path: string;
   pwd: string;
+  project_key: string;
   first_prompt: string | null;
   summary: string | null;
   message_count: number | null;
@@ -171,6 +200,7 @@ function rowToSession(r: SessionRow): Session {
     sessionId: r.session_id,
     logPath: r.log_path,
     pwd: r.pwd,
+    projectKey: r.project_key || resolveProjectKey(r.pwd),
     firstPrompt: r.first_prompt,
     summary: r.summary,
     messageCount: r.message_count,
@@ -187,11 +217,11 @@ export function upsertSession(s: Session): void {
   const db = getDb();
   db.prepare(`
     INSERT INTO sessions (
-      id, agent, session_id, log_path, pwd, first_prompt, summary,
+      id, agent, session_id, log_path, pwd, project_key, first_prompt, summary,
       message_count, git_branch, created_at, modified_at, is_sidechain,
       file_mtime, last_indexed_at
     ) VALUES (
-      @id, @agent, @sessionId, @logPath, @pwd, @firstPrompt, @summary,
+      @id, @agent, @sessionId, @logPath, @pwd, @projectKey, @firstPrompt, @summary,
       @messageCount, @gitBranch, @createdAt, @modifiedAt, @isSidechain,
       @fileMtime, @lastIndexedAt
     )
@@ -200,6 +230,7 @@ export function upsertSession(s: Session): void {
       session_id=excluded.session_id,
       log_path=excluded.log_path,
       pwd=excluded.pwd,
+      project_key=excluded.project_key,
       first_prompt=excluded.first_prompt,
       summary=excluded.summary,
       message_count=excluded.message_count,
@@ -215,6 +246,7 @@ export function upsertSession(s: Session): void {
     sessionId: s.sessionId,
     logPath: s.logPath,
     pwd: s.pwd,
+    projectKey: resolveProjectKey(s.pwd),
     firstPrompt: s.firstPrompt ?? null,
     summary: s.summary ?? null,
     messageCount: s.messageCount ?? null,
@@ -438,7 +470,9 @@ export function getStatsTotals(now: number = Date.now()): StatsTotals {
   const sessionsLast7d = (db
     .prepare('SELECT COUNT(*) AS c FROM sessions WHERE modified_at IS NOT NULL AND modified_at >= ?')
     .get(sevenDaysAgo) as { c: number }).c;
-  const distinctPwds = (db.prepare('SELECT COUNT(DISTINCT pwd) AS c FROM sessions').get() as { c: number }).c;
+  const distinctPwds = (db
+    .prepare("SELECT COUNT(DISTINCT COALESCE(NULLIF(project_key, ''), pwd)) AS c FROM sessions")
+    .get() as { c: number }).c;
   const distinctAgents = (db.prepare('SELECT COUNT(DISTINCT agent) AS c FROM sessions').get() as { c: number }).c;
   const queries = (db.prepare('SELECT COUNT(*) AS c FROM queries').get() as { c: number }).c;
   return { sessions, sessionsLast7d, distinctPwds, distinctAgents, queries };
@@ -466,8 +500,9 @@ export function getSessionsPerDay(days: number): Array<{ date: string; count: nu
 
 export function getTopPwds(limit: number): Array<{ pwd: string; count: number }> {
   const rows = getDb().prepare(`
-    SELECT pwd, COUNT(*) AS c FROM sessions
-     GROUP BY pwd ORDER BY c DESC LIMIT ?
+    SELECT COALESCE(NULLIF(project_key, ''), pwd) AS pwd, COUNT(*) AS c FROM sessions
+     GROUP BY COALESCE(NULLIF(project_key, ''), pwd)
+     ORDER BY c DESC LIMIT ?
   `).all(limit) as Array<{ pwd: string; c: number }>;
   return rows.map((r) => ({ pwd: r.pwd, count: r.c }));
 }

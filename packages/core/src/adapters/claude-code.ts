@@ -5,7 +5,9 @@ import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
 import type { Adapter, DiscoveredSession, TranscriptEvent } from '../types.js';
 
-const CLAUDE_PROJECTS_DIR = process.env.CLAUDE_PROJECTS_DIR ?? join(homedir(), '.claude', 'projects');
+function claudeProjectsDir(): string {
+  return process.env.CLAUDE_PROJECTS_DIR ?? join(homedir(), '.claude', 'projects');
+}
 
 interface IndexEntry {
   sessionId: string;
@@ -32,52 +34,62 @@ function toMs(s?: string): number | undefined {
   return Number.isFinite(t) ? t : undefined;
 }
 
-function decodeProjectDir(dir: string): string {
-  // Claude Code encodes a project path by replacing "/" with "-". The first
-  // character is "-" representing the leading "/". This is ambiguous when the
-  // path itself contains hyphens, but it's the best we can do without the real cwd.
+export function decodeProjectDir(dir: string): string {
+  // Claude Code encodes a project path by replacing "/" with "-". This is
+  // lossy whenever the original path contains hyphens. Prefer the real cwd
+  // from inside the JSONL transcript (see scanJsonlHead); only use this as a
+  // last-resort fallback.
   if (!dir.startsWith('-')) return dir;
   return '/' + dir.slice(1).split('-').join('/');
 }
 
-async function firstPromptFromJsonl(logPath: string, maxLines = 50): Promise<string | undefined> {
+interface JsonlHead {
+  firstPrompt?: string;
+  cwd?: string;
+}
+
+export async function scanJsonlHead(logPath: string, maxLines = 50): Promise<JsonlHead> {
   return new Promise((resolve) => {
     let lines = 0;
-    let found: string | undefined;
+    const result: JsonlHead = {};
     let stream;
     try {
       stream = createReadStream(logPath, { encoding: 'utf8' });
     } catch {
-      resolve(undefined);
+      resolve(result);
       return;
     }
     const rl = createInterface({ input: stream, crlfDelay: Infinity });
-    const done = (): void => { try { rl.close(); stream.destroy(); } catch { /* ignore */ } resolve(found); };
+    const done = (): void => { try { rl.close(); stream.destroy(); } catch { /* ignore */ } resolve(result); };
     rl.on('line', (line) => {
-      if (++lines > maxLines || found) { done(); return; }
+      if (++lines > maxLines) { done(); return; }
       if (!line.trim()) return;
       try {
         const obj = JSON.parse(line);
-        const m = obj?.message;
-        if ((obj?.type === 'user' || m?.role === 'user')) {
-          const content = m?.content;
-          if (typeof content === 'string' && content.trim()) {
-            found = content.trim().slice(0, 500);
-            done();
-          } else if (Array.isArray(content)) {
-            for (const part of content) {
-              if (part?.type === 'text' && typeof part.text === 'string' && part.text.trim()) {
-                found = part.text.trim().slice(0, 500);
-                done();
-                break;
+        if (!result.cwd && typeof obj?.cwd === 'string' && obj.cwd.startsWith('/')) {
+          result.cwd = obj.cwd;
+        }
+        if (!result.firstPrompt) {
+          const m = obj?.message;
+          if ((obj?.type === 'user' || m?.role === 'user')) {
+            const content = m?.content;
+            if (typeof content === 'string' && content.trim()) {
+              result.firstPrompt = content.trim().slice(0, 500);
+            } else if (Array.isArray(content)) {
+              for (const part of content) {
+                if (part?.type === 'text' && typeof part.text === 'string' && part.text.trim()) {
+                  result.firstPrompt = part.text.trim().slice(0, 500);
+                  break;
+                }
               }
             }
           }
         }
+        if (result.cwd && result.firstPrompt) done();
       } catch { /* ignore */ }
     });
-    rl.on('close', () => resolve(found));
-    rl.on('error', () => resolve(undefined));
+    rl.on('close', () => resolve(result));
+    rl.on('error', () => resolve(result));
   });
 }
 
@@ -87,15 +99,20 @@ export const claudeCodeAdapter: Adapter = {
   async discover(): Promise<DiscoveredSession[]> {
     const out: DiscoveredSession[] = [];
     const seen = new Set<string>();
+    const projectsDir = claudeProjectsDir();
     let projectDirs: string[];
     try {
-      projectDirs = await readdir(CLAUDE_PROJECTS_DIR);
+      projectDirs = await readdir(projectsDir);
     } catch {
       return out;
     }
     for (const dir of projectDirs) {
-      const projectPath = join(CLAUDE_PROJECTS_DIR, dir);
+      const projectPath = join(projectsDir, dir);
       const pwdGuess = decodeProjectDir(dir);
+      // Resolved once per project dir from the first JSONL we successfully
+      // scan: every transcript under a Claude Code project dir shares the
+      // same cwd, so we don't need to re-derive it per file.
+      let projectCwd: string | undefined;
 
       // 1) sessions-index.json (Claude Code's own index, when present)
       try {
@@ -104,10 +121,15 @@ export const claudeCodeAdapter: Adapter = {
         for (const e of parsed.entries ?? []) {
           if (!e.sessionId || !e.fullPath) continue;
           seen.add(e.sessionId);
+          let pwd = e.projectPath;
+          if (!pwd) {
+            if (!projectCwd) projectCwd = (await scanJsonlHead(e.fullPath)).cwd;
+            pwd = projectCwd ?? pwdGuess;
+          }
           out.push({
             sessionId: e.sessionId,
             logPath: e.fullPath,
-            pwd: e.projectPath ?? pwdGuess,
+            pwd,
             firstPrompt: e.firstPrompt,
             summary: e.summary,
             messageCount: e.messageCount,
@@ -130,12 +152,13 @@ export const claudeCodeAdapter: Adapter = {
         const logPath = join(projectPath, f);
         let mtime: number | undefined;
         try { mtime = (await stat(logPath)).mtimeMs; } catch { continue; }
-        const firstPrompt = await firstPromptFromJsonl(logPath);
+        const head = await scanJsonlHead(logPath);
+        if (!projectCwd && head.cwd) projectCwd = head.cwd;
         out.push({
           sessionId,
           logPath,
-          pwd: pwdGuess,
-          firstPrompt,
+          pwd: head.cwd ?? projectCwd ?? pwdGuess,
+          firstPrompt: head.firstPrompt,
           createdAt: mtime,
           modifiedAt: mtime,
         });

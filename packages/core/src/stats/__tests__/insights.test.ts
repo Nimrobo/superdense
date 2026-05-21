@@ -20,6 +20,7 @@ const BASE: Session = {
   sessionId: 'abc',
   logPath: '/tmp/x.jsonl',
   pwd: '/proj/a',
+  projectKey: '/proj/a',
 };
 
 function clearDb() {
@@ -40,6 +41,17 @@ describe('getComebackProjects', () => {
     expect(items).toHaveLength(1);
     expect(items[0]!.pwd).toBe('/proj/a');
     expect(items[0]!.dormantDays).toBeGreaterThanOrEqual(14);
+  });
+
+  it('groups Conductor sibling workspaces for comeback projects', () => {
+    const now = utcNoon(2026, 5, 21);
+    upsertSession({ ...BASE, id: 'old', pwd: '/Users/x/conductor/workspaces/road42/provo-v1', modifiedAt: now - 40 * DAY });
+    upsertSession({ ...BASE, id: 'new', pwd: '/Users/x/conductor/workspaces/road42/provo-v2', modifiedAt: now - 2 * DAY });
+
+    const items = getComebackProjects(now);
+
+    expect(items).toHaveLength(1);
+    expect(items[0]!.pwd).toBe('/Users/x/conductor/workspaces/road42');
   });
 
   it('does not flag projects with a recent prior session', () => {
@@ -87,5 +99,16 @@ describe('getDayKinds', () => {
     upsertSession({ ...BASE, id: 's3', pwd: '/proj/c', modifiedAt: now - 1 * DAY });
     const kinds = getDayKinds(now, 7);
     expect(kinds.some((k) => k.kind === 'scatter')).toBe(true);
+  });
+
+  it('uses projectKey for focus and scatter project counts', () => {
+    const now = utcNoon(2026, 5, 21);
+    upsertSession({ ...BASE, id: 's1', pwd: '/Users/x/conductor/workspaces/road42/provo-v1', modifiedAt: now - 1 * DAY });
+    upsertSession({ ...BASE, id: 's2', pwd: '/Users/x/conductor/workspaces/road42/provo-v2', modifiedAt: now - 1 * DAY });
+    upsertSession({ ...BASE, id: 's3', pwd: '/Users/x/conductor/workspaces/road42/provo-v3', modifiedAt: now - 1 * DAY });
+
+    const kinds = getDayKinds(now, 7);
+
+    expect(kinds.some((k) => k.kind === 'focus' && k.pwds === 1)).toBe(true);
   });
 });

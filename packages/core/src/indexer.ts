@@ -16,6 +16,7 @@ import {
 import { GROUPS_DIR } from './paths.js';
 import { runQueryEvaluation } from './queryeval.js';
 import type { Session } from './types.js';
+import { resolveProjectKey } from './util/project-key.js';
 
 export interface IndexProgress {
   phase: 'discover' | 'evaluate' | 'idle';
@@ -49,6 +50,7 @@ export async function runDiscovery(): Promise<{ discovered: number }> {
         sessionId: d.sessionId,
         logPath: d.logPath,
         pwd: d.pwd,
+        projectKey: resolveProjectKey(d.pwd),
         firstPrompt: d.firstPrompt ?? null,
         summary: d.summary ?? null,
         messageCount: d.messageCount ?? null,
