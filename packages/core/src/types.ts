@@ -46,6 +46,7 @@ export interface Adapter {
   name: string;
   discover(): Promise<DiscoveredSession[]>;
   iterEvents(logPath: string): AsyncIterable<TranscriptEvent>;
+  sourceMtime?(session: DiscoveredSession): Promise<number | undefined>;
 }
 
 export interface PluginHelpers {

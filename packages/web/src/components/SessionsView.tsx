@@ -34,7 +34,7 @@ export function SessionsView({ search, onOpen }: Props) {
         {loading && <div className="empty">Loading…</div>}
         {!loading && items.length === 0 && (
           <div className="empty">
-            No sessions yet. Click <b>Reindex</b> in the sidebar to scan <span className="mono">~/.claude/projects</span>.
+            No sessions yet. Click <b>Reindex</b> in the sidebar to scan local agent sessions.
           </div>
         )}
         {!loading && items.map((s) => <SessionCard key={s.id} session={s} onClick={() => onOpen(s.id)} />)}

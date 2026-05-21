@@ -1,11 +1,6 @@
-import { claudeCodeAdapter } from '../adapters/claude-code.js';
+import { iterSessionEvents } from '../adapters/index.js';
 import { listAllSessionsForBackfill } from '../db.js';
-import type { PluginHelpers } from '../types.js';
 import { loadPlugins } from './index.js';
-
-const helpers: PluginHelpers = {
-  iterEvents: (p) => claudeCodeAdapter.iterEvents(p),
-};
 
 export async function previewPlugin(
   pluginName: string,
@@ -21,6 +16,7 @@ export async function previewPlugin(
   for (const s of sessions) {
     if (plugin.prefilter && !plugin.prefilter(s, config)) continue;
     try {
+      const helpers = { iterEvents: () => iterSessionEvents(s) };
       const r = await plugin.matches(s, s.logPath, config, helpers);
       const matched = r === true || (typeof r === 'object' && r.match === true);
       if (matched) {

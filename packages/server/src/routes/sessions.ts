@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { claudeCodeAdapter, countSessions, getAdapter, getSession, listSessions } from '@road42/core';
+import { countSessions, getSession, iterSessionEvents, listSessions } from '@road42/core';
 
 export async function registerSessionsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/sessions', async (req) => {
@@ -26,11 +26,10 @@ export async function registerSessionsRoutes(app: FastifyInstance): Promise<void
     const offset = q.offset ? parseInt(q.offset, 10) || 0 : 0;
     const s = getSession(id);
     if (!s) { reply.status(404); return { error: 'not found' }; }
-    const adapter = getAdapter(s.agent) ?? claudeCodeAdapter;
     const events: unknown[] = [];
     let i = 0;
     try {
-      for await (const ev of adapter.iterEvents(s.logPath)) {
+      for await (const ev of iterSessionEvents(s)) {
         if (i >= offset && events.length < limit) events.push(ev);
         i++;
         if (events.length >= limit) break;
