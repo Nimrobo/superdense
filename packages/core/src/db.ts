@@ -592,6 +592,46 @@ export function listRecentSessions(limit: number): Session[] {
   return rows.map(rowToSession);
 }
 
+export interface InsightRunRow {
+  sessionId: string;
+  insightName: string;
+  runId: string;
+  version: number;
+  answer: string | null;
+  computedAt: number;
+  session: Session;
+}
+
+export function listInsightRuns(limit = 200): InsightRunRow[] {
+  const rows = getDb().prepare(`
+    SELECT s.*, qe.value AS value, qe.computed_at AS computed_at
+      FROM query_enrich qe
+      JOIN sessions s ON s.id = qe.session_id
+     WHERE qe.name = 'insight_run' AND qe.value IS NOT NULL AND qe.value != 'null'
+     ORDER BY COALESCE(s.modified_at, qe.computed_at) DESC
+     LIMIT ?
+  `).all(limit) as Array<SessionRow & { value: string; computed_at: number }>;
+
+  const out: InsightRunRow[] = [];
+  for (const r of rows) {
+    let parsedRaw: unknown = null;
+    try { parsedRaw = JSON.parse(r.value); } catch { parsedRaw = null; }
+    if (!parsedRaw || typeof parsedRaw !== 'object') continue;
+    const parsed = parsedRaw as Record<string, unknown>;
+    if (typeof parsed.name !== 'string' || !parsed.name) continue;
+    out.push({
+      sessionId: r.id,
+      insightName: parsed.name,
+      runId: typeof parsed.runId === 'string' ? parsed.runId : '',
+      version: typeof parsed.version === 'number' ? parsed.version : 1,
+      answer: typeof parsed.answer === 'string' ? parsed.answer : null,
+      computedAt: r.computed_at,
+      session: rowToSession(r),
+    });
+  }
+  return out;
+}
+
 export function getTopTools(limit: number): Array<{ tool: string; count: number }> {
   const rows = getDb().prepare(`
     SELECT je.key AS tool, SUM(CAST(je.value AS INTEGER)) AS c

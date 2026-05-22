@@ -63,3 +63,14 @@ export type {
   PersonalRecords,
   InsightsBundle,
 } from './stats/insights.js';
+export {
+  listInsightRecipes,
+  getInsightRecipe,
+  loadInsightPromptBody,
+  assembleInsightPrompt,
+  parseInsightMarker,
+  extractAnswerSection,
+  clearInsightCache,
+  INSIGHT_MARKER_VERSION,
+} from './insights/index.js';
+export type { InsightRecipe, InsightMarker } from './insights/index.js';
