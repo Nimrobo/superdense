@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 import { DB_PATH, ensureRoad42Dirs } from './paths.js';
-import type { Predicate } from './query/types.js';
+import { normalizeQueryDefinition, type QueryDefinition } from './query/types.js';
 import type { Query, QueryMatch, Session } from './types.js';
 import { resolveProjectKey } from './util/project-key.js';
 
@@ -132,8 +132,12 @@ function runDataMigrationV1(db: Database.Database): void {
       );
       for (const g of oldGroups) {
         const cfg = g.plugin_config ? JSON.parse(g.plugin_config) : {};
-        const predicate: Predicate = { plugin: { name: g.plugin_name, config: cfg } };
-        insertQuery.run(g.id, g.name, JSON.stringify(predicate), g.created_at, g.last_run_at);
+        const filterName = g.plugin_name === 'by-user-prompt-keyword' ? 'user_prompt_contains' : g.plugin_name;
+        const definition: QueryDefinition = {
+          filters: { filter: { name: filterName, params: cfg } },
+          enrichers: [],
+        };
+        insertQuery.run(g.id, g.name, JSON.stringify(definition), g.created_at, g.last_run_at);
       }
     }
 
@@ -332,10 +336,12 @@ interface QueryRow {
 }
 
 function rowToQuery(r: QueryRow, memberCount?: number): Query {
+  const definition = normalizeQueryDefinition(JSON.parse(r.predicate));
   return {
     id: r.id,
     name: r.name,
-    predicate: JSON.parse(r.predicate) as Predicate,
+    filters: definition.filters,
+    enrichers: definition.enrichers ?? [],
     createdAt: r.created_at ?? 0,
     lastRunAt: r.last_run_at,
     memberCount,
@@ -343,14 +349,15 @@ function rowToQuery(r: QueryRow, memberCount?: number): Query {
 }
 
 export function createQuery(q: Omit<Query, 'memberCount' | 'lastRunAt'>): void {
+  const definition: QueryDefinition = { filters: q.filters, enrichers: q.enrichers ?? [] };
   getDb().prepare(`
     INSERT INTO queries (id, name, predicate, created_at)
     VALUES (?, ?, ?, ?)
-  `).run(q.id, q.name, JSON.stringify(q.predicate), q.createdAt);
+  `).run(q.id, q.name, JSON.stringify(definition), q.createdAt);
 }
 
-export function updateQueryPredicate(id: string, predicate: Predicate): void {
-  getDb().prepare('UPDATE queries SET predicate = ? WHERE id = ?').run(JSON.stringify(predicate), id);
+export function updateQueryDefinition(id: string, definition: QueryDefinition): void {
+  getDb().prepare('UPDATE queries SET predicate = ? WHERE id = ?').run(JSON.stringify(definition), id);
 }
 
 export function listQueries(): Query[] {

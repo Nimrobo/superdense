@@ -3,7 +3,8 @@ export * from './db.js';
 export * from './paths.js';
 export * from './indexer.js';
 export { adapters, getAdapter, iterSessionEvents, claudeCodeAdapter, codexAdapter, openCodeAdapter } from './adapters/index.js';
-export { loadPlugins, getPlugin, clearPluginCache } from './plugins/index.js';
+export { loadFilters, getFilter, listFilters, listFilterCatalog, clearFilterCache } from './filters/index.js';
+export type { Filter, FilterCatalogItem, FilterContext, FilterResult } from './filters/types.js';
 export {
   listEnrichers,
   registerEnricher,
@@ -23,18 +24,16 @@ export {
   salienceCompactor,
 } from './compactors/index.js';
 export type { Compactor, CompactorContext } from './compactors/types.js';
-export { compilePredicate } from './query/compile.js';
-export { OPS_BY_TYPE, SESSION_COLUMNS, validatePredicate, ValidationError } from './query/validate.js';
+export { validateQueryDefinition, ValidationError } from './query/validate.js';
 export type {
-  Predicate,
-  PredicateLeaf,
-  FieldLeaf,
-  PluginLeaf,
-  Operator,
+  QueryDefinition,
+  QueryFilter,
+  FilterLeaf,
   IntOp,
   EnrichReturn,
 } from './query/types.js';
-export { runQueryEvaluation, backfillQuery, previewPredicate, evaluateQuery } from './queryeval.js';
+export { runQueryEvaluation, backfillQuery, previewQuery, evaluateQuery } from './queryeval.js';
+export type { EvaluateResult, QueryResultItem } from './queryeval.js';
 export {
   getHeaderTotals,
   getStreaks,

@@ -96,14 +96,14 @@ describe('api.reindex', () => {
 
 describe('api.createQuery', () => {
   it('sends POST with JSON body', async () => {
-    const predicate = { plugin: { name: 'keyword', config: { k: 'v' } } };
+    const query = { filters: { filter: { name: 'session', params: { agent: 'codex' } } }, enrichers: [] };
     mockOk({ id: 'q1' });
-    await api.createQuery({ name: 'Q', predicate });
+    await api.createQuery({ name: 'Q', ...query });
     expect(mockFetch).toHaveBeenCalledWith(
       '/api/queries',
       expect.objectContaining({
         method: 'POST',
-        body: JSON.stringify({ name: 'Q', predicate }),
+        body: JSON.stringify({ name: 'Q', ...query }),
       }),
     );
   });

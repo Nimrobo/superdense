@@ -41,9 +41,9 @@ export function QueryView({ id, onBack, onOpenSession, onDeleted }: Props) {
         <button className="btn secondary" onClick={del}>Delete</button>
       </div>
       <div className="work-body">
-        <h3 style={{ fontSize: 12, color: 'var(--text-muted)', margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Predicate</h3>
+        <h3 style={{ fontSize: 12, color: 'var(--text-muted)', margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Query</h3>
         <pre className="mono" style={{ fontSize: 12, background: 'var(--bg-soft)', padding: 10, borderRadius: 6, border: '1px solid var(--border)', overflowX: 'auto' }}>
-{JSON.stringify(query.predicate, null, 2)}
+{JSON.stringify({ filters: query.filters, enrichers: query.enrichers }, null, 2)}
         </pre>
         <h3 style={{ fontSize: 12, color: 'var(--text-muted)', margin: '18px 0 10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Matches</h3>
         {query.members.length === 0 && <div className="empty">No sessions matched this query.</div>}

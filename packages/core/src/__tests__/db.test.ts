@@ -5,7 +5,8 @@ vi.mock('../paths.js', () => ({
   DB_PATH: ':memory:',
   ROAD42_HOME: '/tmp/road42-test',
   GROUPS_DIR: '/tmp/road42-test/queries',
-  USER_PLUGINS_DIR: '/tmp/road42-test/plugins',
+  USER_FILTERS_DIR: '/tmp/road42-test/filters',
+  LEGACY_USER_FILTERS_DIR: '/tmp/road42-test/plugins',
   USER_ENRICHERS_DIR: '/tmp/road42-test/enrichers',
   ensureRoad42Dirs: vi.fn(),
 }));
@@ -42,7 +43,7 @@ import {
   _migrateForTests,
 } from '../db.js';
 import type { Session, Query } from '../types.js';
-import type { Predicate } from '../query/types.js';
+import type { QueryFilter } from '../query/types.js';
 
 const BASE: Session = {
   id: 'sess-1',
@@ -53,12 +54,13 @@ const BASE: Session = {
   projectKey: '/home/user/project',
 };
 
-const PRED: Predicate = { plugin: { name: 'keyword', config: { keyword: 'react' } } };
+const FILTERS: QueryFilter = { filter: { name: 'session', params: { agent: 'claude-code' } } };
 
 const BASE_QUERY: Omit<Query, 'memberCount' | 'lastRunAt'> = {
   id: 'q1',
   name: 'Test Query',
-  predicate: PRED,
+  filters: FILTERS,
+  enrichers: [],
   createdAt: 1000,
 };
 
@@ -237,7 +239,8 @@ describe('queries', () => {
     const got = getQuery('q1');
     expect(got).not.toBeNull();
     expect(got!.name).toBe('Test Query');
-    expect(got!.predicate).toEqual(PRED);
+    expect(got!.filters).toEqual(FILTERS);
+    expect(got!.enrichers).toEqual([]);
     expect(got!.memberCount).toBe(0);
   });
 

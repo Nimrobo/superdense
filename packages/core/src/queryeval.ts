@@ -5,74 +5,98 @@ import {
   getEnrichment,
   getQuery,
   listAllSessionsForBackfill,
+  listSessionEnrichments,
   listQueries,
   markQueryRun,
 } from './db.js';
-import { refreshActiveEnricherNames, runEnricherByNameForSession } from './enrichers/index.js';
-import { loadPlugins } from './plugins/index.js';
-import { compilePredicate } from './query/compile.js';
 import {
-  type FieldLeaf,
-  type Predicate,
+  listEnrichers,
+  loadUserEnrichers,
+  refreshActiveEnricherNames,
+  runEnricherByNameForSession,
+  runEnrichersForSession,
+} from './enrichers/index.js';
+import { loadFilters } from './filters/index.js';
+import type { Filter, FilterResult } from './filters/types.js';
+import {
+  type QueryDefinition,
+  type QueryFilter,
   isAnd,
-  isFieldLeaf,
+  isFilterLeaf,
   isNot,
   isOr,
-  isPluginLeaf,
 } from './query/types.js';
-import { collectReferencedEnrichers } from './query/validate.js';
-import type { GroupingPlugin, Query, Session } from './types.js';
+import { validateQueryDefinition } from './query/validate.js';
+import type { Query, Session } from './types.js';
 
-async function backfillEnricher(name: string): Promise<void> {
-  const sessions = listAllSessionsForBackfill();
-  for (const s of sessions) {
-    await runEnricherByNameForSession(name, s);
+async function runPostFilterEnrichers(names: string[], sessions: Session[]): Promise<void> {
+  for (const name of names) {
+    for (const session of sessions) {
+      await runEnricherByNameForSession(name, session);
+    }
   }
+}
+
+function requestedEnrichments(sessionId: string, names: string[]): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (names.length === 0) return out;
+  const all = listSessionEnrichments(sessionId);
+  const wanted = new Set(names);
+  for (const item of all) {
+    if (wanted.has(item.name)) out[item.name] = item.value;
+  }
+  return out;
+}
+
+export interface QueryResultItem {
+  sessionId: string;
+  evidence?: string | null;
+  enrichments?: Record<string, unknown>;
 }
 
 export interface EvaluateResult {
   matched: number;
+  items: QueryResultItem[];
 }
 
 export async function evaluateQuery(query: Query): Promise<EvaluateResult> {
-  for (const name of collectReferencedEnrichers(query.predicate)) {
-    await backfillEnricher(name);
-  }
+  await loadUserEnrichers();
+  const filters = await loadFilters();
+  const enrichers = listEnrichers();
+  const systemEnrichers = new Set(enrichers.filter((e) => e.alwaysRun).map((e) => e.name));
+  validateQueryDefinition({ filters: query.filters, enrichers: query.enrichers }, { filters, enrichers });
 
-  const compiled = compilePredicate(query.predicate);
   const now = Date.now();
   clearQueryMatches(query.id);
 
-  let matched = 0;
-  if (compiled.containsPluginLeaf) {
-    const plugins = await loadPlugins();
-    const pluginByName = new Map(plugins.map((p) => [p.name, p] as const));
-    const sessions = listAllSessionsForBackfill();
-    const insert = getDb().prepare(
-      'INSERT OR REPLACE INTO query_matches (query_id, session_id, added_at, evidence) VALUES (?, ?, ?, ?)',
-    );
-    for (const s of sessions) {
-      const r = await evalPredicateJs(query.predicate, s, pluginByName);
-      if (r.match) {
-        insert.run(query.id, s.id, now, r.evidence ?? null);
-        matched++;
-      }
+  const matchedSessions: Array<{ session: Session; evidence?: string | null }> = [];
+  const filterByName = new Map(filters.map((f) => [f.name, f] as const));
+  const sessions = listAllSessionsForBackfill();
+  const insert = getDb().prepare(
+    'INSERT OR REPLACE INTO query_matches (query_id, session_id, added_at, evidence) VALUES (?, ?, ?, ?)',
+  );
+
+  for (const session of sessions) {
+    await runEnrichersForSession(session);
+    const r = await evalQueryFilter(query.filters, session, filterByName, systemEnrichers);
+    if (r.match) {
+      insert.run(query.id, session.id, now, r.evidence ?? null);
+      matchedSessions.push({ session, evidence: r.evidence ?? null });
     }
-  } else {
-    const rows = getDb().prepare(compiled.sql).all(compiled.params) as Array<{ id: string }>;
-    const insert = getDb().prepare(
-      'INSERT OR REPLACE INTO query_matches (query_id, session_id, added_at, evidence) VALUES (?, ?, ?, ?)',
-    );
-    const tx = getDb().transaction((items: Array<{ id: string }>) => {
-      for (const r of items) insert.run(query.id, r.id, now, null);
-    });
-    tx(rows);
-    matched = rows.length;
   }
+
+  await runPostFilterEnrichers(query.enrichers, matchedSessions.map((m) => m.session));
 
   markQueryRun(query.id, now);
   refreshActiveEnricherNames();
-  return { matched };
+  return {
+    matched: matchedSessions.length,
+    items: matchedSessions.map(({ session, evidence }) => ({
+      sessionId: session.id,
+      evidence: evidence ?? null,
+      enrichments: requestedEnrichments(session.id, query.enrichers),
+    })),
+  };
 }
 
 export async function backfillQuery(queryId: string): Promise<EvaluateResult | null> {
@@ -90,57 +114,51 @@ export async function runQueryEvaluation(_opts: { full?: boolean } = {}): Promis
   return { evaluated: queries.length };
 }
 
-export async function previewPredicate(
-  predicate: Predicate,
+export async function previewQuery(
+  definition: QueryDefinition,
   opts: { limit?: number } = {},
 ): Promise<{
-  items: Array<{ sessionId: string; evidence?: string | null }>;
-  referencedEnrichers: string[];
-  missingEnrichments: string[];
+  items: QueryResultItem[];
+  enrichers: string[];
 }> {
-  const refs = collectReferencedEnrichers(predicate);
-  const db = getDb();
-  const missing: string[] = [];
-  for (const name of refs) {
-    const row = db.prepare('SELECT 1 AS x FROM query_enrich WHERE name = ? LIMIT 1').get(name) as { x: number } | undefined;
-    if (!row) missing.push(name);
-  }
+  await loadUserEnrichers();
+  const filters = await loadFilters();
+  const enrichers = listEnrichers();
+  const systemEnrichers = new Set(enrichers.filter((e) => e.alwaysRun).map((e) => e.name));
+  validateQueryDefinition(definition, { filters, enrichers });
 
-  const compiled = compilePredicate(predicate);
+  const filterByName = new Map(filters.map((f) => [f.name, f] as const));
   const limit = opts.limit ?? 500;
-  let items: Array<{ sessionId: string; evidence?: string | null }> = [];
+  const items: QueryResultItem[] = [];
+  const matchedSessions: Session[] = [];
 
-  if (compiled.containsPluginLeaf) {
-    const plugins = await loadPlugins();
-    const pluginByName = new Map(plugins.map((p) => [p.name, p] as const));
-    const sessions = listAllSessionsForBackfill();
-    for (const s of sessions) {
-      const r = await evalPredicateJs(predicate, s, pluginByName);
-      if (r.match) {
-        items.push({ sessionId: s.id, evidence: r.evidence ?? null });
-        if (items.length >= limit) break;
-      }
+  for (const session of listAllSessionsForBackfill()) {
+    await runEnrichersForSession(session);
+    const r = await evalQueryFilter(definition.filters, session, filterByName, systemEnrichers);
+    if (r.match) {
+      matchedSessions.push(session);
+      items.push({ sessionId: session.id, evidence: r.evidence ?? null });
+      if (items.length >= limit) break;
     }
-  } else {
-    const sql = `${compiled.sql} LIMIT ${Math.max(0, Math.floor(limit))}`;
-    const rows = db.prepare(sql).all(compiled.params) as Array<{ id: string }>;
-    items = rows.map((r) => ({ sessionId: r.id, evidence: null }));
   }
 
-  return { items, referencedEnrichers: Array.from(refs), missingEnrichments: missing };
+  const names = definition.enrichers ?? [];
+  await runPostFilterEnrichers(names, matchedSessions);
+  for (const item of items) item.enrichments = requestedEnrichments(item.sessionId, names);
+
+  return { items, enrichers: names };
 }
 
-// ---- JS evaluator (used when predicate contains a plugin leaf)
-
-async function evalPredicateJs(
-  p: Predicate,
-  s: Session,
-  pluginByName: Map<string, GroupingPlugin>,
+async function evalQueryFilter(
+  p: QueryFilter,
+  session: Session,
+  filterByName: Map<string, Filter>,
+  systemEnrichers: Set<string>,
 ): Promise<{ match: boolean; evidence?: string | null }> {
   if (isAnd(p)) {
     let evidence: string | null | undefined;
     for (const c of p.and) {
-      const r = await evalPredicateJs(c, s, pluginByName);
+      const r = await evalQueryFilter(c, session, filterByName, systemEnrichers);
       if (!r.match) return { match: false };
       if (r.evidence) evidence = r.evidence;
     }
@@ -148,119 +166,34 @@ async function evalPredicateJs(
   }
   if (isOr(p)) {
     for (const c of p.or) {
-      const r = await evalPredicateJs(c, s, pluginByName);
+      const r = await evalQueryFilter(c, session, filterByName, systemEnrichers);
       if (r.match) return r;
     }
     return { match: false };
   }
   if (isNot(p)) {
-    const r = await evalPredicateJs(p.not, s, pluginByName);
+    const r = await evalQueryFilter(p.not, session, filterByName, systemEnrichers);
     return { match: !r.match };
   }
-  if (isPluginLeaf(p)) {
-    const plugin = pluginByName.get(p.plugin.name);
-    if (!plugin) return { match: false };
+  if (isFilterLeaf(p)) {
+    const filter = filterByName.get(p.filter.name);
+    if (!filter) return { match: false };
     try {
-      if (plugin.prefilter && !plugin.prefilter(s, p.plugin.config)) return { match: false };
-      const helpers = { iterEvents: () => iterSessionEvents(s) };
-      const r = await plugin.matches(s, s.logPath, p.plugin.config, helpers);
-      const matched = r === true || (typeof r === 'object' && r.match === true);
-      const evidence = typeof r === 'object' && r !== null ? r.evidence ?? null : null;
-      return { match: matched, evidence };
+      const result = await filter.run({
+        session,
+        logPath: session.logPath,
+        iterEvents: () => iterSessionEvents(session),
+        getSystemEnrichment: (name) => systemEnrichers.has(name) ? getEnrichment(session.id, name) : null,
+      }, p.filter.params);
+      return normalizeFilterResult(result);
     } catch {
       return { match: false };
     }
   }
-  if (isFieldLeaf(p)) {
-    return { match: evalFieldJs(p, s) };
-  }
   return { match: false };
 }
 
-function evalFieldJs(leaf: FieldLeaf, s: Session): boolean {
-  let lhs: unknown;
-  if (leaf.field.startsWith('session.')) {
-    const col = leaf.field.slice('session.'.length);
-    lhs = (s as unknown as Record<string, unknown>)[col];
-  } else if (leaf.field.startsWith('enr.')) {
-    const name = leaf.field.slice('enr.'.length);
-    const e = getEnrichment(s.id, name);
-    lhs = e?.value ?? null;
-    if (leaf.path && leaf.path !== '$') lhs = resolveJsonPath(lhs, leaf.path);
-  } else {
-    return false;
-  }
-  return compareJs(lhs, leaf);
-}
-
-function resolveJsonPath(value: unknown, path: string): unknown {
-  if (!path.startsWith('$')) return undefined;
-  let cur: unknown = value;
-  let i = 1;
-  while (i < path.length && cur != null) {
-    const ch = path[i]!;
-    if (ch === '.') { i++; continue; }
-    if (ch === '[') {
-      const end = path.indexOf(']', i);
-      if (end < 0) return undefined;
-      const idx = Number(path.slice(i + 1, end));
-      cur = Array.isArray(cur) ? cur[idx] : undefined;
-      i = end + 1;
-    } else {
-      let j = i;
-      while (j < path.length && path[j] !== '.' && path[j] !== '[') j++;
-      const key = path.slice(i, j);
-      cur = typeof cur === 'object' && cur !== null ? (cur as Record<string, unknown>)[key] : undefined;
-      i = j;
-    }
-  }
-  return cur;
-}
-
-function compareJs(lhs: unknown, leaf: FieldLeaf): boolean {
-  const v = leaf.value;
-  switch (leaf.op) {
-    case '=': return lhs == v;
-    case '!=': return lhs != v;
-    case '<': return (lhs as number) < (v as number);
-    case '<=': return (lhs as number) <= (v as number);
-    case '>': return (lhs as number) > (v as number);
-    case '>=': return (lhs as number) >= (v as number);
-    case 'startsWith': return typeof lhs === 'string' && lhs.startsWith(String(v));
-    case 'endsWith': return typeof lhs === 'string' && lhs.endsWith(String(v));
-    case 'contains': return typeof lhs === 'string' && lhs.includes(String(v));
-    case 'matches': return typeof lhs === 'string' && new RegExp(String(v)).test(lhs);
-    case 'in': return Array.isArray(v) && (v as unknown[]).includes(lhs);
-    case 'between':
-      if (!Array.isArray(v) || v.length !== 2) return false;
-      return (lhs as number) >= (v[0] as number) && (lhs as number) <= (v[1] as number);
-    case 'isNull': return lhs == null;
-    case 'jsonEq': return lhs === v;
-    case 'jsonContains':
-      return typeof lhs === 'string' ? lhs.includes(String(v)) : false;
-    case 'jsonAny': {
-      if (!Array.isArray(lhs)) return false;
-      const intOp = leaf.intOp ?? '=';
-      return lhs.some((x) => cmpInt(x, v, intOp));
-    }
-    case 'jsonLength': {
-      const len = Array.isArray(lhs) ? lhs.length : 0;
-      return cmpInt(len, v, leaf.intOp ?? '=');
-    }
-    default: return false;
-  }
-}
-
-function cmpInt(a: unknown, b: unknown, op: string): boolean {
-  const x = Number(a);
-  const y = Number(b);
-  switch (op) {
-    case '=': return x === y;
-    case '!=': return x !== y;
-    case '<': return x < y;
-    case '<=': return x <= y;
-    case '>': return x > y;
-    case '>=': return x >= y;
-    default: return false;
-  }
+function normalizeFilterResult(result: FilterResult): { match: boolean; evidence?: string | null } {
+  if (typeof result === 'boolean') return { match: result };
+  return { match: result.match === true, evidence: result.evidence ?? null };
 }

@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { clearPluginCache, getProgress, runDiscovery, runQueryEvaluation } from '@road42/core';
+import { clearFilterCache, getProgress, runDiscovery, runQueryEvaluation } from '@road42/core';
 
 let running = false;
 
@@ -13,7 +13,7 @@ export async function registerReindexRoutes(app: FastifyInstance): Promise<void>
     running = true;
     (async () => {
       try {
-        clearPluginCache();
+        clearFilterCache();
         await runDiscovery();
         await runQueryEvaluation({ full });
       } catch (err) {
