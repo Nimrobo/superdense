@@ -95,5 +95,3 @@ export async function writeQueryJson(queryId: string): Promise<void> {
   };
   await writeFile(join(GROUPS_DIR, `${q.id}.json`), JSON.stringify(payload, null, 2), 'utf8');
 }
-
-export { previewPlugin } from './plugins/preview.js';

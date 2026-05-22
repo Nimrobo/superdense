@@ -3,11 +3,9 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { GroupingPlugin } from '../types.js';
 import { USER_PLUGINS_DIR } from '../paths.js';
-import { byPwd } from './by-pwd.js';
-import { byToolKeyword } from './by-tool-keyword.js';
-import { byPwdAndTool } from './by-pwd-and-tool.js';
+import { byUserPromptKeyword } from './by-user-prompt-keyword.js';
 
-const builtins: GroupingPlugin[] = [byPwd, byToolKeyword, byPwdAndTool];
+const builtins: GroupingPlugin[] = [byUserPromptKeyword];
 
 let cache: GroupingPlugin[] | null = null;
 

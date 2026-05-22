@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react';
-import { api, type Query, type PluginInfo } from './api.js';
+import { api, type Query } from './api.js';
 import { Sidebar } from './components/Sidebar.js';
 import { SessionsView } from './components/SessionsView.js';
 import { SessionReader } from './components/SessionReader.js';
-import { PluginRunner } from './components/PluginRunner.js';
 import { QueryView } from './components/QueryView.js';
 import { QueryBuilder } from './components/QueryBuilder.js';
 import { DashboardView } from './components/DashboardView.js';
@@ -12,20 +11,17 @@ export type View =
   | { type: 'dashboard' }
   | { type: 'sessions' }
   | { type: 'session'; id: string }
-  | { type: 'plugin'; name: string }
   | { type: 'query-builder' }
   | { type: 'query'; id: string };
 
 export function App() {
   const [view, setView] = useState<View>({ type: 'dashboard' });
-  const [plugins, setPlugins] = useState<PluginInfo[]>([]);
   const [queries, setQueries] = useState<Query[]>([]);
   const [search, setSearch] = useState('');
   const [progress, setProgress] = useState<{ phase: string; total: number; done: number } | null>(null);
 
   const refresh = async () => {
-    const [p, q] = await Promise.all([api.listPlugins(), api.listQueries()]);
-    setPlugins(p.items);
+    const q = await api.listQueries();
     setQueries(q.items);
   };
 
@@ -47,7 +43,6 @@ export function App() {
       <Sidebar
         view={view}
         setView={setView}
-        plugins={plugins}
         queries={queries}
         search={search}
         setSearch={setSearch}
@@ -65,13 +60,6 @@ export function App() {
         )}
         {view.type === 'sessions' && <SessionsView search={search} onOpen={(id) => setView({ type: 'session', id })} />}
         {view.type === 'session' && <SessionReader id={view.id} onBack={() => setView({ type: 'sessions' })} />}
-        {view.type === 'plugin' && (
-          <PluginRunner
-            plugin={plugins.find((p) => p.name === view.name)!}
-            onSaved={async (q) => { await refresh(); setView({ type: 'query', id: q.id }); }}
-            onOpenSession={(id) => setView({ type: 'session', id })}
-          />
-        )}
         {view.type === 'query-builder' && (
           <QueryBuilder
             onSaved={async (q) => { await refresh(); setView({ type: 'query', id: q.id }); }}
