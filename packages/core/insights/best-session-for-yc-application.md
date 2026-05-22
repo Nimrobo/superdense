@@ -4,6 +4,12 @@ You are helping the user pick which of their past coding sessions to feature in 
 
 Treat *all* of the user's sessions as candidates — across every project, every agent. This insight is **not** scoped to the current working directory.
 
+## Before you start
+
+Load and follow the Road42 skill before running any `road42` commands. If the agent environment cannot load skills, read `skills/road42/SKILL.md` in this repo and follow its staged inspection workflow.
+
+Do not start by running `road42 compactor run salience` across many sessions. This insight scans all sessions, so the funnel must be strict.
+
 ## What to do
 
 1. Enumerate every indexed session.
@@ -16,18 +22,32 @@ Treat *all* of the user's sessions as candidates — across every project, every
 # Every session, newest first.
 road42 session list --limit 1000
 
-# For any session that looks promising, get a compacted summary.
-road42 compactor run salience <session-id>
-
 # Precomputed signals you should lean on heavily (cheap and already indexed).
 road42 session enrichments <session-id>
 #   - event_count: rough size of the session
 #   - has_errors: did the agent hit and work through real failures
 #   - tool_counts / bash_cli_counts: what was actually done (edits, builds, deploys)
 #   - fingerprint: verb mentions, role byte totals, duration
+
+# For sessions that survive metadata triage, get a compacted summary.
+road42 compactor run salience <session-id>
+
+# For close calls, inspect the workflow sequence.
+road42 compactor run trace <session-id>
 ```
 
-You almost never need the raw transcript. If a compacted summary plus the enrichments aren't enough to score a session, pull a `trace` compaction next — only fall back to raw events as a last resort.
+## Funnel strategy
+
+Use a cheap-to-expensive funnel before scoring deeply:
+
+1. Start with `session list` and cheap enrichments: `event_count`, `tool_counts`, `bash_cli_counts`, `has_errors`, and `fingerprint`.
+2. Eliminate obvious non-candidates first: very short sessions, dependency bumps, trivial chores, sessions with little or no tool use, and low-signal sessions without errors, edits, tests, deploys, or meaningful iteration.
+3. Keep a reduced candidate set that appears to show technical depth, shipped outcome, ambition, or founder grit.
+4. Run `salience` only on sessions that survive metadata triage.
+5. Use `trace` for close calls where the sequence of work matters more than the summary.
+6. Pull raw events only as a last resort when compactors cannot resolve a specific scoring question.
+
+For broad scans, split surviving candidate session IDs into batches and use sub-agents to score each batch against the rubric independently. The main agent owns final ranking, tie-breaking, score normalization, and the final top 5 narrative. If sub-agents are unavailable, process the same batches sequentially and state that fallback.
 
 ## Scoring rubric (sum to 10)
 

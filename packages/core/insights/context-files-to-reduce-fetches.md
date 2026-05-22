@@ -4,6 +4,12 @@ You are helping the user reduce the work their coding agent does in **this repos
 
 Treat the **current working directory** as the repository scope. Every recommendation must be specific to this repo — never generic.
 
+## Before you start
+
+Load and follow the Road42 skill before running any `road42` commands. If the agent environment cannot load skills, read `skills/road42/SKILL.md` in this repo and follow its staged inspection workflow.
+
+Do not start by running `road42 compactor run salience` across many sessions. Use cheap metadata, filters, and small candidate batches first.
+
 ## What to do
 
 1. Find the user's sessions in this repo.
@@ -19,17 +25,27 @@ Run these `road42` CLI commands. Prefer compacted views so you keep your own con
 # Sessions in this repo, newest first, JSON for easy parsing.
 road42 session list --pwd "$(pwd)" --limit 200
 
-# For each candidate session id, fetch a compacted summary instead of the raw transcript.
-road42 compactor run salience <session-id>
+# Useful precomputed signals already on every session; use these before compactors.
+road42 session enrichments <session-id>
 
-# When you need the raw tool-call trace for a session, use the trace compactor.
+# For reduced candidate sessions, use trace to inspect reads/searches.
 road42 compactor run trace <session-id>
 
-# Useful precomputed signals already on every session.
-road42 session enrichments <session-id>
+# For sessions that still look important after trace/enrichment triage.
+road42 compactor run salience <session-id>
 ```
 
-Avoid pulling raw transcripts unless a compactor is insufficient. If you do, prefer recent and high-event-count sessions over old or trivial ones.
+## Funnel strategy
+
+Use a cheap-to-expensive funnel so unnecessary sessions are removed before compaction:
+
+1. Start with the repo-scoped session list and cheap enrichments: `event_count`, `tool_counts`, `bash_cli_counts`, `has_errors`, and `fingerprint`.
+2. Remove sessions that are too short, unrelated to this repo's recurring workflows, or have no evidence of file reads/searches.
+3. Use `trace` on the reduced candidate set to identify repeated file reads, greps, and reconstruction patterns.
+4. Run `salience` only for sessions where the trace or enrichments suggest a real repeated context need.
+5. Pull raw transcripts only as a last resort when compactors cannot answer a specific evidence question.
+
+For broad scans, split candidate session IDs into batches and use sub-agents to inspect different batches for repeated fetch/re-derivation patterns. The main agent owns the final synthesis, de-duplicates overlapping findings, and enforces the output format. If sub-agents are unavailable, process the same batches sequentially and state that fallback.
 
 ## What to look for
 
