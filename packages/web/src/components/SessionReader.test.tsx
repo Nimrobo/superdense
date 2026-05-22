@@ -54,20 +54,31 @@ describe('SessionReader', () => {
     mockTranscript([]);
   });
 
-  it('renders scannable summary metadata and hides log path behind details', async () => {
+  it('renders a composed header and hides log path behind details', async () => {
     await renderReader();
 
-    expect(screen.getAllByText('Build the thing')).toHaveLength(2);
-    expect(screen.getByText('A useful session summary')).toBeInTheDocument();
+    expect(screen.getByText('Build the thing')).toBeInTheDocument();
+    expect(screen.getByText('project')).toBeInTheDocument();
+    expect(screen.getByText('/tmp/project')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Conversation' })).toHaveClass('active');
+    expect(api.getTranscript).toHaveBeenCalledWith('agent:session-1', { limit: 2000 });
+    expect(screen.queryByText('A useful session summary')).not.toBeInTheDocument();
     expect(screen.getByText('test-agent')).toBeInTheDocument();
+    expect(screen.getByText('ID agent:session-1')).toBeInTheDocument();
     expect(screen.getByText('feature/session-reader')).toBeInTheDocument();
     expect(screen.getByText('3 messages')).toBeInTheDocument();
-    expect(screen.getByText(/last activity/)).toBeInTheDocument();
+    expect(screen.getByText(/last active/)).toBeInTheDocument();
 
+    await userEvent.click(screen.getByRole('button', { name: 'Summary' }));
+    expect(screen.getByText('A useful session summary')).toBeInTheDocument();
+
+    const sessionId = screen.getAllByText('agent:session-1')[0];
+    expect(sessionId).not.toBeVisible();
     const logPath = screen.getByText('/tmp/session-1.jsonl');
     expect(logPath).not.toBeVisible();
 
     await userEvent.click(screen.getByText('Details'));
+    expect(sessionId).toBeVisible();
     expect(logPath).toBeVisible();
   });
 
@@ -78,8 +89,9 @@ describe('SessionReader', () => {
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined });
 
     await renderReader();
+    await userEvent.click(screen.getByRole('button', { name: 'Summary' }));
     await userEvent.click(screen.getByText('Details'));
-    await userEvent.click(screen.getByRole('button', { name: 'Copy' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Copy log path' }));
 
     expect(execCommand).toHaveBeenCalledWith('copy');
     document.execCommand = originalExecCommand;
@@ -89,6 +101,7 @@ describe('SessionReader', () => {
     mockSession({ firstPrompt: '   ', summary: null });
 
     await renderReader();
+    await userEvent.click(screen.getByRole('button', { name: 'Summary' }));
 
     expect(screen.queryByRole('heading', { name: 'First prompt' })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Summary' })).not.toBeInTheDocument();
@@ -103,10 +116,9 @@ describe('SessionReader', () => {
     ]);
 
     await renderReader();
-    await userEvent.click(screen.getByRole('button', { name: 'Transcript' }));
 
     expect(screen.queryByText('system setup details')).not.toBeInTheDocument();
-    expect(screen.getByText('assistant response')).toBeInTheDocument();
+    expect(await screen.findByText('assistant response')).toBeInTheDocument();
     expect(screen.getByTestId('tool-event-shell')).toBeInTheDocument();
 
     await userEvent.click(screen.getByLabelText('Show system events'));
@@ -138,8 +150,8 @@ describe('SessionReader', () => {
     ]);
 
     await renderReader();
-    await userEvent.click(screen.getByRole('button', { name: 'Transcript' }));
 
+    expect(await screen.findByTestId('tool-event-Bash')).toBeInTheDocument();
     expect(screen.getAllByTestId('tool-event-Bash')).toHaveLength(1);
     expect(screen.queryByText(longInput)).not.toBeInTheDocument();
     expect(screen.queryByText(resultOutput)).not.toBeInTheDocument();
@@ -160,6 +172,43 @@ describe('SessionReader', () => {
     expect(screen.getByText('assistant response after tool')).toBeInTheDocument();
   });
 
+  it('collapses intermediate assistant text and tool calls into a single indicator row', async () => {
+    mockTranscript([
+      { kind: 'text', role: 'user', text: 'user prompt' },
+      { kind: 'text', role: 'assistant', text: 'intermediate narration A' },
+      {
+        kind: 'tool_call',
+        role: 'assistant',
+        toolCallId: 'call_1',
+        toolName: 'Bash',
+        inputText: '{"cmd":"ls"}',
+      },
+      { kind: 'tool_result', role: 'user', toolCallId: 'call_1', text: 'result 1' },
+      { kind: 'text', role: 'assistant', text: 'intermediate narration B' },
+      {
+        kind: 'tool_call',
+        role: 'assistant',
+        toolCallId: 'call_2',
+        toolName: 'Bash',
+        inputText: '{"cmd":"pwd"}',
+      },
+      { kind: 'tool_result', role: 'user', toolCallId: 'call_2', text: 'result 2' },
+      { kind: 'text', role: 'assistant', text: 'final assistant answer' },
+    ]);
+
+    await renderReader();
+    await screen.findByText('final assistant answer');
+
+    await userEvent.click(screen.getByLabelText('Show tool calls'));
+
+    expect(screen.queryByText('intermediate narration A')).not.toBeInTheDocument();
+    expect(screen.queryByText('intermediate narration B')).not.toBeInTheDocument();
+    expect(screen.getByText('final assistant answer')).toBeInTheDocument();
+    expect(screen.getByText('user prompt')).toBeInTheDocument();
+    const indicator = screen.getByTestId('collapsed-tools-row');
+    expect(indicator).toHaveTextContent('2 tool calls collapsed');
+  });
+
   it('hides orphan tool results with the tool-call filter', async () => {
     const orphanOutput = 'orphan result output';
 
@@ -169,9 +218,8 @@ describe('SessionReader', () => {
     ]);
 
     await renderReader();
-    await userEvent.click(screen.getByRole('button', { name: 'Transcript' }));
 
-    expect(screen.getByTestId('tool-result-event')).toHaveTextContent('result hidden');
+    expect(await screen.findByTestId('tool-result-event')).toHaveTextContent('result hidden');
     expect(screen.queryByText(orphanOutput)).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByLabelText('Show tool calls'));
@@ -191,9 +239,8 @@ describe('SessionReader', () => {
     ]);
 
     await renderReader();
-    await userEvent.click(screen.getByRole('button', { name: 'Transcript' }));
 
-    const toolRow = screen.getByTestId('tool-event-shell').closest('.event');
+    const toolRow = (await screen.findByTestId('tool-event-shell')).closest('.event');
     expect(toolRow).not.toBeNull();
     await userEvent.click(within(toolRow as HTMLElement).getByRole('button', { name: 'Show more' }));
     expect(screen.getByText(longToolInput, { exact: false })).toBeInTheDocument();
@@ -214,9 +261,8 @@ describe('SessionReader', () => {
     ]);
 
     await renderReader();
-    await userEvent.click(screen.getByRole('button', { name: 'Transcript' }));
 
-    expect(screen.getByTestId('tool-event-empty_tool')).toHaveTextContent('empty_tool');
+    expect(await screen.findByTestId('tool-event-empty_tool')).toHaveTextContent('empty_tool');
     expect(screen.getByText('event')).toBeInTheDocument();
     expect(screen.getByText('custom adapter text')).toBeInTheDocument();
     expect(screen.getByText('no timestamp event')).toBeInTheDocument();

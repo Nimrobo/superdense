@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import type { Adapter, DiscoveredSession, TranscriptEvent } from '../types.js';
+import { extractFirstMeaningfulPrompt } from './prompt.js';
 
 interface OpenCodeSessionRow {
   id: string;
@@ -137,11 +138,7 @@ function firstPrompt(db: Database.Database, sessionId: string): string | undefin
     LIMIT 10
   `).all(sessionId) as Array<{ part_data: string }>;
 
-  for (const row of rows) {
-    const parsed = safeJsonParse(row.part_data);
-    if (typeof parsed?.text === 'string' && parsed.text.trim()) return parsed.text.trim().slice(0, 500);
-  }
-  return undefined;
+  return extractFirstMeaningfulPrompt(rows.map((row) => safeJsonParse(row.part_data)?.text));
 }
 
 export const openCodeAdapter: Adapter = {

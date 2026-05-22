@@ -122,6 +122,27 @@ describe('openCodeAdapter', () => {
     });
   });
 
+  it('skips setup text parts when discovering the first prompt', async () => {
+    const dir = await makeTempDir();
+    const dbPath = join(dir, 'opencode.db');
+    writeOpenCodeDb(dbPath);
+    const db = new Database(dbPath);
+    db.prepare('INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)').run(
+      'part_setup_text',
+      'msg_user',
+      'ses_1',
+      1001,
+      1001,
+      JSON.stringify({ type: 'text', text: '<system_instruction>internal setup</system_instruction>' }),
+    );
+    db.close();
+    process.env.OPENCODE_DB = dbPath;
+
+    const sessions = await openCodeAdapter.discover();
+
+    expect(sessions[0].firstPrompt).toBe('Create a file');
+  });
+
   it('normalizes text and tool parts into common transcript events', async () => {
     const dir = await makeTempDir();
     const dbPath = join(dir, 'opencode.db');

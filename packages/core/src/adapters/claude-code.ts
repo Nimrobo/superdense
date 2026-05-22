@@ -4,6 +4,7 @@ import { readdir, readFile, stat } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
 import type { Adapter, DiscoveredSession, TranscriptEvent } from '../types.js';
+import { extractFirstMeaningfulPrompt, extractMeaningfulPrompt } from './prompt.js';
 
 function claudeProjectsDir(): string {
   return process.env.CLAUDE_PROJECTS_DIR ?? join(homedir(), '.claude', 'projects');
@@ -73,15 +74,12 @@ export async function scanJsonlHead(logPath: string, maxLines = 50): Promise<Jso
           const m = obj?.message;
           if ((obj?.type === 'user' || m?.role === 'user')) {
             const content = m?.content;
-            if (typeof content === 'string' && content.trim()) {
-              result.firstPrompt = content.trim().slice(0, 500);
+            if (typeof content === 'string') {
+              result.firstPrompt = extractMeaningfulPrompt(content);
             } else if (Array.isArray(content)) {
-              for (const part of content) {
-                if (part?.type === 'text' && typeof part.text === 'string' && part.text.trim()) {
-                  result.firstPrompt = part.text.trim().slice(0, 500);
-                  break;
-                }
-              }
+              result.firstPrompt = extractFirstMeaningfulPrompt(
+                content.map((part) => part?.type === 'text' && typeof part.text === 'string' ? part.text : undefined),
+              );
             }
           }
         }
@@ -122,15 +120,18 @@ export const claudeCodeAdapter: Adapter = {
           if (!e.sessionId || !e.fullPath) continue;
           seen.add(e.sessionId);
           let pwd = e.projectPath;
-          if (!pwd) {
-            if (!projectCwd) projectCwd = (await scanJsonlHead(e.fullPath)).cwd;
-            pwd = projectCwd ?? pwdGuess;
+          let firstPrompt = extractMeaningfulPrompt(e.firstPrompt);
+          if (!pwd || !firstPrompt) {
+            const head = await scanJsonlHead(e.fullPath);
+            if (!projectCwd && head.cwd) projectCwd = head.cwd;
+            if (!pwd) pwd = projectCwd ?? pwdGuess;
+            firstPrompt = firstPrompt ?? head.firstPrompt;
           }
           out.push({
             sessionId: e.sessionId,
             logPath: e.fullPath,
             pwd,
-            firstPrompt: e.firstPrompt,
+            firstPrompt,
             summary: e.summary,
             messageCount: e.messageCount,
             gitBranch: e.gitBranch,

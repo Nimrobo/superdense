@@ -64,6 +64,67 @@ const [session] = await claudeCodeAdapter.discover();
     expect(head.firstPrompt).toBe('first ask');
   });
 
+  it('skips setup prompts from Claude index entries and scans for the first real ask', async () => {
+    const logPath = await writeTranscript('-Users-x-proj', 's1', [
+      { type: 'system', cwd: '/Users/x/proj' },
+      { type: 'user', message: { role: 'user', content: '<system_instruction>internal setup</system_instruction>' } },
+      { type: 'user', message: { role: 'user', content: 'Improve the session viewer' } },
+    ]);
+    await writeFile(join(tmpRoot, '-Users-x-proj', 'sessions-index.json'), JSON.stringify({
+      version: 1,
+      entries: [{
+        sessionId: 's1',
+        fullPath: logPath,
+        firstPrompt: '<system_instruction>indexed setup</system_instruction>',
+        projectPath: '/Users/x/proj',
+      }],
+    }), 'utf8');
+
+    const [session] = await claudeCodeAdapter.discover();
+
+    expect(session.pwd).toBe('/Users/x/proj');
+    expect(session.firstPrompt).toBe('Improve the session viewer');
+  });
+
+  it('uses command args as the meaningful prompt when present', async () => {
+    const logPath = await writeTranscript('-Users-x-proj', 's1', [
+      { type: 'system', cwd: '/Users/x/proj' },
+      {
+        type: 'user',
+        message: {
+          role: 'user',
+          content: '<command-message>road42</command-message>\n<command-name>/road42</command-name>\n<command-args>Find my best coding session</command-args>',
+        },
+      },
+    ]);
+
+    const head = await scanJsonlHead(logPath);
+
+    expect(head.firstPrompt).toBe('Find my best coding session');
+  });
+
+  it('extracts the real ask from a Conductor-wrapped prompt', async () => {
+    const logPath = await writeTranscript('-Users-x-proj', 's1', [
+      { type: 'system', cwd: '/Users/x/proj' },
+      {
+        type: 'user',
+        message: {
+          role: 'user',
+          content: `<system_instruction>
+You are working inside Conductor.
+</system_instruction>
+<environment_context>{"cwd":"/Users/x/proj"}</environment_context>
+
+Improve title extraction across agent adapters`,
+        },
+      },
+    ]);
+
+    const head = await scanJsonlHead(logPath);
+
+    expect(head.firstPrompt).toBe('Improve title extraction across agent adapters');
+  });
+
   it('decodeProjectDir is lossy on dashed segments (documents the original bug)', () => {
     expect(decodeProjectDir('-Users-foo-codebase-nr-context-frontend'))
       .toBe('/Users/foo/codebase/nr/context/frontend');
