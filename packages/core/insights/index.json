@@ -8,7 +8,7 @@
   {
     "name": "skills-to-build-for-this-repo",
     "title": "Skills to build for this repo",
-    "description": "Looks at how you work in the current repo and proposes Road42 skills, enrichers and filters that would speed up your most repetitive flows.",
+    "description": "Looks at how you work in the current repo and proposes coding-agent skills that would speed up your most repetitive flows.",
     "file": "skills-to-build-for-this-repo.md"
   },
   {

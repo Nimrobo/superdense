@@ -60,6 +60,54 @@ describe('insightRunEnricher', () => {
     expect(result.answer).not.toMatch(/## Answer/);
   });
 
+  it('skips leading Codex environment context before the insight marker', async () => {
+    const marker =
+      '<!-- road42:insight name="skills-to-build-for-this-repo" run="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" v=1 -->';
+    const assistantAnswer = [
+      'done',
+      '',
+      '## Answer',
+      '',
+      'Skill name: repo-review',
+    ].join('\n');
+    const result = (await insightRunEnricher.run(
+      ctx([
+        {
+          role: 'user',
+          kind: 'text',
+          text: [
+            '<environment_context>',
+            '  <cwd>/home/user/repo</cwd>',
+            '  <shell>zsh</shell>',
+            '</environment_context>',
+          ].join('\n'),
+        },
+        { role: 'user', kind: 'text', text: `${marker}\n\n# Skills to build for this repo` },
+        { role: 'assistant', kind: 'text', text: assistantAnswer },
+      ]),
+    )) as { name: string; runId: string; version: number; answer: string | null };
+
+    expect(result).not.toBeNull();
+    expect(result.name).toBe('skills-to-build-for-this-repo');
+    expect(result.runId).toBe('aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee');
+    expect(result.version).toBe(1);
+    expect(result.answer).toContain('Skill name: repo-review');
+  });
+
+  it('rejects a marker that appears after an ordinary first user prompt', async () => {
+    const marker =
+      '<!-- road42:insight name="skills-to-build-for-this-repo" run="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" v=1 -->';
+    const result = await insightRunEnricher.run(
+      ctx([
+        { role: 'user', kind: 'text', text: 'please help me debug this repo first' },
+        { role: 'assistant', kind: 'text', text: 'sure thing' },
+        { role: 'user', kind: 'text', text: marker },
+      ]),
+    );
+
+    expect(result).toBeNull();
+  });
+
   it('still tags the session when the marker is present but there is no ## Answer yet', async () => {
     const marker = '<!-- road42:insight name="skills-to-build-for-this-repo" run="aaaa" v=1 -->';
     const result = (await insightRunEnricher.run(
