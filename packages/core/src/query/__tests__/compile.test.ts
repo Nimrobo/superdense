@@ -97,8 +97,8 @@ describe('compilePredicate', () => {
     expect(rows.map((r) => r.id)).toEqual(['s1']);
   });
 
-  it('marks legacy plugin leaves for JS evaluation', () => {
-    const compiled = compilePredicate({ plugin: { name: 'by-pwd', config: { pwd: '/repo' } } });
+  it('marks plugin leaves for JS evaluation', () => {
+    const compiled = compilePredicate({ plugin: { name: 'by-user-prompt-keyword', config: { keyword: 'foo' } } });
     expect(compiled.containsPluginLeaf).toBe(true);
     expect(compiled.sql).toContain('WHERE 0');
   });

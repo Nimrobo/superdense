@@ -1,10 +1,9 @@
-import type { Query, PluginInfo } from '../api.js';
+import type { Query } from '../api.js';
 import type { View } from '../App.js';
 
 interface Props {
   view: View;
   setView: (v: View) => void;
-  plugins: PluginInfo[];
   queries: Query[];
   search: string;
   setSearch: (s: string) => void;
@@ -12,7 +11,7 @@ interface Props {
   onReindex: () => void;
 }
 
-export function Sidebar({ view, setView, plugins, queries, search, setSearch, progress, onReindex }: Props) {
+export function Sidebar({ view, setView, queries, search, setSearch, progress, onReindex }: Props) {
   const active = (test: boolean) => (test ? 'nav-item active' : 'nav-item');
   const busy = progress && progress.phase !== 'idle';
   return (
@@ -43,21 +42,6 @@ export function Sidebar({ view, setView, plugins, queries, search, setSearch, pr
           >
             <span>Sessions</span>
           </div>
-        </div>
-
-        <div className="sidebar-section">
-          <div className="sidebar-section-title">Plugins</div>
-          {plugins.length === 0 && <div className="nav-item muted">No plugins</div>}
-          {plugins.map((p) => (
-            <div
-              key={p.name}
-              className={active(view.type === 'plugin' && view.name === p.name)}
-              onClick={() => setView({ type: 'plugin', name: p.name })}
-              title={p.description ?? p.title}
-            >
-              <span>{p.title}</span>
-            </div>
-          ))}
         </div>
 
         <div className="sidebar-section">

@@ -1,109 +1,102 @@
 import { useEffect, useMemo, useState } from 'react';
-import { api, type EnricherInfo, type Predicate, type Query } from '../api.js';
-
-type FieldType = 'string' | 'int' | 'bool' | 'json';
-
-interface FieldInfo {
-  field: string;
-  label: string;
-  type: FieldType;
-}
-
-interface RowState {
-  field: string;
-  op: string;
-  value: string;
-  path: string;
-  intOp: string;
-}
+import { api, type Predicate, type Query } from '../api.js';
 
 interface Props {
   onSaved: (q: Query) => void;
   onOpenSession: (id: string) => void;
 }
 
-const SESSION_FIELDS: FieldInfo[] = [
-  { field: 'session.pwd', label: 'session.pwd', type: 'string' },
-  { field: 'session.agent', label: 'session.agent', type: 'string' },
-  { field: 'session.gitBranch', label: 'session.gitBranch', type: 'string' },
-  { field: 'session.firstPrompt', label: 'session.firstPrompt', type: 'string' },
-  { field: 'session.summary', label: 'session.summary', type: 'string' },
-  { field: 'session.createdAt', label: 'session.createdAt', type: 'int' },
-  { field: 'session.modifiedAt', label: 'session.modifiedAt', type: 'int' },
-  { field: 'session.messageCount', label: 'session.messageCount', type: 'int' },
-  { field: 'session.isSidechain', label: 'session.isSidechain', type: 'bool' },
-];
+interface FilterState {
+  pwd: string;
+  agent: string;
+  userPromptKeyword: string;
+  hasErrors: 'any' | 'yes' | 'no';
+  toolName: string;
+  toolMin: string;
+  cliName: string;
+  cliMin: string;
+}
 
-const OPS: Record<FieldType, string[]> = {
-  string: ['=', '!=', 'startsWith', 'endsWith', 'contains', 'matches', 'in', 'isNull'],
-  int: ['=', '!=', '<', '<=', '>', '>=', 'in', 'between', 'isNull'],
-  bool: ['=', 'isNull'],
-  json: ['jsonEq', 'jsonContains', 'jsonAny', 'jsonLength', 'isNull'],
+const EMPTY: FilterState = {
+  pwd: '',
+  agent: '',
+  userPromptKeyword: '',
+  hasErrors: 'any',
+  toolName: '',
+  toolMin: '1',
+  cliName: '',
+  cliMin: '1',
 };
 
-function defaultRow(field = 'session.pwd'): RowState {
-  return { field, op: 'contains', value: '', path: '$', intOp: '>' };
+function clampMin(raw: string): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 1) return 1;
+  return Math.floor(n);
 }
 
-function parseValue(raw: string, type: FieldType, op: string): unknown {
-  if (op === 'isNull') return undefined;
-  if (op === 'in') return raw.split(',').map((x) => x.trim()).filter(Boolean).map((x) => type === 'int' ? Number(x) : x);
-  if (op === 'between') return raw.split(',').slice(0, 2).map((x) => Number(x.trim()));
-  if (type === 'int') return Number(raw);
-  if (type === 'bool') return raw === 'true';
-  if (type === 'json' || op.startsWith('json')) {
-    try { return JSON.parse(raw); } catch { return raw; }
+function buildPredicate(state: FilterState): Predicate | null {
+  const leaves: Predicate[] = [];
+
+  if (state.pwd.trim()) {
+    leaves.push({ field: 'session.pwd', op: 'contains', value: state.pwd.trim() });
   }
-  return raw;
-}
+  if (state.agent.trim()) {
+    leaves.push({ field: 'session.agent', op: '=', value: state.agent.trim() });
+  }
+  if (state.userPromptKeyword.trim()) {
+    leaves.push({ plugin: { name: 'by-user-prompt-keyword', config: { keyword: state.userPromptKeyword.trim() } } });
+  }
+  if (state.hasErrors !== 'any') {
+    leaves.push({ field: 'enr.has_errors', op: '=', value: state.hasErrors === 'yes' });
+  }
+  if (state.toolName.trim()) {
+    leaves.push({
+      field: 'enr.tool_counts',
+      op: 'jsonAny',
+      path: `$.${state.toolName.trim()}`,
+      intOp: '>=',
+      value: clampMin(state.toolMin),
+    });
+  }
+  if (state.cliName.trim()) {
+    leaves.push({
+      field: 'enr.bash_cli_counts',
+      op: 'jsonAny',
+      path: `$.${state.cliName.trim()}`,
+      intOp: '>=',
+      value: clampMin(state.cliMin),
+    });
+  }
 
-function buildLeaf(row: RowState, fields: FieldInfo[]): Predicate {
-  const info = fields.find((f) => f.field === row.field) ?? fields[0]!;
-  const leaf: Record<string, unknown> = { field: row.field, op: row.op };
-  if (row.op !== 'isNull') leaf.value = parseValue(row.value, info.type, row.op);
-  if (info.type === 'json' && row.path.trim()) leaf.path = row.path.trim();
-  if (row.op === 'jsonAny' || row.op === 'jsonLength') leaf.intOp = row.intOp;
-  return leaf as Predicate;
-}
-
-function buildPredicate(rows: RowState[], mode: 'and' | 'or', fields: FieldInfo[]): Predicate {
-  const leaves = rows.map((r) => buildLeaf(r, fields));
+  if (leaves.length === 0) return null;
   if (leaves.length === 1) return leaves[0]!;
-  return mode === 'and' ? { and: leaves } : { or: leaves };
+  return { and: leaves };
 }
 
 export function QueryBuilder({ onSaved, onOpenSession }: Props) {
-  const [enrichers, setEnrichers] = useState<EnricherInfo[]>([]);
-  const [mode, setMode] = useState<'and' | 'or'>('and');
-  const [rows, setRows] = useState<RowState[]>([defaultRow()]);
+  const [state, setState] = useState<FilterState>(EMPTY);
   const [name, setName] = useState('');
+  const [pwdOptions, setPwdOptions] = useState<string[]>([]);
+  const [agentOptions, setAgentOptions] = useState<string[]>([]);
   const [showJson, setShowJson] = useState(false);
   const [preview, setPreview] = useState<{ sessionId: string; evidence?: string | null }[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.listEnrichers().then((r) => setEnrichers(r.items)).catch(console.error);
+    api.listFacets()
+      .then((r) => { setPwdOptions(r.pwd); setAgentOptions(r.agent); })
+      .catch(console.error);
   }, []);
 
-  const fields = useMemo<FieldInfo[]>(() => [
-    ...SESSION_FIELDS,
-    ...enrichers.map((e) => ({ field: `enr.${e.name}`, label: `enr.${e.name}`, type: e.returns })),
-  ], [enrichers]);
-
-  const predicate = useMemo(() => buildPredicate(rows, mode, fields), [rows, mode, fields]);
-
-  const patchRow = (idx: number, patch: Partial<RowState>) => {
-    setRows((prev) => prev.map((r, i) => {
-      if (i !== idx) return r;
-      const next = { ...r, ...patch };
-      const info = fields.find((f) => f.field === next.field) ?? fields[0]!;
-      if (!OPS[info.type].includes(next.op)) next.op = OPS[info.type][0]!;
-      return next;
-    }));
-  };
+  const predicate = useMemo(() => buildPredicate(state), [state]);
+  const set = (patch: Partial<FilterState>) => setState((s) => ({ ...s, ...patch }));
 
   const runPreview = async () => {
+    if (!predicate) {
+      setError('Add at least one filter before previewing.');
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -117,7 +110,7 @@ export function QueryBuilder({ onSaved, onOpenSession }: Props) {
   };
 
   const save = async () => {
-    if (!name.trim()) return;
+    if (!name.trim() || !predicate) return;
     setBusy(true);
     setError(null);
     try {
@@ -130,91 +123,116 @@ export function QueryBuilder({ onSaved, onOpenSession }: Props) {
     }
   };
 
+  const activeCount = predicate
+    ? ('and' in predicate ? (predicate as { and: Predicate[] }).and.length : 1)
+    : 0;
+
   return (
     <>
       <div className="work-header">
         <div>
           <div className="work-title">New query</div>
-          <div className="work-sub">{rows.length} predicate {rows.length === 1 ? 'row' : 'rows'}</div>
+          <div className="work-sub">{activeCount} filter{activeCount === 1 ? '' : 's'} active</div>
         </div>
       </div>
       <div className="work-body">
-        <div style={{ display: 'flex', gap: 8, marginBottom: 14, alignItems: 'center' }}>
-          <select value={mode} onChange={(e) => setMode(e.target.value as 'and' | 'or')}>
-            <option value="and">and</option>
-            <option value="or">or</option>
-          </select>
-          <button className="btn secondary" onClick={() => setRows([...rows, defaultRow(fields[0]?.field)])}>Add row</button>
-          <button className="btn secondary" onClick={() => setShowJson((v) => !v)}>{showJson ? 'Hide JSON' : 'Show JSON'}</button>
+        <div style={{ display: 'grid', gap: 14, maxWidth: 720 }}>
+          <Card label="Working directory" hint="Sessions whose pwd contains this string.">
+            <input
+              list="facet-pwd"
+              value={state.pwd}
+              onChange={(e) => set({ pwd: e.target.value })}
+              placeholder="/Users/me/projects/…"
+            />
+            <datalist id="facet-pwd">
+              {pwdOptions.map((p) => <option key={p} value={p} />)}
+            </datalist>
+          </Card>
+
+          <Card label="Agent" hint="Restrict to one agent.">
+            <select value={state.agent} onChange={(e) => set({ agent: e.target.value })}>
+              <option value="">Any</option>
+              {agentOptions.map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </Card>
+
+          <Card label="User prompt contains" hint="Matches if any user message in the session contains this text.">
+            <input
+              value={state.userPromptKeyword}
+              onChange={(e) => set({ userPromptKeyword: e.target.value })}
+              placeholder="keyword"
+            />
+          </Card>
+
+          <Card label="Has errors" hint="Based on the has_errors enricher.">
+            <select value={state.hasErrors} onChange={(e) => set({ hasErrors: e.target.value as FilterState['hasErrors'] })}>
+              <option value="any">Any</option>
+              <option value="yes">Yes</option>
+              <option value="no">No</option>
+            </select>
+          </Card>
+
+          <Card label="Tool used" hint="Tool name (e.g. Bash, Read) with a minimum invocation count.">
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                value={state.toolName}
+                onChange={(e) => set({ toolName: e.target.value })}
+                placeholder="Bash"
+                style={{ flex: 1 }}
+              />
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-muted)' }}>
+                ≥
+                <input
+                  type="number"
+                  min={1}
+                  value={state.toolMin}
+                  onChange={(e) => set({ toolMin: e.target.value })}
+                  style={{ width: 70 }}
+                />
+              </label>
+            </div>
+          </Card>
+
+          <Card label="CLI used" hint="Parsed program name from Bash calls (e.g. git, npm, gh).">
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                value={state.cliName}
+                onChange={(e) => set({ cliName: e.target.value })}
+                placeholder="git"
+                style={{ flex: 1 }}
+              />
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-muted)' }}>
+                ≥
+                <input
+                  type="number"
+                  min={1}
+                  value={state.cliMin}
+                  onChange={(e) => set({ cliMin: e.target.value })}
+                  style={{ width: 70 }}
+                />
+              </label>
+            </div>
+          </Card>
         </div>
 
-        {rows.map((row, idx) => {
-          const info = fields.find((f) => f.field === row.field) ?? fields[0]!;
-          const ops = OPS[info.type];
-          return (
-            <div className="form-row" key={idx} style={{ display: 'grid', gridTemplateColumns: 'minmax(170px, 1.5fr) 120px minmax(140px, 1fr) auto', gap: 8, alignItems: 'end' }}>
-              <label>
-                Field
-                <select value={row.field} onChange={(e) => patchRow(idx, { field: e.target.value })}>
-                  {fields.map((f) => <option key={f.field} value={f.field}>{f.label}</option>)}
-                </select>
-              </label>
-              <label>
-                Operator
-                <select value={row.op} onChange={(e) => patchRow(idx, { op: e.target.value })}>
-                  {ops.map((op) => <option key={op} value={op}>{op}</option>)}
-                </select>
-              </label>
-              {row.op === 'isNull' ? <span /> : (
-                <label>
-                  Value
-                  {info.type === 'bool' ? (
-                    <select value={row.value || 'true'} onChange={(e) => patchRow(idx, { value: e.target.value })}>
-                      <option value="true">true</option>
-                      <option value="false">false</option>
-                    </select>
-                  ) : (
-                    <input value={row.value} onChange={(e) => patchRow(idx, { value: e.target.value })} />
-                  )}
-                </label>
-              )}
-              <button className="btn secondary" onClick={() => setRows(rows.filter((_, i) => i !== idx))} disabled={rows.length === 1}>Remove</button>
-              {info.type === 'json' && (
-                <>
-                  <label>
-                    Path
-                    <input value={row.path} onChange={(e) => patchRow(idx, { path: e.target.value })} />
-                  </label>
-                  {(row.op === 'jsonAny' || row.op === 'jsonLength') && (
-                    <label>
-                      Int op
-                      <select value={row.intOp} onChange={(e) => patchRow(idx, { intOp: e.target.value })}>
-                        {['=', '!=', '<', '<=', '>', '>='].map((op) => <option key={op} value={op}>{op}</option>)}
-                      </select>
-                    </label>
-                  )}
-                </>
-              )}
-            </div>
-          );
-        })}
-
-        {showJson && (
-          <pre className="mono" style={{ fontSize: 12, background: 'var(--bg-soft)', padding: 10, borderRadius: 6, border: '1px solid var(--border)', overflowX: 'auto' }}>
-{JSON.stringify(predicate, null, 2)}
-          </pre>
-        )}
-
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center', maxWidth: 640, marginTop: 18 }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', maxWidth: 720, marginTop: 22 }}>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Query name"
             style={{ flex: 1, padding: '7px 9px', border: '1px solid var(--border-strong)', borderRadius: 6 }}
           />
-          <button className="btn" onClick={runPreview} disabled={busy}>{busy ? 'Running...' : 'Preview'}</button>
-          <button className="btn" onClick={save} disabled={!name.trim() || busy}>Save</button>
+          <button className="btn" onClick={runPreview} disabled={busy || !predicate}>{busy ? 'Running...' : 'Preview'}</button>
+          <button className="btn" onClick={save} disabled={!name.trim() || !predicate || busy}>Save</button>
+          <button className="btn secondary" onClick={() => setShowJson((v) => !v)}>{showJson ? 'Hide JSON' : 'Show JSON'}</button>
         </div>
+
+        {showJson && (
+          <pre className="mono" style={{ fontSize: 12, background: 'var(--bg-soft)', padding: 10, borderRadius: 6, border: '1px solid var(--border)', overflowX: 'auto', marginTop: 12, maxWidth: 720 }}>
+{predicate ? JSON.stringify(predicate, null, 2) : '// no filters'}
+          </pre>
+        )}
+
         {error && <div className="error" style={{ marginTop: 12 }}>{error}</div>}
 
         {preview && (
@@ -231,5 +249,17 @@ export function QueryBuilder({ onSaved, onOpenSession }: Props) {
         )}
       </div>
     </>
+  );
+}
+
+function Card({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <div style={{ display: 'grid', gap: 6, padding: '12px 14px', border: '1px solid var(--border)', borderRadius: 8, background: 'var(--bg-soft)' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
+        <label style={{ fontSize: 13, fontWeight: 500 }}>{label}</label>
+        {hint && <span className="muted" style={{ fontSize: 11 }}>{hint}</span>}
+      </div>
+      {children}
+    </div>
   );
 }

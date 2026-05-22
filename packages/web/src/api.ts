@@ -23,21 +23,6 @@ export interface TranscriptEvent {
   text?: string;
 }
 
-export interface PluginSchemaField {
-  name: string;
-  type: 'string' | 'number' | 'boolean';
-  required?: boolean;
-  description?: string;
-  default?: string | number | boolean;
-}
-
-export interface PluginInfo {
-  name: string;
-  title: string;
-  description?: string;
-  configSchema: PluginSchemaField[];
-}
-
 export interface EnricherInfo {
   name: string;
   version: number;
@@ -147,13 +132,8 @@ export const api = {
     if (opts.limit) sp.set('limit', String(opts.limit));
     return j<{ items: TranscriptEvent[]; offset: number; limit: number }>(`/api/sessions/${encodeURIComponent(id)}/transcript?${sp}`);
   },
-  listPlugins: () => j<{ items: PluginInfo[] }>('/api/plugins'),
   listEnrichers: () => j<{ items: EnricherInfo[] }>('/api/enrichers'),
-  previewPlugin: (name: string, config: Record<string, unknown>, limit = 500) =>
-    j<{ items: { sessionId: string; evidence?: string | null }[]; total: number }>(
-      `/api/plugins/${encodeURIComponent(name)}/preview`,
-      { method: 'POST', body: JSON.stringify({ config, limit }) },
-    ),
+  listFacets: () => j<{ pwd: string[]; agent: string[] }>('/api/facets'),
   listQueries: () => j<{ items: Query[] }>('/api/queries'),
   getQuery: (id: string) => j<Query & { members: Session[] }>(`/api/queries/${encodeURIComponent(id)}`),
   createQuery: (q: { name: string; predicate: Predicate }) =>

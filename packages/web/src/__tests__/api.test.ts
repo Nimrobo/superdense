@@ -117,17 +117,6 @@ describe('api.deleteQuery', () => {
   });
 });
 
-describe('api.previewPlugin', () => {
-  it('sends POST to the preview endpoint', async () => {
-    mockOk({ items: [], total: 0 });
-    await api.previewPlugin('keyword', { word: 'react' });
-    expect(mockFetch).toHaveBeenCalledWith(
-      '/api/plugins/keyword/preview',
-      expect.objectContaining({ method: 'POST' }),
-    );
-  });
-});
-
 describe('api.progress', () => {
   it('calls /api/progress', async () => {
     mockOk({ phase: 'idle', total: 0, done: 0 });
