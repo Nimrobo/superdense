@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api, type HeaderStats, type Insights, type WindowBundle } from '../api.js';
+import { projectLabel, sessionTitle } from '../sessionDisplay.js';
 
 type WindowDays = 7 | 14 | 30;
 type HeatmapRange = '30D' | '6M';
@@ -562,8 +563,8 @@ function RecentWorkCard({
       <ul className="list">
         {recentSessions.map((s) => (
           <li key={s.id} className="list-row clickable" onClick={() => onOpenSession(s.id)}>
-            <span className="ellipsis">{s.firstPrompt?.trim() || s.summary?.trim() || '(no prompt)'}</span>
-            <span className="muted small">{relTime(s.modifiedAt)}</span>
+            <span className="ellipsis">{sessionTitle(s)}</span>
+            <span className="muted small" title={s.pwd}>{projectLabel(s.pwd)} · {relTime(s.modifiedAt)}</span>
           </li>
         ))}
       </ul>

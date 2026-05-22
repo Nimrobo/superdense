@@ -6,6 +6,7 @@ import { createInterface } from 'node:readline';
 import Database from 'better-sqlite3';
 import type { Adapter, DiscoveredSession, TranscriptEvent } from '../types.js';
 import { statLogFile } from './claude-code.js';
+import { extractMeaningfulPrompt } from './prompt.js';
 
 const DEFAULT_CODEX_DB = join(homedir(), '.codex', 'state_5.sqlite');
 
@@ -46,16 +47,6 @@ function isTranscriptRole(role: unknown): role is TranscriptEvent['role'] {
   return role === 'user' || role === 'assistant' || role === 'system';
 }
 
-function isLikelyInternalPrompt(text: string): boolean {
-  const trimmed = text.trim();
-  return (
-    trimmed.startsWith('<system_instruction>') ||
-    trimmed.startsWith('<environment_context>') ||
-    trimmed.startsWith('Respond directly to the user') ||
-    trimmed.startsWith('You are generating a git branch name')
-  );
-}
-
 function textParts(content: unknown): string[] {
   if (typeof content === 'string') return content.trim() ? [content] : [];
   if (!Array.isArray(content)) return [];
@@ -75,7 +66,7 @@ async function firstPromptFromRollout(logPath: string, fallback?: string | null)
   try {
     stream = createReadStream(logPath, { encoding: 'utf8' });
   } catch {
-    return fallback?.trim() ? fallback.trim().slice(0, 500) : undefined;
+    return extractMeaningfulPrompt(fallback);
   }
   const rl = createInterface({ input: stream, crlfDelay: Infinity });
   try {
@@ -88,16 +79,14 @@ async function firstPromptFromRollout(logPath: string, fallback?: string | null)
       const payload = record.payload;
       if (payload?.type !== 'message' || payload.role !== 'user') continue;
       for (const text of textParts(payload.content)) {
-        const trimmed = text.trim();
-        if (!trimmed || isLikelyInternalPrompt(trimmed)) continue;
-        return trimmed.slice(0, 500);
+        const prompt = extractMeaningfulPrompt(text);
+        if (prompt) return prompt;
       }
     }
   } finally {
     try { rl.close(); stream.destroy(); } catch { /* ignore */ }
   }
-  const trimmed = fallback?.trim();
-  return trimmed ? trimmed.slice(0, 500) : undefined;
+  return extractMeaningfulPrompt(fallback);
 }
 
 function openReadonlyDb(path: string): Database.Database | null {
