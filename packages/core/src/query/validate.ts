@@ -29,7 +29,7 @@ export const SESSION_COLUMNS: Record<string, EnrichReturn> = {
   isSidechain: 'bool',
 };
 
-const OPS_BY_TYPE: Record<EnrichReturn, Operator[]> = {
+export const OPS_BY_TYPE: Record<EnrichReturn, Operator[]> = {
   string: ['=', '!=', 'startsWith', 'endsWith', 'contains', 'matches', 'in', 'isNull'],
   int: ['=', '!=', '<', '<=', '>', '>=', 'in', 'between', 'isNull'],
   bool: ['=', 'isNull'],

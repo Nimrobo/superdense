@@ -375,6 +375,12 @@ export function deleteQuery(id: string): void {
   getDb().prepare('DELETE FROM queries WHERE id = ?').run(id);
 }
 
+export interface QueryMatchDetail {
+  session: Session;
+  addedAt: number | null;
+  evidence?: string | null;
+}
+
 export function listQueryMatches(queryId: string): Session[] {
   const db = getDb();
   const rows = db.prepare(`
@@ -384,6 +390,40 @@ export function listQueryMatches(queryId: string): Session[] {
     ORDER BY COALESCE(s.modified_at, 0) DESC
   `).all(queryId) as SessionRow[];
   return rows.map(rowToSession);
+}
+
+export function listQueryMatchDetails(
+  queryId: string,
+  opts: { limit?: number; offset?: number } = {},
+): QueryMatchDetail[] {
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT
+      s.*,
+      qm.added_at AS match_added_at,
+      qm.evidence AS match_evidence
+    FROM sessions s
+    INNER JOIN query_matches qm ON qm.session_id = s.id
+    WHERE qm.query_id = @queryId
+    ORDER BY COALESCE(s.modified_at, 0) DESC
+    LIMIT @limit OFFSET @offset
+  `).all({
+    queryId,
+    limit: opts.limit ?? 200,
+    offset: opts.offset ?? 0,
+  }) as Array<SessionRow & { match_added_at: number | null; match_evidence: string | null }>;
+  return rows.map((r) => ({
+    session: rowToSession(r),
+    addedAt: r.match_added_at,
+    evidence: r.match_evidence,
+  }));
+}
+
+export function countQueryMatches(queryId: string): number {
+  const row = getDb()
+    .prepare('SELECT COUNT(*) AS c FROM query_matches WHERE query_id = ?')
+    .get(queryId) as { c: number };
+  return row.c;
 }
 
 export function upsertQueryMatch(item: QueryMatch): void {
@@ -426,6 +466,10 @@ export interface EnrichmentRow {
   computedAt: number;
 }
 
+export interface NamedEnrichmentRow extends EnrichmentRow {
+  name: string;
+}
+
 export function upsertEnrichment(
   sessionId: string,
   name: string,
@@ -451,6 +495,22 @@ export function getEnrichment(sessionId: string, name: string): EnrichmentRow | 
   let parsed: unknown = null;
   try { parsed = JSON.parse(row.value); } catch { parsed = null; }
   return { version: row.version, value: parsed, computedAt: row.computed_at };
+}
+
+export function listSessionEnrichments(sessionId: string): NamedEnrichmentRow[] {
+  const rows = getDb()
+    .prepare('SELECT name, version, value, computed_at FROM query_enrich WHERE session_id = ? ORDER BY name ASC')
+    .all(sessionId) as Array<{ name: string; version: number; value: string; computed_at: number }>;
+  return rows.map((row) => {
+    let parsed: unknown = null;
+    try { parsed = JSON.parse(row.value); } catch { parsed = null; }
+    return {
+      name: row.name,
+      version: row.version,
+      value: parsed,
+      computedAt: row.computed_at,
+    };
+  });
 }
 
 // ---- stats / aggregates

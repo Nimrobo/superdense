@@ -7,9 +7,10 @@
     "road42": "./dist/index.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && rm -rf dist/skills && cp -r ../../skills dist/skills",
     "dev": "tsx src/index.ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@road42/core": "workspace:*",
@@ -19,6 +20,7 @@
   "devDependencies": {
     "@types/node": "^20.14.0",
     "tsx": "^4.16.0",
+    "vitest": "^2.1.9",
     "typescript": "^5.5.0"
   }
 }
