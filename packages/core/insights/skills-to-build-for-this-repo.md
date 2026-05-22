@@ -4,6 +4,12 @@ You are helping the user decide what new **Road42 skills, enrichers, filters, or
 
 Treat the **current working directory** as the repository scope.
 
+## Before you start
+
+Load and follow the Road42 skill before running any `road42` commands. If the agent environment cannot load skills, read `skills/road42/SKILL.md` in this repo and follow its staged inspection workflow.
+
+Do not start by running `road42 compactor run salience` across many sessions. Use cheap metadata, filters, and extension catalogs to narrow the work first.
+
 ## What to do
 
 1. Find the user's sessions in this repo and look at the shape of the work that recurs there.
@@ -16,22 +22,34 @@ Treat the **current working directory** as the repository scope.
 # Sessions in this repo.
 road42 session list --pwd "$(pwd)" --limit 200
 
-# Compacted summary of a session (cheap; prefer this over raw transcripts).
-road42 compactor run salience <session-id>
-
-# Tool-call trace when you need to see what the agent actually did.
-road42 compactor run trace <session-id>
-
-# Per-session precomputed signals.
+# Per-session precomputed signals; use these before compactors.
 road42 session enrichments <session-id>
 
 # What Road42 already has — don't propose duplicates.
 road42 enricher list
 road42 filter list
 road42 compactor list
+
+# For reduced candidate clusters, inspect what the agent actually did.
+road42 compactor run trace <session-id>
+
+# For sessions that still look important after metadata/trace triage.
+road42 compactor run salience <session-id>
 ```
 
-Bias toward compacted views. Only pull a raw transcript if no compaction tells you enough.
+## Funnel strategy
+
+Use a cheap-to-expensive funnel so recommendations are based on recurring work, not one-off sessions:
+
+1. First inspect existing Road42 extensions with `road42 enricher list`, `road42 filter list`, and `road42 compactor list`.
+2. Start session triage with the repo-scoped session list and cheap enrichments: `event_count`, `tool_counts`, `bash_cli_counts`, `has_errors`, and `fingerprint`.
+3. Remove sessions that are too short, unrelated to recurring repo workflows, or already covered by existing extensions.
+4. Cluster surviving sessions by repeated debugging shape, repeated filter-and-pick request, repeated context blowup, or repeated user prompt form.
+5. Run `trace` on clusters where the actual command/tool sequence matters.
+6. Run `salience` only on sessions that survive the metadata and cluster triage.
+7. Pull raw transcripts only as a last resort when compactors cannot answer a specific evidence question.
+
+For broad scans, split candidate session clusters into batches and use sub-agents to analyze each batch for non-duplicate extension candidates. The main agent owns final synthesis, removes duplicates, checks proposals against existing Road42 capabilities, and enforces the cap of 6 recommendations. If sub-agents are unavailable, process the same batches sequentially and state that fallback.
 
 ## What to look for (each one maps to a different proposal type)
 
