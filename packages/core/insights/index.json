@@ -1,0 +1,20 @@
+[
+  {
+    "name": "best-session-for-yc-application",
+    "title": "Best session for a YC application",
+    "description": "Scans every session you've ever run and ranks the strongest ones to showcase in a YC application, with reasoning.",
+    "file": "best-session-for-yc-application.md"
+  },
+  {
+    "name": "skills-to-build-for-this-repo",
+    "title": "Skills to build for this repo",
+    "description": "Looks at how you work in the current repo and proposes Road42 skills, enrichers and filters that would speed up your most repetitive flows.",
+    "file": "skills-to-build-for-this-repo.md"
+  },
+  {
+    "name": "context-files-to-reduce-fetches",
+    "title": "Context files to reduce repeat fetches",
+    "description": "Detects files and explanations your coding agent keeps re-fetching in this repo and proposes specific CLAUDE.md / .context/*.md content to pre-empt them.",
+    "file": "context-files-to-reduce-fetches.md"
+  }
+]

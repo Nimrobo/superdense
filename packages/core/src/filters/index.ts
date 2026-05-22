@@ -5,6 +5,7 @@ import { LEGACY_USER_FILTERS_DIR, USER_FILTERS_DIR } from '../paths.js';
 import type { FilterHelpers, JsonSchemaField, MatchResult, Session } from '../types.js';
 import type { Filter, FilterContext, FilterResult } from './types.js';
 import { serializeFilter } from './types.js';
+import { isInsightRunFilter } from './is-insight-run.js';
 import { sessionFilter } from './session.js';
 import { userPromptContainsFilter } from './user-prompt-contains.js';
 
@@ -25,6 +26,7 @@ type LegacyMatcher = {
 const BUILTINS: Filter[] = [
   sessionFilter,
   userPromptContainsFilter,
+  isInsightRunFilter,
 ];
 
 let cache: Filter[] | null = null;

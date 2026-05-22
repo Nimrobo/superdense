@@ -5,6 +5,7 @@ import { bashCliCountsEnricher } from './bash-cli-counts.js';
 import { eventCountEnricher } from './event-count.js';
 import { fingerprintEnricher } from './fingerprint.js';
 import { hasErrorsEnricher } from './has-errors.js';
+import { insightRunEnricher } from './insight-run.js';
 import { readUserEnrichers } from './loader.js';
 import { toolCountsEnricher } from './tool-counts.js';
 import type { Enricher } from './types.js';
@@ -15,6 +16,7 @@ const BUILTINS: Enricher[] = [
   hasErrorsEnricher,
   bashCliCountsEnricher,
   fingerprintEnricher,
+  insightRunEnricher,
 ];
 
 const registry: Enricher[] = [...BUILTINS];

@@ -6,9 +6,11 @@ import { SessionReader } from './components/SessionReader.js';
 import { QueryView } from './components/QueryView.js';
 import { QueryBuilder } from './components/QueryBuilder.js';
 import { DashboardView } from './components/DashboardView.js';
+import { InsightsView } from './components/InsightsView.js';
 
 export type View =
   | { type: 'dashboard' }
+  | { type: 'insights' }
   | { type: 'sessions' }
   | { type: 'session'; id: string }
   | { type: 'query-builder' }
@@ -57,6 +59,9 @@ export function App() {
             onOpenSession={(id) => setView({ type: 'session', id })}
             onOpenSessions={() => setView({ type: 'sessions' })}
           />
+        )}
+        {view.type === 'insights' && (
+          <InsightsView onOpenSession={(id) => setView({ type: 'session', id })} />
         )}
         {view.type === 'sessions' && <SessionsView search={search} onOpen={(id) => setView({ type: 'session', id })} />}
         {view.type === 'session' && <SessionReader id={view.id} onBack={() => setView({ type: 'sessions' })} />}

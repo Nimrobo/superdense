@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import {
+  assembleInsightPrompt,
   backfillQuery,
   CLAUDE_SKILLS_DIR,
   compactSession,
@@ -23,6 +24,7 @@ import {
   listEnrichers,
   listFilterCatalog,
   listFilters,
+  listInsightRecipes,
   listQueries,
   listQueryMatchDetails,
   listSessionEnrichments,
@@ -376,6 +378,23 @@ async function handleEnricher(args: string[], io: CliIo): Promise<boolean> {
   throw new Error(`unknown enricher command: ${action}`);
 }
 
+function handleInsight(args: string[], io: CliIo): boolean {
+  const action = args[0] ?? 'list';
+  if (action === 'list') {
+    printJson({ items: listInsightRecipes() }, io);
+    return true;
+  }
+  if (action === 'prompt') {
+    const name = args[1];
+    if (!name) throw new Error('insight prompt requires <name>');
+    const runId = randomUUID();
+    const body = assembleInsightPrompt(name, runId);
+    io.stdout.log(body);
+    return true;
+  }
+  throw new Error(`unknown insight command: ${action}`);
+}
+
 async function handleFilter(args: string[], io: CliIo): Promise<boolean> {
   const action = args[0] ?? 'list';
   if (action === 'list') {
@@ -466,6 +485,11 @@ export async function runCli(argv: string[], io: CliIo = {
     return 0;
   }
 
+  if (cmd === 'insight') {
+    handleInsight(args, io);
+    return 0;
+  }
+
   if (cmd === 'index') {
     io.stdout.log('[road42] running incremental index...');
     await indexAll({ full: !!flags.full });
@@ -510,6 +534,8 @@ export async function runCli(argv: string[], io: CliIo = {
       '  compactor run <n> <id>  Run a compactor on a session',
       '  enricher list       List available enrichers',
       '  enricher show <n>   Show enricher details',
+      '  insight list        List available insight recipes',
+      '  insight prompt <n>  Print a copy-pasteable insight prompt for your coding agent',
       '  skill install [n]   Install skills into Claude and Codex',
       '  index               Incremental session index',
       '  reindex             Full session reindex',

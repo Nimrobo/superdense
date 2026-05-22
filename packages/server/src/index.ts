@@ -8,6 +8,7 @@ import { registerFacetsRoutes } from './routes/facets.js';
 import { registerQueriesRoutes } from './routes/queries.js';
 import { registerReindexRoutes } from './routes/reindex.js';
 import { registerStatsRoutes } from './routes/stats.js';
+import { registerInsightsRoutes } from './routes/insights.js';
 
 export interface ServerOptions {
   port?: number;
@@ -23,6 +24,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<{ url: stri
   await registerQueriesRoutes(app);
   await registerReindexRoutes(app);
   await registerStatsRoutes(app);
+  await registerInsightsRoutes(app);
 
   const here = dirname(fileURLToPath(import.meta.url));
   const candidates = [

@@ -167,4 +167,31 @@ export const api = {
   statsHeader: () => j<HeaderStats>('/api/stats/header'),
   statsWindow: (days: 7 | 14 | 30) => j<WindowBundle>(`/api/stats/window?days=${days}`),
   statsInsights: () => j<Insights>('/api/stats/insights'),
+  insightsRecipes: () => j<{ items: InsightRecipe[] }>('/api/insights/recipes'),
+  insightsPrompt: async (name: string): Promise<{ prompt: string; runId: string | null }> => {
+    const res = await fetch(`/api/insights/recipes/${encodeURIComponent(name)}/prompt`);
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    const prompt = await res.text();
+    return { prompt, runId: res.headers.get('x-road42-run-id') };
+  },
+  insightsRuns: () => j<{ items: InsightRun[] }>('/api/insights/runs'),
 };
+
+export interface InsightRecipe {
+  name: string;
+  title: string;
+  description: string;
+  file: string;
+}
+
+export interface InsightRun {
+  sessionId: string;
+  insightName: string;
+  insightTitle: string;
+  runId: string;
+  timestamp: number | null;
+  project: string;
+  agent: string;
+  answerExcerpt: string | null;
+  hasAnswer: boolean;
+}
