@@ -1,25 +1,50 @@
 #!/usr/bin/env node
 import { readFile } from 'node:fs/promises';
+import { cpSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import {
   backfillQuery,
+  CLAUDE_SKILLS_DIR,
+  compactSession,
+  CODEX_SKILLS_DIR,
+  countQueryMatches,
+  countSessions,
   createQuery,
   deleteQuery,
   ensureRoad42Dirs,
+  getCompactor,
+  getEnrichment,
   getQuery,
+  getSession,
   indexAll,
+  listCompactors,
   listEnrichers,
   listQueries,
-  listQueryMatches,
+  listQueryMatchDetails,
+  listSessionEnrichments,
+  listSessions,
   loadUserEnrichers,
+  OPS_BY_TYPE,
   previewPredicate,
   runDiscovery,
   runQueryEvaluation,
+  SESSION_COLUMNS,
   validatePredicate,
+  type Compactor,
+  type QueryMatchDetail,
   type Predicate,
+  type Session,
 } from '@road42/core';
 import { startServer } from '@road42/server';
 import open from 'open';
+
+interface CliIo {
+  stdout: Pick<typeof console, 'log'>;
+  stderr: Pick<typeof console, 'error'>;
+  isTty?: boolean;
+}
 
 function parseArgs(argv: string[]): { cmd: string; args: string[]; flags: Record<string, string | boolean> } {
   const flags: Record<string, string | boolean> = {};
@@ -35,11 +60,72 @@ function parseArgs(argv: string[]): { cmd: string; args: string[]; flags: Record
       positional.push(a);
     }
   }
-  return { cmd: positional[0] ?? 'start', args: positional.slice(1), flags };
+  return { cmd: positional[0] ?? 'help', args: positional.slice(1), flags };
 }
 
-function printJson(value: unknown): void {
-  console.log(JSON.stringify(value, null, process.stdout.isTTY ? 2 : 0));
+function printJson(value: unknown, io: CliIo): void {
+  io.stdout.log(JSON.stringify(value, null, io.isTty ? 2 : 0));
+}
+
+function printErrorJson(err: unknown, io: CliIo): void {
+  io.stderr.error(JSON.stringify({
+    error: err instanceof Error ? err.message : String(err),
+    code: err instanceof Error ? err.name : 'Error',
+  }));
+}
+
+function intFlag(flags: Record<string, string | boolean>, name: string, fallback: number, max?: number): number {
+  const raw = flags[name];
+  if (raw == null || typeof raw === 'boolean') return fallback;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return fallback;
+  const value = Math.max(0, Math.floor(parsed));
+  return max == null ? value : Math.min(value, max);
+}
+
+function includePath(flags: Record<string, string | boolean>): boolean {
+  return flags['include-path'] === true;
+}
+
+function serializeSession(session: Session, opts: { includePath?: boolean } = {}): Record<string, unknown> {
+  const out: Record<string, unknown> = {
+    id: session.id,
+    agent: session.agent,
+    sessionId: session.sessionId,
+    pwd: session.pwd,
+    projectKey: session.projectKey,
+    firstPrompt: session.firstPrompt ?? null,
+    summary: session.summary ?? null,
+    messageCount: session.messageCount ?? null,
+    gitBranch: session.gitBranch ?? null,
+    createdAt: session.createdAt ?? null,
+    modifiedAt: session.modifiedAt ?? null,
+    isSidechain: !!session.isSidechain,
+    fileMtime: session.fileMtime ?? null,
+    lastIndexedAt: session.lastIndexedAt ?? null,
+  };
+  if (opts.includePath) out.logPath = session.logPath;
+  return out;
+}
+
+function serializeQueryMatch(
+  match: QueryMatchDetail,
+  opts: { includePath?: boolean } = {},
+): Record<string, unknown> {
+  return {
+    session: serializeSession(match.session, opts),
+    addedAt: match.addedAt,
+    evidence: match.evidence ?? null,
+  };
+}
+
+function serializeCompactor(compactor: Compactor): Record<string, unknown> {
+  return {
+    name: compactor.name,
+    kind: compactor.kind,
+    targetBytes: compactor.targetBytes ?? null,
+    description: compactor.description ?? null,
+  };
 }
 
 async function readPredicate(input: string | boolean | undefined): Promise<Predicate> {
@@ -53,18 +139,39 @@ async function validateCliPredicate(predicate: Predicate): Promise<void> {
   validatePredicate(predicate, { enrichers: listEnrichers() });
 }
 
-async function handleQuery(args: string[], flags: Record<string, string | boolean>): Promise<boolean> {
+function getExistingQuery(id: string) {
+  const q = getQuery(id);
+  if (!q) throw new Error(`query not found: ${id}`);
+  return q;
+}
+
+function getExistingSession(id: string): Session {
+  const session = getSession(id);
+  if (!session) throw new Error(`session not found: ${id}`);
+  return session;
+}
+
+async function handleQuery(args: string[], flags: Record<string, string | boolean>, io: CliIo): Promise<boolean> {
   const action = args[0] ?? 'list';
   if (action === 'list') {
-    printJson({ items: listQueries() });
+    printJson({ items: listQueries() }, io);
     return true;
   }
   if (action === 'show') {
     const id = args[1];
     if (!id) throw new Error('query show requires <id>');
-    const q = getQuery(id);
-    if (!q) throw new Error(`query not found: ${id}`);
-    printJson({ ...q, members: listQueryMatches(id) });
+    const q = getExistingQuery(id);
+    const limit = intFlag(flags, 'limit', 200, 1000);
+    const offset = intFlag(flags, 'offset', 0);
+    const details = listQueryMatchDetails(id, { limit, offset });
+    printJson({
+      ...q,
+      total: countQueryMatches(id),
+      limit,
+      offset,
+      items: details.map((m) => serializeQueryMatch(m, { includePath: includePath(flags) })),
+      members: details.map((m) => serializeSession(m.session, { includePath: includePath(flags) })),
+    }, io);
     return true;
   }
   if (action === 'create') {
@@ -74,36 +181,169 @@ async function handleQuery(args: string[], flags: Record<string, string | boolea
     const id = randomUUID();
     createQuery({ id, name: flags.name.trim(), predicate, createdAt: Date.now() });
     await backfillQuery(id);
-    printJson(getQuery(id));
+    printJson(getQuery(id), io);
     return true;
   }
   if (action === 'preview') {
     const predicate = await readPredicate(flags.predicate);
     await validateCliPredicate(predicate);
-    printJson(await previewPredicate(predicate, {
-      limit: typeof flags.limit === 'string' ? Number(flags.limit) : undefined,
-    }));
+    const limit = intFlag(flags, 'limit', 500, 1000);
+    const result = await previewPredicate(predicate, { limit });
+    printJson({
+      ...result,
+      limit,
+      items: result.items.map((item) => {
+        const session = getSession(item.sessionId);
+        return {
+          sessionId: item.sessionId,
+          session: session ? serializeSession(session, { includePath: includePath(flags) }) : null,
+          evidence: item.evidence ?? null,
+        };
+      }),
+    }, io);
     return true;
   }
   if (action === 'delete') {
     const id = args[1];
     if (!id) throw new Error('query delete requires <id>');
     deleteQuery(id);
-    printJson({ ok: true });
+    printJson({ ok: true }, io);
     return true;
   }
   if (action === 'run') {
     const id = args[1];
     if (!id) throw new Error('query run requires <id>');
+    await loadUserEnrichers();
     const result = await backfillQuery(id);
     if (!result) throw new Error(`query not found: ${id}`);
-    printJson(result);
+    const q = getExistingQuery(id);
+    const limit = intFlag(flags, 'limit', 200, 1000);
+    const offset = intFlag(flags, 'offset', 0);
+    const details = listQueryMatchDetails(id, { limit, offset });
+    printJson({
+      query: q,
+      matched: result.matched,
+      total: countQueryMatches(id),
+      limit,
+      offset,
+      items: details.map((m) => serializeQueryMatch(m, { includePath: includePath(flags) })),
+    }, io);
     return true;
   }
   throw new Error(`unknown query command: ${action}`);
 }
 
-async function handleEnricher(args: string[]): Promise<boolean> {
+async function handleSession(args: string[], flags: Record<string, string | boolean>, io: CliIo): Promise<boolean> {
+  const action = args[0] ?? 'list';
+  if (action === 'list') {
+    const limit = intFlag(flags, 'limit', 200, 1000);
+    const offset = intFlag(flags, 'offset', 0);
+    const filter = {
+      agent: typeof flags.agent === 'string' ? flags.agent : undefined,
+      pwd: typeof flags.pwd === 'string' ? flags.pwd : undefined,
+      q: typeof flags.q === 'string' ? flags.q : undefined,
+      limit,
+      offset,
+    };
+    printJson({
+      items: listSessions(filter).map((s) => serializeSession(s, { includePath: includePath(flags) })),
+      total: countSessions(filter),
+      limit,
+      offset,
+    }, io);
+    return true;
+  }
+  if (action === 'show') {
+    const id = args[1];
+    if (!id) throw new Error('session show requires <session-id>');
+    printJson({ session: serializeSession(getExistingSession(id), { includePath: includePath(flags) }) }, io);
+    return true;
+  }
+  if (action === 'path') {
+    const id = args[1];
+    if (!id) throw new Error('session path requires <session-id>');
+    const session = getExistingSession(id);
+    printJson({
+      id: session.id,
+      agent: session.agent,
+      sessionId: session.sessionId,
+      logPath: session.logPath,
+    }, io);
+    return true;
+  }
+  if (action === 'fields') {
+    await loadUserEnrichers();
+    printJson({
+      session: Object.entries(SESSION_COLUMNS).map(([name, type]) => ({
+        field: `session.${name}`,
+        type,
+        operators: OPS_BY_TYPE[type],
+      })),
+      enrichers: listEnrichers().map(({ name, version, returns, jsonSchema, description }) => ({
+        field: `enr.${name}`,
+        name,
+        version,
+        returns,
+        operators: OPS_BY_TYPE[returns],
+        jsonSchema,
+        description,
+      })),
+    }, io);
+    return true;
+  }
+  if (action === 'enrichments') {
+    const id = args[1];
+    if (!id) throw new Error('session enrichments requires <session-id>');
+    const session = getExistingSession(id);
+    let items;
+    if (typeof flags.name === 'string' && flags.name.trim()) {
+      const item = getEnrichment(id, flags.name.trim());
+      items = item ? [{ name: flags.name.trim(), ...item }] : [];
+    } else {
+      items = listSessionEnrichments(id);
+    }
+    printJson({
+      session: serializeSession(session, { includePath: includePath(flags) }),
+      items,
+    }, io);
+    return true;
+  }
+  throw new Error(`unknown session command: ${action}`);
+}
+
+async function handleCompactor(args: string[], flags: Record<string, string | boolean>, io: CliIo): Promise<boolean> {
+  const action = args[0] ?? 'list';
+  if (action === 'list') {
+    printJson({ items: listCompactors().map(serializeCompactor) }, io);
+    return true;
+  }
+  if (action === 'show') {
+    const name = args[1];
+    if (!name) throw new Error('compactor show requires <name>');
+    const compactor = getCompactor(name);
+    if (!compactor) throw new Error(`compactor not found: ${name}`);
+    printJson(serializeCompactor(compactor), io);
+    return true;
+  }
+  if (action === 'run') {
+    const name = args[1];
+    const sessionId = args[2];
+    if (!name || !sessionId) throw new Error('compactor run requires <name> <session-id>');
+    const compactor = getCompactor(name);
+    if (!compactor) throw new Error(`compactor not found: ${name}`);
+    const session = getExistingSession(sessionId);
+    const result = await compactSession(name, session);
+    printJson({
+      session: serializeSession(session, { includePath: includePath(flags) }),
+      compactor: serializeCompactor(compactor),
+      result,
+    }, io);
+    return true;
+  }
+  throw new Error(`unknown compactor command: ${action}`);
+}
+
+async function handleEnricher(args: string[], io: CliIo): Promise<boolean> {
   const action = args[0] ?? 'list';
   await loadUserEnrichers();
   if (action === 'list') {
@@ -115,7 +355,7 @@ async function handleEnricher(args: string[]): Promise<boolean> {
         jsonSchema,
         description,
       })),
-    });
+    }, io);
     return true;
   }
   if (action === 'show') {
@@ -124,71 +364,163 @@ async function handleEnricher(args: string[]): Promise<boolean> {
     const e = listEnrichers().find((x) => x.name === name);
     if (!e) throw new Error(`enricher not found: ${name}`);
     const { run: _run, ...serializable } = e;
-    printJson(serializable);
+    printJson(serializable, io);
     return true;
   }
   throw new Error(`unknown enricher command: ${action}`);
 }
 
-async function main(): Promise<void> {
+function handleSkillInstall(args: string[], io: CliIo): void {
+  const moduleDir = dirname(fileURLToPath(import.meta.url));
+  const skillsRoot = [
+    join(moduleDir, 'skills'),
+    join(moduleDir, '..', '..', '..', 'skills'),
+  ].find((candidate) => existsSync(candidate));
+  if (!skillsRoot) throw new Error(`skills directory not found: ${join(moduleDir, 'skills')}`);
+
+  const targetNames = args[0]
+    ? [args[0]]
+    : readdirSync(skillsRoot).filter((entry) => statSync(join(skillsRoot, entry)).isDirectory());
+
+  const installed: Array<{ name: string; claude: string; codex: string }> = [];
+
+  for (const name of targetNames) {
+    const src = join(skillsRoot, name);
+    if (!existsSync(src) || !statSync(src).isDirectory()) {
+      throw new Error(`skill not found: ${name}`);
+    }
+
+    const claudeDest = join(process.env.CLAUDE_SKILLS_DIR ?? CLAUDE_SKILLS_DIR, name);
+    mkdirSync(claudeDest, { recursive: true });
+    cpSync(src, claudeDest, { recursive: true });
+
+    const codexDest = join(process.env.CODEX_SKILLS_DIR ?? CODEX_SKILLS_DIR, name);
+    cpSync(src, codexDest, { recursive: true });
+
+    installed.push({ name, claude: claudeDest, codex: codexDest });
+  }
+
+  printJson({ installed }, io);
+}
+
+export async function runCli(argv: string[], io: CliIo = {
+  stdout: console,
+  stderr: console,
+  isTty: process.stdout.isTTY,
+}): Promise<number> {
   ensureRoad42Dirs();
-  const { cmd, args, flags } = parseArgs(process.argv.slice(2));
+  const { cmd, args, flags } = parseArgs(argv);
+
+  if (cmd === 'skill') {
+    const action = args[0];
+    if (action !== 'install') throw new Error(`unknown skill command: ${action ?? '(none)'}`);
+    handleSkillInstall(args.slice(1), io);
+    return 0;
+  }
 
   if (cmd === 'query') {
-    await handleQuery(args, flags);
-    return;
+    await handleQuery(args, flags, io);
+    return 0;
+  }
+
+  if (cmd === 'session') {
+    await handleSession(args, flags, io);
+    return 0;
+  }
+
+  if (cmd === 'compactor') {
+    await handleCompactor(args, flags, io);
+    return 0;
   }
 
   if (cmd === 'enricher') {
-    await handleEnricher(args);
-    return;
+    await handleEnricher(args, io);
+    return 0;
   }
 
   if (cmd === 'index') {
-    console.log('[road42] running incremental index...');
+    io.stdout.log('[road42] running incremental index...');
     await indexAll({ full: !!flags.full });
-    console.log('[road42] done.');
-    return;
+    io.stdout.log('[road42] done.');
+    return 0;
   }
 
   if (cmd === 'reindex') {
-    console.log('[road42] running full reindex...');
+    io.stdout.log('[road42] running full reindex...');
     await indexAll({ full: true });
-    console.log('[road42] done.');
-    return;
+    io.stdout.log('[road42] done.');
+    return 0;
   }
 
   if (cmd === 'discover') {
     const r = await runDiscovery();
-    console.log(`[road42] discovered ${r.discovered} sessions.`);
-    return;
+    io.stdout.log(`[road42] discovered ${r.discovered} sessions.`);
+    return 0;
   }
 
-  if (cmd !== 'start') {
-    console.error(`unknown command: ${cmd}`);
-    process.exit(1);
+  if (cmd === 'help') {
+    io.stdout.log([
+      'Usage: road42 <command> [options]',
+      '',
+      'Commands:',
+      '  start|studio        Start the Road42 web UI',
+      '  session list        List indexed sessions',
+      '  session show <id>   Show session metadata',
+      '  session path <id>   Get raw log file path',
+      '  session fields      List queryable fields',
+      '  session enrichments <id>  Get computed enrichments',
+      '  query list          List saved queries',
+      '  query show <id>     Show query with matching sessions',
+      '  query create        Create a new query',
+      '  query preview       Preview matching sessions',
+      '  query run <id>      Evaluate and return results',
+      '  query delete <id>   Delete a query',
+      '  compactor list      List available compactors',
+      '  compactor show <n>  Show compactor details',
+      '  compactor run <n> <id>  Run a compactor on a session',
+      '  enricher list       List available enrichers',
+      '  enricher show <n>   Show enricher details',
+      '  skill install [n]   Install skills into Claude and Codex',
+      '  index               Incremental session index',
+      '  reindex             Full session reindex',
+      '  discover            Discover sessions from adapters',
+    ].join('\n'));
+    return 0;
+  }
+
+  if (cmd !== 'studio' && cmd !== 'start') {
+    throw new Error(`unknown command: ${cmd}`);
   }
 
   const port = flags.port ? parseInt(String(flags.port), 10) : 4242;
 
   // Run discovery synchronously so the UI immediately shows sessions.
-  console.log('[road42] discovering sessions...');
+  io.stdout.log('[road42] discovering sessions...');
   const d = await runDiscovery();
-  console.log(`[road42] discovered ${d.discovered} sessions.`);
+  io.stdout.log(`[road42] discovered ${d.discovered} sessions.`);
 
   const { url } = await startServer({ port, host: '127.0.0.1' });
-  console.log(`[road42] ${url}`);
+  io.stdout.log(`[road42] ${url}`);
 
   // Background: run query evaluation if any queries exist.
-  runQueryEvaluation().catch((e) => console.error('[road42] query eval failed:', e));
+  runQueryEvaluation().catch((e) => io.stderr.error('[road42] query eval failed:', e));
 
   if (!flags['no-open']) {
     open(url).catch(() => { /* ignore */ });
   }
+
+  return 0;
 }
 
-main().catch((err) => {
-  if (process.stderr.isTTY) console.error(err);
-  else console.error(JSON.stringify({ error: err instanceof Error ? err.message : String(err), code: err?.name ?? 'Error' }));
-  process.exit(1);
-});
+async function main(): Promise<void> {
+  try {
+    process.exitCode = await runCli(process.argv.slice(2));
+  } catch (err) {
+    printErrorJson(err, { stdout: console, stderr: console, isTty: process.stderr.isTTY });
+    process.exitCode = 1;
+  }
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  main();
+}

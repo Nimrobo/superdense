@@ -24,7 +24,7 @@ export {
 } from './compactors/index.js';
 export type { Compactor, CompactorContext } from './compactors/types.js';
 export { compilePredicate } from './query/compile.js';
-export { validatePredicate, ValidationError } from './query/validate.js';
+export { OPS_BY_TYPE, SESSION_COLUMNS, validatePredicate, ValidationError } from './query/validate.js';
 export type {
   Predicate,
   PredicateLeaf,

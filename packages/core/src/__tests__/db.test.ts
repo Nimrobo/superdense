@@ -23,12 +23,15 @@ import {
   getQuery,
   deleteQuery,
   listQueryMatches,
+  listQueryMatchDetails,
+  countQueryMatches,
   upsertQueryMatch,
   dropQueryMatch,
   markQueryRun,
   isQueryMatch,
   upsertEnrichment,
   getEnrichment,
+  listSessionEnrichments,
   getStatsTotals,
   getMaxLastIndexedAt,
   getSessionsPerDay,
@@ -295,6 +298,22 @@ describe('query matches', () => {
     expect(members[0].id).toBe('s1');
   });
 
+  it('listQueryMatchDetails returns session metadata with evidence and paging', () => {
+    setup();
+    upsertSession({ ...BASE, id: 's1', modifiedAt: 1000 });
+    upsertSession({ ...BASE, id: 's2', modifiedAt: 2000 });
+    upsertQueryMatch({ queryId: 'q1', sessionId: 's1', addedAt: 100, evidence: 'first' });
+    upsertQueryMatch({ queryId: 'q1', sessionId: 's2', addedAt: 200, evidence: 'second' });
+
+    const page = listQueryMatchDetails('q1', { limit: 1, offset: 0 });
+
+    expect(page).toHaveLength(1);
+    expect(page[0].session.id).toBe('s2');
+    expect(page[0].addedAt).toBe(200);
+    expect(page[0].evidence).toBe('second');
+    expect(countQueryMatches('q1')).toBe(2);
+  });
+
   it('memberCount reflects current membership', () => {
     setup();
     upsertQueryMatch({ queryId: 'q1', sessionId: 's1', addedAt: 100 });
@@ -352,6 +371,17 @@ describe('enrichments', () => {
     upsertEnrichment('sess-1', 'tool_counts', 1, { bash: 3, read: 1 }, 1000);
     const got = getEnrichment('sess-1', 'tool_counts');
     expect(got!.value).toEqual({ bash: 3, read: 1 });
+  });
+
+  it('lists named enrichments ordered by name', () => {
+    upsertSession(BASE);
+    upsertEnrichment('sess-1', 'tool_counts', 1, { Bash: 3 }, 1000);
+    upsertEnrichment('sess-1', 'event_count', 1, 42, 1000);
+
+    expect(listSessionEnrichments('sess-1')).toEqual([
+      { name: 'event_count', version: 1, value: 42, computedAt: 1000 },
+      { name: 'tool_counts', version: 1, value: { Bash: 3 }, computedAt: 1000 },
+    ]);
   });
 
   it('returns false boolean value correctly', () => {

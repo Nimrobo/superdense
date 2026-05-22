@@ -1,0 +1,4 @@
+interface:
+  display_name: "Road42 Stored Sessions"
+  short_description: "Inspect Road42 sessions with compact metadata"
+  default_prompt: "Use $road42-stored-sessions to find relevant Road42 sessions and summarize them without dumping full transcripts."
