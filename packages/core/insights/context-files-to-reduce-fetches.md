@@ -6,7 +6,9 @@ Treat the **current working directory** as the repository scope. Every recommend
 
 ## Before you start
 
-Load and follow the Road42 skill before running any `road42` commands. If the agent environment cannot load skills, read `skills/road42/SKILL.md` in this repo and follow its staged inspection workflow.
+Load and follow the Road42 skill before running any `road42` commands. If the agent environment cannot load skills, use the `road42` CLI as a staged inspection pipeline: list candidates, inspect cheap enrichments first, then run compactors only on reduced candidates.
+
+Use Road42 only as the analysis tool for finding evidence in past sessions. Do not recommend Road42 product changes in the final answer.
 
 Do not start by running `road42 compactor run salience` across many sessions. Use cheap metadata, filters, and small candidate batches first.
 
