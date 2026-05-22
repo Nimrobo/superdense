@@ -8,6 +8,7 @@
   ],
   "scripts": {
     "build": "pnpm -r --filter=./packages/* run build",
+    "predev": "pnpm --filter=@road42/core --filter=@road42/server run build",
     "dev": "concurrently \"pnpm --filter=@road42/cli run dev\" \"pnpm --filter=@road42/web run dev\"",
     "start": "node packages/cli/dist/index.js",
     "typecheck": "pnpm -r run typecheck",
