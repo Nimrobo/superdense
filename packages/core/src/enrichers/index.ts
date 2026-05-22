@@ -1,6 +1,5 @@
 import { iterSessionEvents } from '../adapters/index.js';
-import { getEnrichment, listQueries, upsertEnrichment } from '../db.js';
-import { collectReferencedEnrichers } from '../query/validate.js';
+import { getEnrichment, upsertEnrichment } from '../db.js';
 import type { Session } from '../types.js';
 import { bashCliCountsEnricher } from './bash-cli-counts.js';
 import { eventCountEnricher } from './event-count.js';
@@ -43,13 +42,9 @@ export function getActiveEnricherNames(): Set<string> {
   return new Set(activeNames);
 }
 
-/** Recompute the set of enrichers referenced by at least one live query. */
+/** Query-requested enrichers run only after filtering, so discovery tracks no active query enrichers. */
 export function refreshActiveEnricherNames(): Set<string> {
-  const next = new Set<string>();
-  for (const q of listQueries()) {
-    for (const name of collectReferencedEnrichers(q.predicate)) next.add(name);
-  }
-  activeNames = next;
+  activeNames = new Set();
   return new Set(activeNames);
 }
 
@@ -99,7 +94,7 @@ async function runOne(enricher: Enricher, session: Session): Promise<void> {
   }
 }
 
-/** Run enrichers for a session: any flagged alwaysRun, plus those referenced by a live query. */
+/** Run always-on system enrichers for a session during discovery/filtering. */
 export async function runEnrichersForSession(session: Session): Promise<void> {
   for (const enricher of registry) {
     if (!enricher.alwaysRun && !activeNames.has(enricher.name)) continue;

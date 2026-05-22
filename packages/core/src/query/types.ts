@@ -1,58 +1,49 @@
 export type EnrichReturn = 'string' | 'int' | 'bool' | 'json';
 
-export type Operator =
-  | '='
-  | '!='
-  | '<'
-  | '<='
-  | '>'
-  | '>='
-  | 'startsWith'
-  | 'endsWith'
-  | 'contains'
-  | 'matches'
-  | 'in'
-  | 'between'
-  | 'isNull'
-  | 'jsonEq'
-  | 'jsonContains'
-  | 'jsonAny'
-  | 'jsonLength';
-
 export type IntOp = '=' | '!=' | '<' | '<=' | '>' | '>=';
 
-export interface FieldLeaf {
-  field: string;
-  op: Operator;
-  value?: unknown;
-  path?: string;
-  intOp?: IntOp;
+export interface FilterLeaf {
+  filter: {
+    name: string;
+    params: Record<string, unknown>;
+  };
 }
 
-export interface PluginLeaf {
-  plugin: { name: string; config: Record<string, unknown> };
+export type QueryFilter =
+  | { and: QueryFilter[] }
+  | { or: QueryFilter[] }
+  | { not: QueryFilter }
+  | FilterLeaf;
+
+export interface QueryDefinition {
+  filters: QueryFilter;
+  enrichers?: string[];
 }
 
-export type PredicateLeaf = FieldLeaf | PluginLeaf;
-
-export type Predicate =
-  | { and: Predicate[] }
-  | { or: Predicate[] }
-  | { not: Predicate }
-  | PredicateLeaf;
-
-export function isAnd(p: Predicate): p is { and: Predicate[] } {
+export function isAnd(p: QueryFilter): p is { and: QueryFilter[] } {
   return typeof p === 'object' && p !== null && 'and' in p;
 }
-export function isOr(p: Predicate): p is { or: Predicate[] } {
+
+export function isOr(p: QueryFilter): p is { or: QueryFilter[] } {
   return typeof p === 'object' && p !== null && 'or' in p;
 }
-export function isNot(p: Predicate): p is { not: Predicate } {
+
+export function isNot(p: QueryFilter): p is { not: QueryFilter } {
   return typeof p === 'object' && p !== null && 'not' in p;
 }
-export function isPluginLeaf(p: Predicate): p is PluginLeaf {
-  return typeof p === 'object' && p !== null && 'plugin' in p;
+
+export function isFilterLeaf(p: QueryFilter): p is FilterLeaf {
+  return typeof p === 'object' && p !== null && 'filter' in p;
 }
-export function isFieldLeaf(p: Predicate): p is FieldLeaf {
-  return typeof p === 'object' && p !== null && 'field' in p;
+
+export function normalizeQueryDefinition(input: unknown): QueryDefinition {
+  if (input == null || typeof input !== 'object') {
+    throw new Error(`query definition must be an object, got ${typeof input}`);
+  }
+  const q = input as Partial<QueryDefinition>;
+  if (!q.filters) throw new Error('query definition: filters required');
+  return {
+    filters: q.filters,
+    enrichers: Array.isArray(q.enrichers) ? q.enrichers : [],
+  };
 }

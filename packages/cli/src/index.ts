@@ -21,20 +21,20 @@ import {
   indexAll,
   listCompactors,
   listEnrichers,
+  listFilterCatalog,
+  listFilters,
   listQueries,
   listQueryMatchDetails,
   listSessionEnrichments,
   listSessions,
   loadUserEnrichers,
-  OPS_BY_TYPE,
-  previewPredicate,
+  previewQuery,
   runDiscovery,
   runQueryEvaluation,
-  SESSION_COLUMNS,
-  validatePredicate,
+  validateQueryDefinition,
   type Compactor,
   type QueryMatchDetail,
-  type Predicate,
+  type QueryDefinition,
   type Session,
 } from '@road42/core';
 import { startServer } from '@road42/server';
@@ -110,12 +110,13 @@ function serializeSession(session: Session, opts: { includePath?: boolean } = {}
 
 function serializeQueryMatch(
   match: QueryMatchDetail,
-  opts: { includePath?: boolean } = {},
+  opts: { includePath?: boolean; enrichments?: Record<string, unknown> } = {},
 ): Record<string, unknown> {
   return {
     session: serializeSession(match.session, opts),
     addedAt: match.addedAt,
     evidence: match.evidence ?? null,
+    enrichments: opts.enrichments ?? {},
   };
 }
 
@@ -128,15 +129,15 @@ function serializeCompactor(compactor: Compactor): Record<string, unknown> {
   };
 }
 
-async function readPredicate(input: string | boolean | undefined): Promise<Predicate> {
-  if (typeof input !== 'string' || !input.trim()) throw new Error('--predicate is required');
+async function readQueryDefinition(input: string | boolean | undefined): Promise<QueryDefinition> {
+  if (typeof input !== 'string' || !input.trim()) throw new Error('--query is required');
   const raw = input.startsWith('@') ? await readFile(input.slice(1), 'utf8') : input;
-  return JSON.parse(raw) as Predicate;
+  return JSON.parse(raw) as QueryDefinition;
 }
 
-async function validateCliPredicate(predicate: Predicate): Promise<void> {
+async function validateCliQueryDefinition(definition: QueryDefinition): Promise<void> {
   await loadUserEnrichers();
-  validatePredicate(predicate, { enrichers: listEnrichers() });
+  validateQueryDefinition(definition, { filters: await listFilters(), enrichers: listEnrichers() });
 }
 
 function getExistingQuery(id: string) {
@@ -176,19 +177,25 @@ async function handleQuery(args: string[], flags: Record<string, string | boolea
   }
   if (action === 'create') {
     if (typeof flags.name !== 'string' || !flags.name.trim()) throw new Error('--name is required');
-    const predicate = await readPredicate(flags.predicate);
-    await validateCliPredicate(predicate);
+    const definition = await readQueryDefinition(flags.query);
+    await validateCliQueryDefinition(definition);
     const id = randomUUID();
-    createQuery({ id, name: flags.name.trim(), predicate, createdAt: Date.now() });
+    createQuery({
+      id,
+      name: flags.name.trim(),
+      filters: definition.filters,
+      enrichers: definition.enrichers ?? [],
+      createdAt: Date.now(),
+    });
     await backfillQuery(id);
     printJson(getQuery(id), io);
     return true;
   }
   if (action === 'preview') {
-    const predicate = await readPredicate(flags.predicate);
-    await validateCliPredicate(predicate);
+    const definition = await readQueryDefinition(flags.query);
+    await validateCliQueryDefinition(definition);
     const limit = intFlag(flags, 'limit', 500, 1000);
-    const result = await previewPredicate(predicate, { limit });
+    const result = await previewQuery(definition, { limit });
     printJson({
       ...result,
       limit,
@@ -198,6 +205,7 @@ async function handleQuery(args: string[], flags: Record<string, string | boolea
           sessionId: item.sessionId,
           session: session ? serializeSession(session, { includePath: includePath(flags) }) : null,
           evidence: item.evidence ?? null,
+          enrichments: item.enrichments ?? {},
         };
       }),
     }, io);
@@ -220,13 +228,17 @@ async function handleQuery(args: string[], flags: Record<string, string | boolea
     const limit = intFlag(flags, 'limit', 200, 1000);
     const offset = intFlag(flags, 'offset', 0);
     const details = listQueryMatchDetails(id, { limit, offset });
+    const resultBySession = new Map(result.items.map((item) => [item.sessionId, item] as const));
     printJson({
       query: q,
       matched: result.matched,
       total: countQueryMatches(id),
       limit,
       offset,
-      items: details.map((m) => serializeQueryMatch(m, { includePath: includePath(flags) })),
+      items: details.map((m) => serializeQueryMatch(m, {
+        includePath: includePath(flags),
+        enrichments: resultBySession.get(m.session.id)?.enrichments ?? {},
+      })),
     }, io);
     return true;
   }
@@ -274,17 +286,11 @@ async function handleSession(args: string[], flags: Record<string, string | bool
   if (action === 'fields') {
     await loadUserEnrichers();
     printJson({
-      session: Object.entries(SESSION_COLUMNS).map(([name, type]) => ({
-        field: `session.${name}`,
-        type,
-        operators: OPS_BY_TYPE[type],
-      })),
+      filters: await listFilterCatalog(),
       enrichers: listEnrichers().map(({ name, version, returns, jsonSchema, description }) => ({
-        field: `enr.${name}`,
         name,
         version,
         returns,
-        operators: OPS_BY_TYPE[returns],
         jsonSchema,
         description,
       })),
@@ -370,6 +376,23 @@ async function handleEnricher(args: string[], io: CliIo): Promise<boolean> {
   throw new Error(`unknown enricher command: ${action}`);
 }
 
+async function handleFilter(args: string[], io: CliIo): Promise<boolean> {
+  const action = args[0] ?? 'list';
+  if (action === 'list') {
+    printJson({ items: await listFilterCatalog() }, io);
+    return true;
+  }
+  if (action === 'show') {
+    const name = args[1];
+    if (!name) throw new Error('filter show requires <name>');
+    const item = (await listFilterCatalog()).find((x) => x.name === name);
+    if (!item) throw new Error(`filter not found: ${name}`);
+    printJson(item, io);
+    return true;
+  }
+  throw new Error(`unknown filter command: ${action}`);
+}
+
 function handleSkillInstall(args: string[], io: CliIo): void {
   const moduleDir = dirname(fileURLToPath(import.meta.url));
   const skillsRoot = [
@@ -438,6 +461,11 @@ export async function runCli(argv: string[], io: CliIo = {
     return 0;
   }
 
+  if (cmd === 'filter') {
+    await handleFilter(args, io);
+    return 0;
+  }
+
   if (cmd === 'index') {
     io.stdout.log('[road42] running incremental index...');
     await indexAll({ full: !!flags.full });
@@ -467,8 +495,10 @@ export async function runCli(argv: string[], io: CliIo = {
       '  session list        List indexed sessions',
       '  session show <id>   Show session metadata',
       '  session path <id>   Get raw log file path',
-      '  session fields      List queryable fields',
+      '  session fields      List filters and enrichers',
       '  session enrichments <id>  Get computed enrichments',
+      '  filter list         List available filters',
+      '  filter show <n>     Show filter params and examples',
       '  query list          List saved queries',
       '  query show <id>     Show query with matching sessions',
       '  query create        Create a new query',

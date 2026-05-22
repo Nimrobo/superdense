@@ -4,7 +4,8 @@ vi.mock('../../paths.js', () => ({
   DB_PATH: ':memory:',
   ROAD42_HOME: '/tmp/road42-test',
   GROUPS_DIR: '/tmp/road42-test/queries',
-  USER_PLUGINS_DIR: '/tmp/road42-test/plugins',
+  USER_FILTERS_DIR: '/tmp/road42-test/filters',
+  LEGACY_USER_FILTERS_DIR: '/tmp/road42-test/plugins',
   USER_ENRICHERS_DIR: '/tmp/road42-test/enrichers',
   ensureRoad42Dirs: vi.fn(),
 }));

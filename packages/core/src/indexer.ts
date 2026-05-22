@@ -88,7 +88,8 @@ export async function writeQueryJson(queryId: string): Promise<void> {
   const payload = {
     id: q.id,
     name: q.name,
-    predicate: q.predicate,
+    filters: q.filters,
+    enrichers: q.enrichers,
     createdAt: q.createdAt,
     lastRunAt: q.lastRunAt ?? Date.now(),
     sessionIds: members.map((m) => m.id),

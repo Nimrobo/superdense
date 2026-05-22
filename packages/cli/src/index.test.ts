@@ -14,17 +14,6 @@ vi.mock('open', () => ({
 vi.mock('@road42/core', () => ({
   CLAUDE_SKILLS_DIR: '/unused/claude/skills',
   CODEX_SKILLS_DIR: '/unused/codex/skills',
-  OPS_BY_TYPE: {
-    string: ['=', 'contains'],
-    int: ['=', '>'],
-    bool: ['=', 'isNull'],
-    json: ['jsonEq'],
-  },
-  SESSION_COLUMNS: {
-    pwd: 'string',
-    agent: 'string',
-    modifiedAt: 'int',
-  },
   backfillQuery: vi.fn(),
   compactSession: vi.fn(),
   countQueryMatches: vi.fn(),
@@ -39,16 +28,18 @@ vi.mock('@road42/core', () => ({
   indexAll: vi.fn(),
   listCompactors: vi.fn(),
   listEnrichers: vi.fn(),
+  listFilterCatalog: vi.fn(),
+  listFilters: vi.fn(),
   listQueries: vi.fn(),
   listQueryMatchDetails: vi.fn(),
   listQueryMatches: vi.fn(),
   listSessionEnrichments: vi.fn(),
   listSessions: vi.fn(),
   loadUserEnrichers: vi.fn(),
-  previewPredicate: vi.fn(),
+  previewQuery: vi.fn(),
   runDiscovery: vi.fn(),
   runQueryEvaluation: vi.fn(),
-  validatePredicate: vi.fn(),
+  validateQueryDefinition: vi.fn(),
 }));
 
 import * as core from '@road42/core';
@@ -123,12 +114,16 @@ beforeEach(() => {
   vi.mocked(core.getQuery).mockReturnValue({
     id: 'q1',
     name: 'Interesting',
-    predicate: { field: 'session.agent', op: '=', value: 'codex' },
+    filters: { filter: { name: 'session', params: { agent: 'codex' } } },
+    enrichers: [],
     createdAt: 1,
     lastRunAt: null,
     memberCount: 1,
   });
-  vi.mocked(core.backfillQuery).mockResolvedValue({ matched: 1 });
+  vi.mocked(core.backfillQuery).mockResolvedValue({
+    matched: 1,
+    items: [{ sessionId: 'codex:abc123', evidence: 'matched', enrichments: { tool_counts: { Bash: 3 } } }],
+  });
   vi.mocked(core.countQueryMatches).mockReturnValue(1);
   vi.mocked(core.listQueryMatchDetails).mockReturnValue([
     { session, addedAt: 3, evidence: 'matched' },
@@ -136,10 +131,15 @@ beforeEach(() => {
   vi.mocked(core.listEnrichers).mockReturnValue([
     { name: 'tool_counts', version: 1, returns: 'json', description: 'tools', run: vi.fn() },
   ]);
-  vi.mocked(core.previewPredicate).mockResolvedValue({
-    items: [{ sessionId: 'codex:abc123', evidence: 'preview matched' }],
-    referencedEnrichers: [],
-    missingEnrichments: [],
+  vi.mocked(core.listFilters).mockResolvedValue([
+    { name: 'session', title: 'Session', paramsSchema: {}, run: vi.fn() },
+  ]);
+  vi.mocked(core.listFilterCatalog).mockResolvedValue([
+    { name: 'session', title: 'Session', paramsSchema: {}, examples: [] },
+  ]);
+  vi.mocked(core.previewQuery).mockResolvedValue({
+    items: [{ sessionId: 'codex:abc123', evidence: 'preview matched', enrichments: {} }],
+    enrichers: [],
   });
   vi.mocked(core.runDiscovery).mockResolvedValue({ discovered: 2 });
   vi.mocked(core.runQueryEvaluation).mockResolvedValue({ evaluated: 0 });
@@ -316,12 +316,12 @@ describe('road42 cli agent commands', () => {
 
   it('previews queries with session metadata and evidence', async () => {
     const out = io();
-    const predicate = { field: 'session.agent', op: '=', value: 'codex' };
+    const query = { filters: { filter: { name: 'session', params: { agent: 'codex' } } }, enrichers: [] };
 
-    await runCli(['query', 'preview', '--predicate', JSON.stringify(predicate), '--limit', '12'], out.io);
+    await runCli(['query', 'preview', '--query', JSON.stringify(query), '--limit', '12'], out.io);
 
-    expect(core.validatePredicate).toHaveBeenCalledWith(predicate, { enrichers: core.listEnrichers() });
-    expect(core.previewPredicate).toHaveBeenCalledWith(predicate, { limit: 12 });
+    expect(core.validateQueryDefinition).toHaveBeenCalledWith(query, { filters: await core.listFilters(), enrichers: core.listEnrichers() });
+    expect(core.previewQuery).toHaveBeenCalledWith(query, { limit: 12 });
     expect(core.getSession).toHaveBeenCalledWith('codex:abc123');
     expect(json(out.stdout[0]!)).toMatchObject({
       limit: 12,
@@ -333,17 +333,17 @@ describe('road42 cli agent commands', () => {
     });
   });
 
-  it('lists session fields and enricher fields for agents', async () => {
+  it('lists filters and enrichers for agents', async () => {
     const out = io();
 
     await runCli(['session', 'fields'], out.io);
 
     expect(json(out.stdout[0]!)).toMatchObject({
-      session: expect.arrayContaining([
-        expect.objectContaining({ field: 'session.pwd', type: 'string', operators: ['=', 'contains'] }),
+      filters: expect.arrayContaining([
+        expect.objectContaining({ name: 'session', title: 'Session' }),
       ]),
       enrichers: expect.arrayContaining([
-        expect.objectContaining({ field: 'enr.tool_counts', name: 'tool_counts', returns: 'json' }),
+        expect.objectContaining({ name: 'tool_counts', returns: 'json' }),
       ]),
     });
   });

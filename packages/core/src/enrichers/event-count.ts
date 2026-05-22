@@ -4,6 +4,7 @@ export const eventCountEnricher: Enricher = {
   name: 'event_count',
   version: 1,
   returns: 'int',
+  alwaysRun: true,
   description: 'Total number of transcript events in the session.',
   async run(ctx) {
     let n = 0;

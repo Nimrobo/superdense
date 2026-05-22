@@ -1,13 +1,12 @@
 import type { Enricher } from '../enrichers/types.js';
+import type { Filter } from '../filters/types.js';
 import {
-  type Predicate,
-  type Operator,
-  type EnrichReturn,
+  type QueryDefinition,
+  type QueryFilter,
   isAnd,
-  isOr,
+  isFilterLeaf,
   isNot,
-  isFieldLeaf,
-  isPluginLeaf,
+  isOr,
 } from './types.js';
 
 export class ValidationError extends Error {
@@ -17,126 +16,135 @@ export class ValidationError extends Error {
   }
 }
 
-export const SESSION_COLUMNS: Record<string, EnrichReturn> = {
-  pwd: 'string',
-  agent: 'string',
-  gitBranch: 'string',
-  firstPrompt: 'string',
-  summary: 'string',
-  createdAt: 'int',
-  modifiedAt: 'int',
-  messageCount: 'int',
-  isSidechain: 'bool',
-};
-
-export const OPS_BY_TYPE: Record<EnrichReturn, Operator[]> = {
-  string: ['=', '!=', 'startsWith', 'endsWith', 'contains', 'matches', 'in', 'isNull'],
-  int: ['=', '!=', '<', '<=', '>', '>=', 'in', 'between', 'isNull'],
-  bool: ['=', 'isNull'],
-  json: ['jsonEq', 'jsonContains', 'jsonAny', 'jsonLength', 'isNull'],
-};
-
 export interface ValidateOptions {
+  filters: Filter[];
   enrichers: Enricher[];
 }
 
-export function validatePredicate(p: Predicate, opts: ValidateOptions): void {
-  const map = new Map(opts.enrichers.map((e) => [e.name, e]));
-  walkValidate(p, map);
-}
+export function validateQueryDefinition(q: QueryDefinition, opts: ValidateOptions): void {
+  if (q == null || typeof q !== 'object') {
+    throw new ValidationError(`query definition must be an object, got ${typeof q}`);
+  }
+  if (!q.filters) throw new ValidationError('query definition: filters required');
+  const filterMap = new Map(opts.filters.map((f) => [f.name, f]));
+  walkValidate(q.filters, filterMap);
 
-export function collectReferencedEnrichers(p: Predicate): Set<string> {
-  const out = new Set<string>();
-  walkCollect(p, out);
-  return out;
-}
-
-function walkCollect(p: Predicate, out: Set<string>): void {
-  if (isAnd(p)) {
-    for (const c of p.and) walkCollect(c, out);
-    return;
+  if (q.enrichers !== undefined && !Array.isArray(q.enrichers)) {
+    throw new ValidationError('query definition: enrichers must be an array');
   }
-  if (isOr(p)) {
-    for (const c of p.or) walkCollect(c, out);
-    return;
-  }
-  if (isNot(p)) {
-    walkCollect(p.not, out);
-    return;
-  }
-  if (isFieldLeaf(p)) {
-    if (p.field.startsWith('enr.')) out.add(p.field.slice(4));
+  const enricherMap = new Map(opts.enrichers.map((e) => [e.name, e]));
+  for (const name of q.enrichers ?? []) {
+    if (typeof name !== 'string' || !name.trim()) {
+      throw new ValidationError('query definition: enricher names must be non-empty strings');
+    }
+    if (!enricherMap.has(name)) throw new ValidationError(`unknown enricher: ${name}`);
   }
 }
 
-function walkValidate(p: Predicate, enrichers: Map<string, Enricher>): void {
+export function collectQueryEnrichers(q: QueryDefinition): Set<string> {
+  return new Set(q.enrichers ?? []);
+}
+
+function walkValidate(p: QueryFilter, filters: Map<string, Filter>): void {
   if (p == null || typeof p !== 'object') {
-    throw new ValidationError(`predicate must be an object, got ${typeof p}`);
+    throw new ValidationError(`filter expression must be an object, got ${typeof p}`);
   }
+
+  if ('field' in p) {
+    throw new ValidationError('field leaves are no longer supported; use a named filter');
+  }
+  if ('plugin' in p) {
+    throw new ValidationError('plugin leaves are no longer supported; use a named filter');
+  }
+
   if (isAnd(p)) {
     if (!Array.isArray(p.and)) throw new ValidationError('and: expected array');
-    for (const c of p.and) walkValidate(c, enrichers);
+    for (const c of p.and) walkValidate(c, filters);
     return;
   }
   if (isOr(p)) {
     if (!Array.isArray(p.or)) throw new ValidationError('or: expected array');
-    for (const c of p.or) walkValidate(c, enrichers);
+    for (const c of p.or) walkValidate(c, filters);
     return;
   }
   if (isNot(p)) {
-    walkValidate(p.not, enrichers);
+    walkValidate(p.not, filters);
     return;
   }
-  if (isPluginLeaf(p)) {
-    if (!p.plugin || typeof p.plugin.name !== 'string') {
-      throw new ValidationError('plugin leaf: name required');
+  if (isFilterLeaf(p)) {
+    if (!p.filter || typeof p.filter.name !== 'string') {
+      throw new ValidationError('filter leaf: name required');
     }
+    if (p.filter.params == null || typeof p.filter.params !== 'object' || Array.isArray(p.filter.params)) {
+      throw new ValidationError(`filter "${p.filter.name}": params must be an object`);
+    }
+    const filter = filters.get(p.filter.name);
+    if (!filter) throw new ValidationError(`unknown filter: ${p.filter.name}`);
+    validateParamsAgainstSchema(p.filter.name, p.filter.params, filter.paramsSchema);
     return;
   }
-  if (isFieldLeaf(p)) {
-    if (typeof p.field !== 'string') throw new ValidationError('field leaf: field must be string');
-    if (typeof p.op !== 'string') throw new ValidationError(`field "${p.field}": op required`);
 
-    let type: EnrichReturn;
-    if (p.field.startsWith('session.')) {
-      const col = p.field.slice('session.'.length);
-      const t = SESSION_COLUMNS[col];
-      if (!t) throw new ValidationError(`unknown session column: ${col}`);
-      type = t;
-    } else if (p.field.startsWith('enr.')) {
-      const name = p.field.slice('enr.'.length);
-      const e = enrichers.get(name);
-      if (!e) throw new ValidationError(`unknown enricher: ${name}`);
-      type = e.returns;
-    } else {
-      throw new ValidationError(`field must be namespaced session.* or enr.*: ${p.field}`);
-    }
+  throw new ValidationError('filter expression must be and/or/not/filter-leaf');
+}
 
-    const ops = OPS_BY_TYPE[type];
-    if (!ops.includes(p.op)) {
-      throw new ValidationError(`op "${p.op}" not valid for ${type} field "${p.field}"`);
-    }
+type ParamsSchema = {
+  additionalProperties?: unknown;
+  required?: unknown;
+  properties?: Record<string, ParamsSchema>;
+  type?: string | string[];
+};
 
-    const wantsValue = p.op !== 'isNull';
-    if (wantsValue && p.value === undefined) {
-      throw new ValidationError(`field "${p.field}" op "${p.op}": value required`);
-    }
+function validateParamsAgainstSchema(name: string, params: Record<string, unknown>, schema: object): void {
+  validateObjectParams(name, undefined, params, schema as ParamsSchema);
+}
 
-    if ((p.op === 'jsonEq' || p.op === 'jsonContains' || p.op === 'jsonAny' || p.op === 'jsonLength') && p.path && !p.path.startsWith('$')) {
-      throw new ValidationError(`path must start with $: ${p.path}`);
+function validateObjectParams(
+  filterName: string,
+  parent: string | undefined,
+  params: Record<string, unknown>,
+  schema: ParamsSchema,
+): void {
+  const required = Array.isArray(schema.required) ? schema.required : [];
+  for (const key of required) {
+    if (typeof key === 'string' && params[key] === undefined) {
+      const paramName = parent ? `${parent}.${key}` : key;
+      throw new ValidationError(`filter "${filterName}": param "${paramName}" required`);
     }
-    if ((p.op === 'jsonAny' || p.op === 'jsonLength') && p.intOp) {
-      if (!['=', '!=', '<', '<=', '>', '>='].includes(p.intOp)) {
-        throw new ValidationError(`intOp invalid: ${p.intOp}`);
+  }
+
+  for (const [key, value] of Object.entries(params)) {
+    const paramName = parent ? `${parent}.${key}` : key;
+    const prop = schema.properties?.[key];
+    if (!prop) {
+      if (schema.additionalProperties === false) {
+        throw new ValidationError(`filter "${filterName}": unknown param "${paramName}"`);
       }
+      continue;
     }
-    if (p.op === 'in' && !Array.isArray(p.value)) {
-      throw new ValidationError(`in: value must be array`);
+    if (value == null) continue;
+    if (prop.type && !matchesType(value, prop.type)) {
+      const expected = Array.isArray(prop.type) ? prop.type.join('|') : prop.type;
+      throw new ValidationError(`filter "${filterName}": param "${paramName}" must be ${expected}`);
     }
-    if (p.op === 'between' && (!Array.isArray(p.value) || p.value.length !== 2)) {
-      throw new ValidationError(`between: value must be [lo, hi]`);
+    if (
+      typeof value === 'object'
+      && value !== null
+      && !Array.isArray(value)
+      && (prop.properties || prop.required || prop.additionalProperties === false)
+    ) {
+      validateObjectParams(filterName, paramName, value as Record<string, unknown>, prop);
     }
-    return;
   }
-  throw new ValidationError('predicate must be and/or/not/field-leaf/plugin-leaf');
+}
+
+function matchesType(value: unknown, type: string | string[]): boolean {
+  const types = Array.isArray(type) ? type : [type];
+  return types.some((t) => {
+    if (t === 'string') return typeof value === 'string';
+    if (t === 'number' || t === 'integer') return typeof value === 'number' && Number.isFinite(value);
+    if (t === 'boolean') return typeof value === 'boolean';
+    if (t === 'object') return typeof value === 'object' && value !== null && !Array.isArray(value);
+    if (t === 'array') return Array.isArray(value);
+    return true;
+  });
 }

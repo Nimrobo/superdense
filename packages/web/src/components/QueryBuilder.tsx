@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { api, type Predicate, type Query } from '../api.js';
+import { api, type EnricherInfo, type FilterInfo, type QueryDefinition, type QueryFilter, type Query } from '../api.js';
 
 interface Props {
   onSaved: (q: Query) => void;
@@ -34,38 +34,30 @@ function clampMin(raw: string): number {
   return Math.floor(n);
 }
 
-function buildPredicate(state: FilterState): Predicate | null {
-  const leaves: Predicate[] = [];
+function buildFilters(state: FilterState): QueryFilter | null {
+  const leaves: QueryFilter[] = [];
+  const sessionParams: Record<string, unknown> = {};
 
   if (state.pwd.trim()) {
-    leaves.push({ field: 'session.pwd', op: 'contains', value: state.pwd.trim() });
+    sessionParams.pwdContains = state.pwd.trim();
   }
   if (state.agent.trim()) {
-    leaves.push({ field: 'session.agent', op: '=', value: state.agent.trim() });
-  }
-  if (state.userPromptKeyword.trim()) {
-    leaves.push({ plugin: { name: 'by-user-prompt-keyword', config: { keyword: state.userPromptKeyword.trim() } } });
+    sessionParams.agent = state.agent.trim();
   }
   if (state.hasErrors !== 'any') {
-    leaves.push({ field: 'enr.has_errors', op: '=', value: state.hasErrors === 'yes' });
+    sessionParams.hasErrors = state.hasErrors === 'yes';
   }
   if (state.toolName.trim()) {
-    leaves.push({
-      field: 'enr.tool_counts',
-      op: 'jsonAny',
-      path: `$.${state.toolName.trim()}`,
-      intOp: '>=',
-      value: clampMin(state.toolMin),
-    });
+    sessionParams.toolUsed = { name: state.toolName.trim(), min: clampMin(state.toolMin) };
   }
   if (state.cliName.trim()) {
-    leaves.push({
-      field: 'enr.bash_cli_counts',
-      op: 'jsonAny',
-      path: `$.${state.cliName.trim()}`,
-      intOp: '>=',
-      value: clampMin(state.cliMin),
-    });
+    sessionParams.cliUsed = { name: state.cliName.trim(), min: clampMin(state.cliMin) };
+  }
+  if (Object.keys(sessionParams).length > 0) {
+    leaves.push({ filter: { name: 'session', params: sessionParams } });
+  }
+  if (state.userPromptKeyword.trim()) {
+    leaves.push({ filter: { name: 'user_prompt_contains', params: { keyword: state.userPromptKeyword.trim() } } });
   }
 
   if (leaves.length === 0) return null;
@@ -78,6 +70,9 @@ export function QueryBuilder({ onSaved, onOpenSession }: Props) {
   const [name, setName] = useState('');
   const [pwdOptions, setPwdOptions] = useState<string[]>([]);
   const [agentOptions, setAgentOptions] = useState<string[]>([]);
+  const [enrichers, setEnrichers] = useState<EnricherInfo[]>([]);
+  const [filters, setFilters] = useState<FilterInfo[]>([]);
+  const [selectedEnrichers, setSelectedEnrichers] = useState<string[]>([]);
   const [showJson, setShowJson] = useState(false);
   const [preview, setPreview] = useState<{ sessionId: string; evidence?: string | null }[] | null>(null);
   const [busy, setBusy] = useState(false);
@@ -87,20 +82,31 @@ export function QueryBuilder({ onSaved, onOpenSession }: Props) {
     api.listFacets()
       .then((r) => { setPwdOptions(r.pwd); setAgentOptions(r.agent); })
       .catch(console.error);
+    api.listEnrichers()
+      .then((r) => setEnrichers(r.items))
+      .catch(console.error);
+    api.listFilters()
+      .then((r) => setFilters(r.items))
+      .catch(console.error);
   }, []);
 
-  const predicate = useMemo(() => buildPredicate(state), [state]);
+  const filtersExpression = useMemo(() => buildFilters(state), [state]);
+  const definition = useMemo<QueryDefinition | null>(() => (
+    filtersExpression
+      ? { filters: filtersExpression, enrichers: selectedEnrichers }
+      : null
+  ), [filtersExpression, selectedEnrichers]);
   const set = (patch: Partial<FilterState>) => setState((s) => ({ ...s, ...patch }));
 
   const runPreview = async () => {
-    if (!predicate) {
+    if (!definition) {
       setError('Add at least one filter before previewing.');
       return;
     }
     setBusy(true);
     setError(null);
     try {
-      const r = await api.previewQuery(predicate, 100);
+      const r = await api.previewQuery(definition, 100);
       setPreview(r.items);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -110,11 +116,11 @@ export function QueryBuilder({ onSaved, onOpenSession }: Props) {
   };
 
   const save = async () => {
-    if (!name.trim() || !predicate) return;
+    if (!name.trim() || !definition) return;
     setBusy(true);
     setError(null);
     try {
-      const q = await api.createQuery({ name: name.trim(), predicate });
+      const q = await api.createQuery({ name: name.trim(), ...definition });
       onSaved(q);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -123,9 +129,15 @@ export function QueryBuilder({ onSaved, onOpenSession }: Props) {
     }
   };
 
-  const activeCount = predicate
-    ? ('and' in predicate ? (predicate as { and: Predicate[] }).and.length : 1)
+  const activeCount = filtersExpression
+    ? ('and' in filtersExpression ? (filtersExpression as { and: QueryFilter[] }).and.length : 1)
     : 0;
+
+  const toggleEnricher = (enricher: string) => {
+    setSelectedEnrichers((current) => current.includes(enricher)
+      ? current.filter((x) => x !== enricher)
+      : [...current, enricher]);
+  };
 
   return (
     <>
@@ -163,6 +175,32 @@ export function QueryBuilder({ onSaved, onOpenSession }: Props) {
               placeholder="keyword"
             />
           </Card>
+
+          {enrichers.length > 0 && (
+            <Card label="Result enrichers" hint="Run after filters match.">
+              <div style={{ display: 'grid', gap: 8 }}>
+                {enrichers.map((e) => (
+                  <label key={e.name} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                    <input
+                      type="checkbox"
+                      checked={selectedEnrichers.includes(e.name)}
+                      onChange={() => toggleEnricher(e.name)}
+                    />
+                    <span className="mono" style={{ fontSize: 12 }}>{e.name}</span>
+                    <span className="muted" style={{ fontSize: 11 }}>{e.returns}</span>
+                  </label>
+                ))}
+              </div>
+            </Card>
+          )}
+
+          {filters.length > 0 && (
+            <Card label="Available filters" hint="Loaded from the filter catalog.">
+              <div className="mono" style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                {filters.map((f) => f.name).join(', ')}
+              </div>
+            </Card>
+          )}
 
           <Card label="Has errors" hint="Based on the has_errors enricher.">
             <select value={state.hasErrors} onChange={(e) => set({ hasErrors: e.target.value as FilterState['hasErrors'] })}>
@@ -222,14 +260,14 @@ export function QueryBuilder({ onSaved, onOpenSession }: Props) {
             placeholder="Query name"
             style={{ flex: 1, padding: '7px 9px', border: '1px solid var(--border-strong)', borderRadius: 6 }}
           />
-          <button className="btn" onClick={runPreview} disabled={busy || !predicate}>{busy ? 'Running...' : 'Preview'}</button>
-          <button className="btn" onClick={save} disabled={!name.trim() || !predicate || busy}>Save</button>
+          <button className="btn" onClick={runPreview} disabled={busy || !definition}>{busy ? 'Running...' : 'Preview'}</button>
+          <button className="btn" onClick={save} disabled={!name.trim() || !definition || busy}>Save</button>
           <button className="btn secondary" onClick={() => setShowJson((v) => !v)}>{showJson ? 'Hide JSON' : 'Show JSON'}</button>
         </div>
 
         {showJson && (
           <pre className="mono" style={{ fontSize: 12, background: 'var(--bg-soft)', padding: 10, borderRadius: 6, border: '1px solid var(--border)', overflowX: 'auto', marginTop: 12, maxWidth: 720 }}>
-{predicate ? JSON.stringify(predicate, null, 2) : '// no filters'}
+{definition ? JSON.stringify(definition, null, 2) : '// no filters'}
           </pre>
         )}
 

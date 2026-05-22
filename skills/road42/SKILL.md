@@ -23,9 +23,11 @@ road42 query run <query-id> --limit 20
 road42 session list --q "search text" --limit 20
 ```
 
-3. Inspect cheap per-session metadata:
+3. Discover filters and inspect cheap per-session metadata:
 
 ```bash
+road42 filter list
+road42 filter show session
 road42 session show <session-id>
 road42 session enrichments <session-id>
 road42 session fields
@@ -50,15 +52,73 @@ road42 session path <session-id>
 
 All agent-facing commands emit JSON. Treat `id` as the stable Road42 session id, usually `<agent>:<native-session-id>`.
 
-- `query list` returns saved queries with `id`, `name`, `predicate`, timestamps, and `memberCount`.
+- Queries are filters first, then optional post-filter enrichers. Use `road42 filter list` and `road42 filter show <name>` before writing query JSON.
+- Query JSON uses `{ filters, enrichers? }`. `filters` is a boolean tree of `{ filter: { name, params } }` leaves. `enrichers` names extra data producers to run only after sessions match.
+- `query list` returns saved queries with `id`, `name`, `filters`, `enrichers`, timestamps, and `memberCount`.
 - `query run <query-id>` evaluates a saved query and returns `query`, `matched`, `total`, `limit`, `offset`, and `items`.
-- Query result `items[]` contains `{ session, addedAt, evidence }`.
+- Query result `items[]` contains `{ session, addedAt, evidence, enrichments }`.
+- `filter list` returns available filters with names, schemas, examples, and flags such as `readsLog` or `usesSystemData`.
+- `filter show <name>` returns one filter catalog item. Use this instead of guessing params.
 - `session enrichments <session-id>` returns `{ session, items }`, where each item has `name`, `version`, `computedAt`, and parsed JSON `value`.
 - `compactor list` returns compactors with `name`, `kind`, `targetBytes`, and `description`.
 - `compactor run <name> <session-id>` returns `{ session, compactor, result }`.
 - `session path <session-id>` returns `{ id, agent, sessionId, logPath }`.
 
 Session objects omit `logPath` by default. Use `--include-path` only when a command explicitly needs to include source paths in its JSON.
+
+## Query Guidance
+
+Use the built-in `session` filter for session metadata and always-on system data:
+
+```json
+{
+  "filters": {
+    "filter": {
+      "name": "session",
+      "params": { "agent": "codex", "pwdContains": "road42", "hasErrors": true }
+    }
+  }
+}
+```
+
+`session` params include `agent`, `pwd`, `pwdContains`, `firstPromptContains`, `summaryContains`, created/modified date bounds, `hasErrors`, `toolUsed`, `cliUsed`, and `eventCount`.
+
+Use code filters for transcript/log matching. Built-in example:
+
+```json
+{
+  "filters": {
+    "filter": {
+      "name": "user_prompt_contains",
+      "params": { "keyword": "billing" }
+    }
+  }
+}
+```
+
+Combine filters with `and`, `or`, and `not`:
+
+```json
+{
+  "filters": {
+    "and": [
+      { "filter": { "name": "session", "params": { "toolUsed": { "name": "Bash", "min": 1 } } } },
+      { "filter": { "name": "user_prompt_contains", "params": { "keyword": "tests" } } }
+    ]
+  }
+}
+```
+
+Use query enrichers only to add data to matched results:
+
+```json
+{
+  "filters": { "filter": { "name": "session", "params": { "agent": "codex" } } },
+  "enrichers": ["fingerprint"]
+}
+```
+
+Do not filter on query-produced enrichments. That is future "query on query" behavior.
 
 ## Metadata Guidance
 
@@ -70,7 +130,7 @@ Use `session enrichments` to triage sessions before compacting:
 - `event_count`: transcript event count.
 - `fingerprint`: fixed-shape JSON with event counts, tool/error counts, role byte totals, unique paths, verbs, duration, and turns.
 
-Use `session fields` to discover queryable `session.*` fields and `enr.*` fields with supported operators. Do not hard-code query operators when the CLI can report them.
+Use `session fields` or `filter list/show` to discover filters and post-filter enrichers. Do not write old `session.*`, `enr.*`, or `plugin` predicate leaves.
 
 ## Compactor Guidance
 

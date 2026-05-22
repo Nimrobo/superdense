@@ -31,17 +31,32 @@ export interface EnricherInfo {
   description?: string;
 }
 
-export type Predicate =
-  | { and: Predicate[] }
-  | { or: Predicate[] }
-  | { not: Predicate }
-  | { field: string; op: string; value?: unknown; path?: string; intOp?: string }
-  | { plugin: { name: string; config: Record<string, unknown> } };
+export type QueryFilter =
+  | { and: QueryFilter[] }
+  | { or: QueryFilter[] }
+  | { not: QueryFilter }
+  | { filter: { name: string; params: Record<string, unknown> } };
+
+export interface QueryDefinition {
+  filters: QueryFilter;
+  enrichers?: string[];
+}
+
+export interface FilterInfo {
+  name: string;
+  title: string;
+  description?: string;
+  paramsSchema: object;
+  examples?: QueryFilter[];
+  readsLog?: boolean;
+  usesSystemData?: boolean;
+}
 
 export interface Query {
   id: string;
   name: string;
-  predicate: Predicate;
+  filters: QueryFilter;
+  enrichers: string[];
   createdAt: number;
   lastRunAt?: number | null;
   memberCount?: number;
@@ -133,17 +148,18 @@ export const api = {
     return j<{ items: TranscriptEvent[]; offset: number; limit: number }>(`/api/sessions/${encodeURIComponent(id)}/transcript?${sp}`);
   },
   listEnrichers: () => j<{ items: EnricherInfo[] }>('/api/enrichers'),
+  listFilters: () => j<{ items: FilterInfo[] }>('/api/filters'),
   listFacets: () => j<{ pwd: string[]; agent: string[] }>('/api/facets'),
   listQueries: () => j<{ items: Query[] }>('/api/queries'),
   getQuery: (id: string) => j<Query & { members: Session[] }>(`/api/queries/${encodeURIComponent(id)}`),
-  createQuery: (q: { name: string; predicate: Predicate }) =>
+  createQuery: (q: { name: string } & QueryDefinition) =>
     j<Query>('/api/queries', { method: 'POST', body: JSON.stringify(q) }),
-  previewQuery: (predicate: Predicate, limit = 500) =>
-    j<{ items: { sessionId: string; evidence?: string | null }[]; total: number; referencedEnrichers: string[]; missingEnrichments: string[] }>(
+  previewQuery: (definition: QueryDefinition, limit = 500) =>
+    j<{ items: { sessionId: string; evidence?: string | null; enrichments?: Record<string, unknown> }[]; total: number; enrichers: string[] }>(
       '/api/queries/preview',
-      { method: 'POST', body: JSON.stringify({ predicate, limit }) },
+      { method: 'POST', body: JSON.stringify({ ...definition, limit }) },
     ),
-  runQuery: (id: string) => j<{ matched: number }>(`/api/queries/${encodeURIComponent(id)}/run`, { method: 'POST' }),
+  runQuery: (id: string) => j<{ matched: number; items: { sessionId: string; evidence?: string | null; enrichments?: Record<string, unknown> }[] }>(`/api/queries/${encodeURIComponent(id)}/run`, { method: 'POST' }),
   deleteQuery: (id: string) => j<{ ok: true }>(`/api/queries/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   reindex: (full = false) => j<{ ok: boolean }>(`/api/reindex${full ? '?full=1' : ''}`, { method: 'POST' }),
   progress: () => j<{ phase: string; total: number; done: number }>('/api/progress'),

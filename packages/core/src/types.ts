@@ -1,4 +1,4 @@
-import type { Predicate } from './query/types.js';
+import type { QueryDefinition } from './query/types.js';
 
 export interface Session {
   id: string;
@@ -50,7 +50,7 @@ export interface Adapter {
   sourceMtime?(session: DiscoveredSession): Promise<number | undefined>;
 }
 
-export interface PluginHelpers {
+export interface FilterHelpers {
   iterEvents(jsonlPath: string): AsyncIterable<TranscriptEvent>;
 }
 
@@ -64,24 +64,11 @@ export interface JsonSchemaField {
   default?: string | number | boolean;
 }
 
-export interface GroupingPlugin {
-  name: string;
-  title: string;
-  description?: string;
-  configSchema?: JsonSchemaField[];
-  prefilter?(session: Session, config: Record<string, unknown>): boolean;
-  matches(
-    session: Session,
-    jsonlPath: string,
-    config: Record<string, unknown>,
-    helpers: PluginHelpers,
-  ): Promise<MatchResult>;
-}
-
 export interface Query {
   id: string;
   name: string;
-  predicate: Predicate;
+  filters: QueryDefinition['filters'];
+  enrichers: string[];
   createdAt: number;
   lastRunAt?: number | null;
   memberCount?: number;

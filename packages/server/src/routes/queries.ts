@@ -6,12 +6,14 @@ import {
   deleteQuery,
   getQuery,
   listEnrichers,
+  listFilterCatalog,
+  listFilters,
   listQueryMatches,
   listQueries,
   loadUserEnrichers,
-  previewPredicate,
-  validatePredicate,
-  type Predicate,
+  previewQuery,
+  validateQueryDefinition,
+  type QueryDefinition,
   type ValidationError,
 } from '@road42/core';
 
@@ -19,13 +21,15 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-async function validateForRequest(predicate: Predicate): Promise<void> {
+async function validateForRequest(definition: QueryDefinition): Promise<void> {
   await loadUserEnrichers();
-  validatePredicate(predicate, { enrichers: listEnrichers() });
+  validateQueryDefinition(definition, { filters: await listFilters(), enrichers: listEnrichers() });
 }
 
 export async function registerQueriesRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/queries', async () => ({ items: listQueries() }));
+
+  app.get('/api/filters', async () => ({ items: await listFilterCatalog() }));
 
   app.get('/api/queries/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
@@ -36,18 +40,20 @@ export async function registerQueriesRoutes(app: FastifyInstance): Promise<void>
   });
 
   app.post('/api/queries', async (req, reply) => {
-    const body = req.body as { name?: string; predicate?: Predicate };
-    if (!body.name || !body.predicate) {
+    const body = req.body as { name?: string } & Partial<QueryDefinition>;
+    if (!body.name || !body.filters) {
       reply.status(400);
-      return { error: 'name and predicate are required' };
+      return { error: 'name and filters are required' };
     }
+    const definition: QueryDefinition = { filters: body.filters, enrichers: body.enrichers ?? [] };
     try {
-      await validateForRequest(body.predicate);
+      await validateForRequest(definition);
       const id = randomUUID();
       createQuery({
         id,
         name: body.name,
-        predicate: body.predicate,
+        filters: definition.filters,
+        enrichers: definition.enrichers ?? [],
         createdAt: Date.now(),
       });
       await backfillQuery(id);
@@ -59,14 +65,15 @@ export async function registerQueriesRoutes(app: FastifyInstance): Promise<void>
   });
 
   app.post('/api/queries/preview', async (req, reply) => {
-    const body = req.body as { predicate?: Predicate; limit?: number };
-    if (!body.predicate) {
+    const body = req.body as Partial<QueryDefinition> & { limit?: number };
+    if (!body.filters) {
       reply.status(400);
-      return { error: 'predicate is required' };
+      return { error: 'filters are required' };
     }
+    const definition: QueryDefinition = { filters: body.filters, enrichers: body.enrichers ?? [] };
     try {
-      await validateForRequest(body.predicate);
-      const result = await previewPredicate(body.predicate, { limit: body.limit });
+      await validateForRequest(definition);
+      const result = await previewQuery(definition, { limit: body.limit });
       return { ...result, total: result.items.length };
     } catch (err) {
       reply.status(400);
