@@ -38,15 +38,21 @@ export interface WindowBundle {
 
 function ymd(ms: number): string {
   const d = new Date(ms);
-  const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const dd = String(d.getUTCDate()).padStart(2, '0');
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${dd}`;
 }
 
-function utcDayStart(ms: number): number {
+function localDayStart(ms: number): number {
   const d = new Date(ms);
-  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+
+function addDays(ms: number, n: number): number {
+  const d = new Date(ms);
+  d.setDate(d.getDate() + n);
+  return d.getTime();
 }
 
 export function getHeaderTotals(): HeaderTotals {
@@ -56,7 +62,7 @@ export function getHeaderTotals(): HeaderTotals {
     .prepare("SELECT COUNT(DISTINCT COALESCE(NULLIF(project_key, ''), pwd)) AS c FROM sessions")
     .get() as { c: number }).c;
   const activeDays = (db.prepare(`
-    SELECT COUNT(DISTINCT date(modified_at / 1000, 'unixepoch')) AS c
+    SELECT COUNT(DISTINCT date(modified_at / 1000, 'unixepoch', 'localtime')) AS c
       FROM sessions
      WHERE modified_at IS NOT NULL
   `).get() as { c: number }).c;
@@ -66,14 +72,14 @@ export function getHeaderTotals(): HeaderTotals {
 
 /**
  * Compute current + longest streak in consecutive days of activity, using
- * `date(modified_at/1000,'unixepoch')` (UTC) as the day key. Current streak
- * counts a chain ending today OR yesterday (so a day with no activity yet
- * doesn't break the streak until tomorrow).
+ * local-time day buckets. Current streak counts a chain ending today OR
+ * yesterday (so a day with no activity yet doesn't break the streak until
+ * tomorrow).
  */
 export function getStreaks(now: number = Date.now()): Streaks {
   const rows = getDb()
     .prepare(`
-      SELECT DISTINCT date(modified_at / 1000, 'unixepoch') AS d
+      SELECT DISTINCT date(modified_at / 1000, 'unixepoch', 'localtime') AS d
         FROM sessions
        WHERE modified_at IS NOT NULL
        ORDER BY d ASC
@@ -82,6 +88,9 @@ export function getStreaks(now: number = Date.now()): Streaks {
   if (rows.length === 0) return { current: 0, longest: 0, longestRange: null };
 
   const days = rows.map((r) => r.d);
+  // Day strings are stable YYYY-MM-DD identifiers; parse as UTC midnight just
+  // to get a comparable timestamp. The +1 day check is in UTC, which works
+  // regardless of how the strings were originally bucketed.
   let longest = 1;
   let longestEnd = days[0]!;
   let longestStart = days[0]!;
@@ -103,18 +112,19 @@ export function getStreaks(now: number = Date.now()): Streaks {
     }
   }
 
-  // Current streak: walk back from today.
+  // Current streak: walk back from today (local).
   const today = ymd(now);
-  const yesterday = ymd(now - DAY_MS);
+  const yesterday = ymd(addDays(now, -1));
   const lastDay = days[days.length - 1]!;
   let current = 0;
   if (lastDay === today || lastDay === yesterday) {
     current = 1;
-    let cursor = new Date(`${lastDay}T00:00:00Z`).getTime();
     const set = new Set(days);
+    // Step back one local calendar day at a time (DST-safe via setDate).
+    let cursorMs = new Date(`${lastDay}T12:00:00`).getTime(); // noon local avoids DST cliffs
     while (true) {
-      cursor -= DAY_MS;
-      if (set.has(ymd(cursor))) current++;
+      cursorMs = addDays(cursorMs, -1);
+      if (set.has(ymd(cursorMs))) current++;
       else break;
     }
   }
@@ -127,14 +137,14 @@ export function getStreaks(now: number = Date.now()): Streaks {
 }
 
 /**
- * Session-count series, zero-filled, ending today (UTC).
+ * Session-count series, zero-filled, ending today (local time).
  */
-export function getContributions(now: number = Date.now(), days = 180): ContributionDay[] {
-  const clampedDays = Math.max(1, Math.min(180, Math.floor(days)));
-  const start = now - (clampedDays - 1) * DAY_MS;
+export function getContributions(now: number = Date.now(), days = 366): ContributionDay[] {
+  const clampedDays = Math.max(1, Math.min(366, Math.floor(days)));
+  const start = localDayStart(now) - (clampedDays - 1) * DAY_MS;
   const rows = getDb()
     .prepare(`
-      SELECT date(modified_at / 1000, 'unixepoch') AS d, COUNT(*) AS c
+      SELECT date(modified_at / 1000, 'unixepoch', 'localtime') AS d, COUNT(*) AS c
         FROM sessions
        WHERE modified_at IS NOT NULL
          AND modified_at >= ?
@@ -145,14 +155,10 @@ export function getContributions(now: number = Date.now(), days = 180): Contribu
   for (const r of rows) map.set(r.d, r.c);
 
   const out: ContributionDay[] = [];
-  // Anchor on today's UTC day; walk back for a zero-filled fixed range.
-  const todayMid = Date.UTC(
-    new Date(now).getUTCFullYear(),
-    new Date(now).getUTCMonth(),
-    new Date(now).getUTCDate(),
-  );
+  // Anchor on today's local day; walk back day-by-day (DST-safe).
+  const todayMid = localDayStart(now);
   for (let i = clampedDays - 1; i >= 0; i--) {
-    const ms = todayMid - i * DAY_MS;
+    const ms = addDays(todayMid, -i);
     const key = ymd(ms);
     out.push({ date: key, count: map.get(key) ?? 0 });
   }
@@ -174,7 +180,7 @@ function computeWindowMetrics(db: ReturnType<typeof getDb>, startMs: number, end
 
   const activeDays = (db
     .prepare(`
-      SELECT COUNT(DISTINCT date(modified_at / 1000, 'unixepoch')) AS c
+      SELECT COUNT(DISTINCT date(modified_at / 1000, 'unixepoch', 'localtime')) AS c
         FROM sessions
        WHERE modified_at IS NOT NULL AND modified_at >= ? AND modified_at < ?
     `)
@@ -200,8 +206,8 @@ function computeWindowMetrics(db: ReturnType<typeof getDb>, startMs: number, end
         , json_each(qe.value) je
        WHERE s.modified_at IS NOT NULL AND s.modified_at >= ? AND s.modified_at < ?
        GROUP BY je.key
-       ORDER BY c DESC
-       LIMIT 5
+       ORDER BY c DESC, je.key ASC
+       LIMIT 10
     `)
     .all(startMs, endMs) as Array<{ cli: string; c: number }>;
   const topClis = topCliRows.map((r) => ({ cli: r.cli, count: r.c }));
@@ -210,7 +216,7 @@ function computeWindowMetrics(db: ReturnType<typeof getDb>, startMs: number, end
     .prepare(`
       SELECT COALESCE(NULLIF(project_key, ''), pwd) AS pwd,
              COUNT(*) AS c,
-             COUNT(DISTINCT date(modified_at / 1000, 'unixepoch')) AS active_days,
+             COUNT(DISTINCT date(modified_at / 1000, 'unixepoch', 'localtime')) AS active_days,
              MAX(modified_at) AS last_active_at
         FROM sessions
        WHERE modified_at IS NOT NULL AND modified_at >= ? AND modified_at < ?
@@ -229,7 +235,7 @@ function computeWindowMetrics(db: ReturnType<typeof getDb>, startMs: number, end
   const repeatedRows = db
     .prepare(`
       SELECT COALESCE(NULLIF(project_key, ''), pwd) AS pwd,
-             COUNT(DISTINCT date(modified_at / 1000, 'unixepoch')) AS active_days,
+             COUNT(DISTINCT date(modified_at / 1000, 'unixepoch', 'localtime')) AS active_days,
              COUNT(*) AS sessions,
              MAX(modified_at) AS last_active_at
         FROM sessions
@@ -261,8 +267,8 @@ function computeWindowMetrics(db: ReturnType<typeof getDb>, startMs: number, end
 
 export function getWindowMetrics(days: number, now: number = Date.now()): WindowBundle {
   const db = getDb();
-  const todayStart = utcDayStart(now);
-  const windowStart = todayStart - (days - 1) * DAY_MS;
+  const todayStart = localDayStart(now);
+  const windowStart = addDays(todayStart, -(days - 1));
   return {
     days,
     window: computeWindowMetrics(db, windowStart, now),

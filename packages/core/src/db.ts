@@ -555,7 +555,7 @@ export function getMaxLastIndexedAt(): number | null {
 export function getSessionsPerDay(days: number): Array<{ date: string; count: number }> {
   const db = getDb();
   const rows = db.prepare(`
-    SELECT date(modified_at / 1000, 'unixepoch') AS d, COUNT(*) AS c
+    SELECT date(modified_at / 1000, 'unixepoch', 'localtime') AS d, COUNT(*) AS c
       FROM sessions
      WHERE modified_at IS NOT NULL
      GROUP BY d

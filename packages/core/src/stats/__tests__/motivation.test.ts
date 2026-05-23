@@ -108,10 +108,10 @@ describe('getStreaks', () => {
 
 describe('getContributions', () => {
   beforeEach(clearDb);
-  it('returns 180 zero-filled days by default', () => {
+  it('returns 366 zero-filled days by default', () => {
     const now = utcNoon(2026, 5, 21);
     const c = getContributions(now);
-    expect(c).toHaveLength(180);
+    expect(c).toHaveLength(366);
     expect(c[c.length - 1]!.count).toBe(0);
   });
 
