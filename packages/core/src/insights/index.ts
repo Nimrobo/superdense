@@ -13,6 +13,7 @@ export const INSIGHT_MARKER_VERSION = 1;
 
 const here = dirname(fileURLToPath(import.meta.url));
 const CANDIDATES = [
+  join(here, 'insights'),
   join(here, '..', '..', 'insights'),
   join(here, '..', '..', '..', 'insights'),
 ];

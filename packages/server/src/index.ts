@@ -29,6 +29,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<{ url: stri
   const here = dirname(fileURLToPath(import.meta.url));
   const candidates = [
     opts.webDist,
+    resolve(here, 'web'),
     resolve(here, '../../web/dist'),
     resolve(here, '../../../web/dist'),
   ].filter(Boolean) as string[];
