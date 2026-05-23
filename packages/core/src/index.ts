@@ -32,8 +32,8 @@ export type {
   IntOp,
   EnrichReturn,
 } from './query/types.js';
-export { runQueryEvaluation, backfillQuery, previewQuery, evaluateQuery } from './queryeval.js';
-export type { EvaluateResult, QueryResultItem } from './queryeval.js';
+export { runQueryEvaluation, backfillQuery, runSavedQuery, runAdHocQuery, previewQuery, evaluateQuery } from './queryeval.js';
+export type { AdHocQueryResult, EvaluateResult, QueryResultItem } from './queryeval.js';
 export {
   getHeaderTotals,
   getStreaks,

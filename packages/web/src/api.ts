@@ -150,17 +150,22 @@ export const api = {
   listEnrichers: () => j<{ items: EnricherInfo[] }>('/api/enrichers'),
   listFilters: () => j<{ items: FilterInfo[] }>('/api/filters'),
   listFacets: () => j<{ pwd: string[]; agent: string[]; project: string[] }>('/api/facets'),
-  listQueries: () => j<{ items: Query[] }>('/api/queries'),
-  getQuery: (id: string) => j<Query & { members: Session[] }>(`/api/queries/${encodeURIComponent(id)}`),
+  listQueries: () => j<{ items: Query[] }>('/api/saved-queries'),
+  getQuery: (id: string) => j<Query & { members: Session[] }>(`/api/saved-queries/${encodeURIComponent(id)}`),
   createQuery: (q: { name: string } & QueryDefinition) =>
-    j<Query>('/api/queries', { method: 'POST', body: JSON.stringify(q) }),
-  previewQuery: (definition: QueryDefinition, limit = 500) =>
-    j<{ items: { sessionId: string; evidence?: string | null; enrichments?: Record<string, unknown> }[]; total: number; enrichers: string[] }>(
-      '/api/queries/preview',
-      { method: 'POST', body: JSON.stringify({ ...definition, limit }) },
+    j<Query>('/api/saved-queries', { method: 'POST', body: JSON.stringify(q) }),
+  executeQuery: (definition: QueryDefinition, limit = 500, offset = 0) =>
+    j<{ items: { sessionId: string; evidence?: string | null; enrichments?: Record<string, unknown> }[]; total: number; matched: number; limit: number; offset: number; enrichers: string[] }>(
+      '/api/query',
+      { method: 'POST', body: JSON.stringify({ ...definition, limit, offset }) },
     ),
-  runQuery: (id: string) => j<{ matched: number; items: { sessionId: string; evidence?: string | null; enrichments?: Record<string, unknown> }[] }>(`/api/queries/${encodeURIComponent(id)}/run`, { method: 'POST' }),
-  deleteQuery: (id: string) => j<{ ok: true }>(`/api/queries/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  previewQuery: (definition: QueryDefinition, limit = 500) =>
+    j<{ items: { sessionId: string; evidence?: string | null; enrichments?: Record<string, unknown> }[]; total: number; matched: number; limit: number; offset: number; enrichers: string[] }>(
+      '/api/query',
+      { method: 'POST', body: JSON.stringify({ ...definition, limit, offset: 0 }) },
+    ),
+  runQuery: (id: string) => j<{ matched: number; items: { sessionId: string; evidence?: string | null; enrichments?: Record<string, unknown> }[] }>(`/api/saved-queries/${encodeURIComponent(id)}/run`, { method: 'POST' }),
+  deleteQuery: (id: string) => j<{ ok: true }>(`/api/saved-queries/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   reindex: (full = false) => j<{ ok: boolean }>(`/api/reindex${full ? '?full=1' : ''}`, { method: 'POST' }),
   progress: () => j<{ phase: string; total: number; done: number }>('/api/progress'),
   stats: () => j<Stats>('/api/stats'),

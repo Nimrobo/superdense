@@ -7,7 +7,6 @@ import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline/promises';
 import {
   assembleInsightPrompt,
-  backfillQuery,
   CLAUDE_SKILLS_DIR,
   compactSession,
   CODEX_SKILLS_DIR,
@@ -33,10 +32,12 @@ import {
   loadUserEnrichers,
   localClaudeSkillsDir,
   localCodexSkillsDir,
-  previewQuery,
+  runAdHocQuery,
   runDiscovery,
   runQueryEvaluation,
+  runSavedQuery,
   validateQueryDefinition,
+  type AdHocQueryResult,
   type Compactor,
   type QueryMatchDetail,
   type QueryDefinition,
@@ -172,8 +173,131 @@ function getExistingSession(id: string): Session {
   return session;
 }
 
-async function handleQuery(args: string[], flags: Record<string, string | boolean>, io: CliIo): Promise<boolean> {
+function serializeQueryResult(
+  result: AdHocQueryResult,
+  opts: { includePath?: boolean } = {},
+): Record<string, unknown> {
+  return {
+    matched: result.matched,
+    total: result.total,
+    limit: result.limit,
+    offset: result.offset,
+    enrichers: result.enrichers,
+    items: result.items.map((item) => {
+      const session = getSession(item.sessionId);
+      return {
+        sessionId: item.sessionId,
+        session: session ? serializeSession(session, { includePath: opts.includePath }) : null,
+        evidence: item.evidence ?? null,
+        enrichments: item.enrichments ?? {},
+      };
+    }),
+  };
+}
+
+async function runAdHocQueryCommand(
+  flags: Record<string, string | boolean>,
+  io: CliIo,
+  opts: { defaultLimit: number } = { defaultLimit: 20 },
+): Promise<void> {
+  const definition = await readQueryDefinition(flags.query);
+  await validateCliQueryDefinition(definition);
+  const limit = intFlag(flags, 'limit', opts.defaultLimit, 1000);
+  const offset = intFlag(flags, 'offset', 0);
+  const result = await runAdHocQuery(definition, { limit, offset });
+  printJson(serializeQueryResult(result, { includePath: includePath(flags) }), io);
+}
+
+async function saveQueryCommand(flags: Record<string, string | boolean>, io: CliIo): Promise<void> {
+  if (typeof flags.name !== 'string' || !flags.name.trim()) throw new Error('--name is required');
+  const definition = await readQueryDefinition(flags.query);
+  await validateCliQueryDefinition(definition);
+  const id = randomUUID();
+  createQuery({
+    id,
+    name: flags.name.trim(),
+    filters: definition.filters,
+    enrichers: definition.enrichers ?? [],
+    createdAt: Date.now(),
+  });
+  printJson(getQuery(id), io);
+}
+
+async function runSavedQueryCommand(
+  id: string | undefined,
+  flags: Record<string, string | boolean>,
+  io: CliIo,
+  commandName: string,
+): Promise<void> {
+  if (!id) throw new Error(`${commandName} requires <id>`);
+  await loadUserEnrichers();
+  const result = await runSavedQuery(id);
+  if (!result) throw new Error(`query not found: ${id}`);
+  const q = getExistingQuery(id);
+  const limit = intFlag(flags, 'limit', 200, 1000);
+  const offset = intFlag(flags, 'offset', 0);
+  const details = listQueryMatchDetails(id, { limit, offset });
+  const resultBySession = new Map(result.items.map((item) => [item.sessionId, item] as const));
+  printJson({
+    query: q,
+    matched: result.matched,
+    total: countQueryMatches(id),
+    limit,
+    offset,
+    items: details.map((m) => serializeQueryMatch(m, {
+      includePath: includePath(flags),
+      enrichments: resultBySession.get(m.session.id)?.enrichments ?? {},
+    })),
+  }, io);
+}
+
+async function handleSavedQuery(args: string[], flags: Record<string, string | boolean>, io: CliIo): Promise<boolean> {
   const action = args[0] ?? 'list';
+  if (action === 'list') {
+    printJson({ items: listQueries() }, io);
+    return true;
+  }
+  if (action === 'show') {
+    const id = args[1];
+    if (!id) throw new Error('saved-query show requires <id>');
+    const q = getExistingQuery(id);
+    const limit = intFlag(flags, 'limit', 200, 1000);
+    const offset = intFlag(flags, 'offset', 0);
+    const details = listQueryMatchDetails(id, { limit, offset });
+    printJson({
+      ...q,
+      total: countQueryMatches(id),
+      limit,
+      offset,
+      items: details.map((m) => serializeQueryMatch(m, { includePath: includePath(flags) })),
+      members: details.map((m) => serializeSession(m.session, { includePath: includePath(flags) })),
+    }, io);
+    return true;
+  }
+  if (action === 'save' || action === 'create') {
+    await saveQueryCommand(flags, io);
+    return true;
+  }
+  if (action === 'run') {
+    await runSavedQueryCommand(args[1], flags, io, 'saved-query run');
+    return true;
+  }
+  if (action === 'delete') {
+    const id = args[1];
+    if (!id) throw new Error('saved-query delete requires <id>');
+    deleteQuery(id);
+    printJson({ ok: true }, io);
+    return true;
+  }
+  throw new Error(`unknown saved-query command: ${action}`);
+}
+
+async function handleQuery(args: string[], flags: Record<string, string | boolean>, io: CliIo): Promise<boolean> {
+  if (args.length === 0 && flags.query !== undefined) {
+    await runAdHocQueryCommand(flags, io);
+    return true;
+  }
+  const action = args[0] ?? 'help';
   if (action === 'list') {
     printJson({ items: listQueries() }, io);
     return true;
@@ -195,40 +319,12 @@ async function handleQuery(args: string[], flags: Record<string, string | boolea
     }, io);
     return true;
   }
-  if (action === 'create') {
-    if (typeof flags.name !== 'string' || !flags.name.trim()) throw new Error('--name is required');
-    const definition = await readQueryDefinition(flags.query);
-    await validateCliQueryDefinition(definition);
-    const id = randomUUID();
-    createQuery({
-      id,
-      name: flags.name.trim(),
-      filters: definition.filters,
-      enrichers: definition.enrichers ?? [],
-      createdAt: Date.now(),
-    });
-    await backfillQuery(id);
-    printJson(getQuery(id), io);
+  if (action === 'create' || action === 'save') {
+    await saveQueryCommand(flags, io);
     return true;
   }
   if (action === 'preview') {
-    const definition = await readQueryDefinition(flags.query);
-    await validateCliQueryDefinition(definition);
-    const limit = intFlag(flags, 'limit', 500, 1000);
-    const result = await previewQuery(definition, { limit });
-    printJson({
-      ...result,
-      limit,
-      items: result.items.map((item) => {
-        const session = getSession(item.sessionId);
-        return {
-          sessionId: item.sessionId,
-          session: session ? serializeSession(session, { includePath: includePath(flags) }) : null,
-          evidence: item.evidence ?? null,
-          enrichments: item.enrichments ?? {},
-        };
-      }),
-    }, io);
+    await runAdHocQueryCommand(flags, io, { defaultLimit: 5 });
     return true;
   }
   if (action === 'delete') {
@@ -239,29 +335,10 @@ async function handleQuery(args: string[], flags: Record<string, string | boolea
     return true;
   }
   if (action === 'run') {
-    const id = args[1];
-    if (!id) throw new Error('query run requires <id>');
-    await loadUserEnrichers();
-    const result = await backfillQuery(id);
-    if (!result) throw new Error(`query not found: ${id}`);
-    const q = getExistingQuery(id);
-    const limit = intFlag(flags, 'limit', 200, 1000);
-    const offset = intFlag(flags, 'offset', 0);
-    const details = listQueryMatchDetails(id, { limit, offset });
-    const resultBySession = new Map(result.items.map((item) => [item.sessionId, item] as const));
-    printJson({
-      query: q,
-      matched: result.matched,
-      total: countQueryMatches(id),
-      limit,
-      offset,
-      items: details.map((m) => serializeQueryMatch(m, {
-        includePath: includePath(flags),
-        enrichments: resultBySession.get(m.session.id)?.enrichments ?? {},
-      })),
-    }, io);
+    await runSavedQueryCommand(args[1], flags, io, 'query run');
     return true;
   }
+  if (action === 'help') throw new Error('query requires --query or a legacy subcommand');
   throw new Error(`unknown query command: ${action}`);
 }
 
@@ -660,6 +737,11 @@ export async function runCli(argv: string[], io: CliIo = {
     return 0;
   }
 
+  if (cmd === 'saved-query') {
+    await handleSavedQuery(args, flags, io);
+    return 0;
+  }
+
   if (cmd === 'session') {
     await handleSession(args, flags, io);
     return 0;
@@ -718,12 +800,12 @@ export async function runCli(argv: string[], io: CliIo = {
       '  session enrichments <id>  Get computed enrichments',
       '  filter list         List available filters',
       '  filter show <n>     Show filter params and examples',
-      '  query list          List saved queries',
-      '  query show <id>     Show query with matching sessions',
-      '  query create        Create a new query',
-      '  query preview       Preview matching sessions',
-      '  query run <id>      Evaluate and return results',
-      '  query delete <id>   Delete a query',
+      '  query --query <json|@file>  Run an unsaved ad hoc query',
+      '  saved-query list          List saved queries',
+      '  saved-query show <id>     Show saved query with matching sessions',
+      '  saved-query save          Save a query without running it',
+      '  saved-query run <id>      Evaluate a saved query and return results',
+      '  saved-query delete <id>   Delete a saved query',
       '  compactor list      List available compactors',
       '  compactor show <n>  Show compactor details',
       '  compactor run <n> <id>  Run a compactor on a session',

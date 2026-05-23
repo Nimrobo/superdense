@@ -72,7 +72,7 @@ export function QueryBuilder({ onSaved }: Props) {
   const [projectOptions, setProjectOptions] = useState<string[]>([]);
   const [agentOptions, setAgentOptions] = useState<string[]>([]);
   const [showJson, setShowJson] = useState(false);
-  const [preview, setPreview] = useState<{ sessionId: string; evidence?: string | null }[] | null>(null);
+  const [results, setResults] = useState<{ sessionId: string; evidence?: string | null }[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -90,16 +90,16 @@ export function QueryBuilder({ onSaved }: Props) {
   ), [filtersExpression]);
   const set = (patch: Partial<FilterState>) => setState((s) => ({ ...s, ...patch }));
 
-  const runPreview = async () => {
+  const runQuery = async () => {
     if (!definition) {
-      setError('Add at least one filter before previewing.');
+      setError('Add at least one filter before running.');
       return;
     }
     setBusy(true);
     setError(null);
     try {
-      const r = await api.previewQuery(definition, 100);
-      setPreview(r.items);
+      const r = await api.executeQuery(definition, 100);
+      setResults(r.items);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -241,7 +241,7 @@ export function QueryBuilder({ onSaved }: Props) {
             placeholder="Query name"
             style={{ flex: 1, padding: '7px 9px', border: '1px solid var(--border-strong)', borderRadius: 6 }}
           />
-          <button className="btn" onClick={runPreview} disabled={busy || !definition}>{busy ? 'Running...' : 'Preview'}</button>
+          <button className="btn" onClick={runQuery} disabled={busy || !definition}>{busy ? 'Running...' : 'Run'}</button>
           <button className="btn" onClick={save} disabled={!name.trim() || !definition || busy}>Save</button>
           <button className="btn secondary" onClick={() => setShowJson((v) => !v)}>{showJson ? 'Hide JSON' : 'Show JSON'}</button>
         </div>
@@ -254,11 +254,11 @@ export function QueryBuilder({ onSaved }: Props) {
 
         {error && <div className="error" style={{ marginTop: 12 }}>{error}</div>}
 
-        {preview && (
+        {results && (
           <div style={{ marginTop: 20 }}>
-            <h3 style={{ fontSize: 12, color: 'var(--text-muted)', margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Preview matches ({preview.length})</h3>
-            {preview.length === 0 && <div className="muted">No sessions matched.</div>}
-            {preview.map((r) => (
+            <h3 style={{ fontSize: 12, color: 'var(--text-muted)', margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Results ({results.length})</h3>
+            {results.length === 0 && <div className="muted">No sessions matched.</div>}
+            {results.map((r) => (
               <a key={r.sessionId} className="session-card" href={sessionHref(r.sessionId)} target="_blank" rel="noopener noreferrer" style={{ padding: '8px 12px' }}>
                 <div className="mono" style={{ fontSize: 12 }}>{r.sessionId}</div>
                 {r.evidence && <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>{r.evidence}</div>}

@@ -25,8 +25,9 @@ Requires Node 20+.
 road42 studio                          # local UI at http://127.0.0.1:4242
 road42 index                           # incremental re-index
 road42 session list --q "billing"
-road42 query list
-road42 query run <id>
+road42 query --query '{"filters":{"filter":{"name":"session","params":{"agent":"codex"}}}}'
+road42 saved-query list
+road42 saved-query run <id>
 road42 compactor run salience <id>
 road42 skill install                   # install the road42 skill for Claude + Codex
 road42 help
