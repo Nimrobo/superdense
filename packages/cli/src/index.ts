@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 import { readFile } from 'node:fs/promises';
-import { cpSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { createInterface } from 'node:readline/promises';
 import {
   assembleInsightPrompt,
   backfillQuery,
@@ -30,6 +31,8 @@ import {
   listSessionEnrichments,
   listSessions,
   loadUserEnrichers,
+  localClaudeSkillsDir,
+  localCodexSkillsDir,
   previewQuery,
   runDiscovery,
   runQueryEvaluation,
@@ -46,6 +49,21 @@ interface CliIo {
   stdout: Pick<typeof console, 'log'>;
   stderr: Pick<typeof console, 'error'>;
   isTty?: boolean;
+}
+
+type SkillScope = 'global' | 'local';
+type SkillInstallStatus = 'missing' | 'current' | 'outdated';
+
+interface SkillInstallMarker {
+  version: string;
+  installedAt: string;
+  scope: SkillScope;
+}
+
+interface SkillInstallTarget {
+  scope: SkillScope;
+  claudeRoot: string;
+  codexRoot: string;
 }
 
 function parseArgs(argv: string[]): { cmd: string; args: string[]; flags: Record<string, string | boolean> } {
@@ -412,18 +430,95 @@ async function handleFilter(args: string[], io: CliIo): Promise<boolean> {
   throw new Error(`unknown filter command: ${action}`);
 }
 
-function handleSkillInstall(args: string[], io: CliIo): void {
+function bundledSkillsRoot(): string {
   const moduleDir = dirname(fileURLToPath(import.meta.url));
   const skillsRoot = [
     join(moduleDir, 'skills'),
     join(moduleDir, '..', '..', '..', 'skills'),
   ].find((candidate) => existsSync(candidate));
   if (!skillsRoot) throw new Error(`skills directory not found: ${join(moduleDir, 'skills')}`);
+  return skillsRoot;
+}
 
-  const targetNames = args[0]
-    ? [args[0]]
+function readSkillVersion(skillDir: string): string | null {
+  const skillPath = join(skillDir, 'SKILL.md');
+  if (!existsSync(skillPath)) return null;
+  const raw = readFileSync(skillPath, 'utf8');
+  const frontmatter = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!frontmatter) return null;
+  const version = frontmatter[1].match(/^version:\s*["']?([^"'\s]+)["']?\s*$/m);
+  return version?.[1] ?? null;
+}
+
+function readInstalledMarker(dest: string): SkillInstallMarker | null {
+  const markerPath = join(dest, '.road42-install.json');
+  if (!existsSync(markerPath)) return null;
+  try {
+    const parsed = JSON.parse(readFileSync(markerPath, 'utf8')) as Partial<SkillInstallMarker>;
+    if (
+      typeof parsed.version === 'string'
+      && typeof parsed.installedAt === 'string'
+      && (parsed.scope === 'global' || parsed.scope === 'local')
+    ) {
+      return parsed as SkillInstallMarker;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function compareVersions(a: string, b: string): number {
+  const left = a.split('.').map((part) => Number.parseInt(part, 10));
+  const right = b.split('.').map((part) => Number.parseInt(part, 10));
+  const len = Math.max(left.length, right.length);
+  for (let i = 0; i < len; i++) {
+    const l = Number.isFinite(left[i]) ? left[i]! : 0;
+    const r = Number.isFinite(right[i]) ? right[i]! : 0;
+    if (l !== r) return l > r ? 1 : -1;
+  }
+  return 0;
+}
+
+function skillInstallTarget(scope: SkillScope, cwd: string): SkillInstallTarget {
+  if (scope === 'local') {
+    return { scope, claudeRoot: localClaudeSkillsDir(cwd), codexRoot: localCodexSkillsDir(cwd) };
+  }
+  return {
+    scope,
+    claudeRoot: process.env.CLAUDE_SKILLS_DIR ?? CLAUDE_SKILLS_DIR,
+    codexRoot: process.env.CODEX_SKILLS_DIR ?? CODEX_SKILLS_DIR,
+  };
+}
+
+function writeInstallMarker(dest: string, version: string, scope: SkillScope): void {
+  const marker: SkillInstallMarker = {
+    version,
+    installedAt: new Date().toISOString(),
+    scope,
+  };
+  writeFileSync(join(dest, '.road42-install.json'), `${JSON.stringify(marker, null, 2)}\n`);
+}
+
+function classifySkillInstall(dest: string, sourceVersion: string): { status: SkillInstallStatus; version: string | null } {
+  if (!existsSync(dest)) return { status: 'missing', version: null };
+  const marker = readInstalledMarker(dest);
+  if (!marker) return { status: 'outdated', version: readSkillVersion(dest) };
+  return compareVersions(marker.version, sourceVersion) >= 0
+    ? { status: 'current', version: marker.version }
+    : { status: 'outdated', version: marker.version };
+}
+
+function installSkills(
+  names: string[],
+  opts: { scope: SkillScope; cwd: string },
+): Array<{ name: string; claude: string; codex: string }> {
+  const skillsRoot = bundledSkillsRoot();
+  const targetNames = names.length
+    ? names
     : readdirSync(skillsRoot).filter((entry) => statSync(join(skillsRoot, entry)).isDirectory());
 
+  const target = skillInstallTarget(opts.scope, opts.cwd);
   const installed: Array<{ name: string; claude: string; codex: string }> = [];
 
   for (const name of targetNames) {
@@ -431,18 +526,118 @@ function handleSkillInstall(args: string[], io: CliIo): void {
     if (!existsSync(src) || !statSync(src).isDirectory()) {
       throw new Error(`skill not found: ${name}`);
     }
+    const version = readSkillVersion(src);
+    if (!version) throw new Error(`skill version not found: ${name}`);
 
-    const claudeDest = join(process.env.CLAUDE_SKILLS_DIR ?? CLAUDE_SKILLS_DIR, name);
+    const claudeDest = join(target.claudeRoot, name);
     mkdirSync(claudeDest, { recursive: true });
     cpSync(src, claudeDest, { recursive: true });
+    writeInstallMarker(claudeDest, version, target.scope);
 
-    const codexDest = join(process.env.CODEX_SKILLS_DIR ?? CODEX_SKILLS_DIR, name);
+    const codexDest = join(target.codexRoot, name);
+    mkdirSync(codexDest, { recursive: true });
     cpSync(src, codexDest, { recursive: true });
+    writeInstallMarker(codexDest, version, target.scope);
 
     installed.push({ name, claude: claudeDest, codex: codexDest });
   }
 
+  return installed;
+}
+
+function handleSkillInstall(args: string[], flags: Record<string, string | boolean>, io: CliIo): void {
+  const installed = installSkills(args, {
+    scope: flags.locally === true ? 'local' : 'global',
+    cwd: process.cwd(),
+  });
   printJson({ installed }, io);
+}
+
+function studioSkillSummary(
+  name: string,
+  cwd: string,
+): {
+  sourceVersion: string;
+  global: { claude: ReturnType<typeof classifySkillInstall>; codex: ReturnType<typeof classifySkillInstall> };
+  local: { claude: ReturnType<typeof classifySkillInstall>; codex: ReturnType<typeof classifySkillInstall> };
+} {
+  const src = join(bundledSkillsRoot(), name);
+  const sourceVersion = readSkillVersion(src);
+  if (!sourceVersion) throw new Error(`skill version not found: ${name}`);
+  const globalTarget = skillInstallTarget('global', cwd);
+  const localTarget = skillInstallTarget('local', cwd);
+  return {
+    sourceVersion,
+    global: {
+      claude: classifySkillInstall(join(globalTarget.claudeRoot, name), sourceVersion),
+      codex: classifySkillInstall(join(globalTarget.codexRoot, name), sourceVersion),
+    },
+    local: {
+      claude: classifySkillInstall(join(localTarget.claudeRoot, name), sourceVersion),
+      codex: classifySkillInstall(join(localTarget.codexRoot, name), sourceVersion),
+    },
+  };
+}
+
+function scopeStatus(
+  summary: ReturnType<typeof studioSkillSummary>,
+  scope: SkillScope,
+): { status: SkillInstallStatus; version: string | null } {
+  const entry = summary[scope];
+  if (entry.claude.status === 'current' && entry.codex.status === 'current') {
+    return { status: 'current', version: entry.claude.version ?? entry.codex.version };
+  }
+  if (entry.claude.status === 'outdated' || entry.codex.status === 'outdated') {
+    return { status: 'outdated', version: entry.claude.version ?? entry.codex.version };
+  }
+  return { status: 'missing', version: null };
+}
+
+function chooseStudioSkillAction(
+  summary: ReturnType<typeof studioSkillSummary>,
+): { scope: SkillScope; status: Exclude<SkillInstallStatus, 'current'>; version: string | null } | null {
+  const local = scopeStatus(summary, 'local');
+  const global = scopeStatus(summary, 'global');
+  if (local.status === 'current') return null;
+  if (local.status === 'outdated') return { scope: 'local', status: 'outdated', version: local.version };
+  if (global.status === 'current') return null;
+  if (global.status === 'outdated') return { scope: 'global', status: 'outdated', version: global.version };
+  return { scope: 'global', status: 'missing', version: null };
+}
+
+async function confirm(prompt: string): Promise<boolean> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = await rl.question(prompt);
+    return answer.trim() === '' || answer.trim().toLowerCase().startsWith('y');
+  } finally {
+    rl.close();
+  }
+}
+
+async function checkSkillsForStudio(io: CliIo, opts: { cwd: string }): Promise<void> {
+  const name = 'road42';
+  const summary = studioSkillSummary(name, opts.cwd);
+  const action = chooseStudioSkillAction(summary);
+  if (!action) return;
+
+  const scopeLabel = action.scope === 'global' ? 'globally' : 'locally';
+  if (!io.isTty || !process.stdin.isTTY) {
+    const detail = action.status === 'outdated' && action.version
+      ? `skill outdated (${action.version} -> ${summary.sourceVersion})`
+      : `skill missing`;
+    const command = action.scope === 'local' ? 'road42 skill install --locally' : 'road42 skill install';
+    io.stdout.log(`[road42] hint: ${detail}. Run \`${command}\` to update.`);
+    return;
+  }
+
+  const prompt = action.status === 'outdated' && action.version
+    ? `Update road42 skill ${scopeLabel} (${action.version} -> ${summary.sourceVersion})? [Y/n] `
+    : `Install road42 skill ${scopeLabel}? [Y/n] `;
+  if (await confirm(prompt)) {
+    installSkills([name], { scope: action.scope, cwd: opts.cwd });
+    io.stdout.log(`[road42] ${action.status === 'outdated' ? 'updated' : 'installed'} road42 skill ${scopeLabel}.`);
+  }
 }
 
 export async function runCli(argv: string[], io: CliIo = {
@@ -456,7 +651,7 @@ export async function runCli(argv: string[], io: CliIo = {
   if (cmd === 'skill') {
     const action = args[0];
     if (action !== 'install') throw new Error(`unknown skill command: ${action ?? '(none)'}`);
-    handleSkillInstall(args.slice(1), io);
+    handleSkillInstall(args.slice(1), flags, io);
     return 0;
   }
 
@@ -537,9 +732,13 @@ export async function runCli(argv: string[], io: CliIo = {
       '  insight list        List available insight recipes',
       '  insight prompt <n>  Print a copy-pasteable insight prompt for your coding agent',
       '  skill install [n]   Install skills into Claude and Codex',
+      '      --locally       Install skills into ./.claude and ./.codex for this cwd',
       '  index               Incremental session index',
       '  reindex             Full session reindex',
       '  discover            Discover sessions from adapters',
+      '',
+      'Studio options:',
+      '  --no-skill-check    Skip the startup skill freshness check',
     ].join('\n'));
     return 0;
   }
@@ -548,14 +747,23 @@ export async function runCli(argv: string[], io: CliIo = {
     throw new Error(`unknown command: ${cmd}`);
   }
 
-  const port = flags.port ? parseInt(String(flags.port), 10) : 4242;
+  const explicitPort = flags.port != null;
+  const port = explicitPort ? parseInt(String(flags.port), 10) : 4242;
+
+  if (!flags['no-skill-check']) {
+    await checkSkillsForStudio(io, { cwd: process.cwd() });
+  }
 
   // Run discovery synchronously so the UI immediately shows sessions.
   io.stdout.log('[road42] discovering sessions...');
   const d = await runDiscovery();
   io.stdout.log(`[road42] discovered ${d.discovered} sessions.`);
 
-  const { url } = await startServer({ port, host: '127.0.0.1' });
+  const { url } = await startServer({
+    port,
+    host: '127.0.0.1',
+    ...(explicitPort ? {} : { portFallbackAttempts: 50 }),
+  });
   io.stdout.log(`[road42] ${url}`);
 
   // Background: run query evaluation if any queries exist.
