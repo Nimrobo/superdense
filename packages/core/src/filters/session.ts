@@ -74,6 +74,8 @@ export const sessionFilter: Filter = {
       agent: { type: 'string', description: 'Exact adapter/agent name.' },
       pwd: { type: 'string', description: 'Exact working directory.' },
       pwdContains: { type: 'string', description: 'Substring contained in the working directory.' },
+      project: { type: 'string', description: 'Exact project key.' },
+      projectContains: { type: 'string', description: 'Substring contained in the project key.' },
       firstPromptContains: { type: 'string', description: 'Substring contained in the first prompt.' },
       summaryContains: { type: 'string', description: 'Substring contained in the session summary.' },
       createdAfter: { type: ['number', 'string'], description: 'Minimum createdAt timestamp or parseable date.' },
@@ -124,6 +126,12 @@ export const sessionFilter: Filter = {
 
     const pwdContains = asString(params.pwdContains);
     if (pwdContains && !contains(session.pwd, pwdContains)) return false;
+
+    const project = asString(params.project);
+    if (project && session.projectKey !== project) return false;
+
+    const projectContains = asString(params.projectContains);
+    if (projectContains && !contains(session.projectKey, projectContains)) return false;
 
     const firstPromptContains = asString(params.firstPromptContains);
     if (firstPromptContains && !contains(session.firstPrompt, firstPromptContains)) return false;

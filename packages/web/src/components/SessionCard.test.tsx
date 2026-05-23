@@ -29,6 +29,15 @@ describe('SessionCard', () => {
     expect(screen.getByText('ID agent:session-1')).toBeInTheDocument();
   });
 
+  it('renders as a new-tab anchor when href is supplied', () => {
+    render(<SessionCard session={session} href="#session=agent%3Asession-1" />);
+
+    const link = screen.getByRole('link');
+    expect(link).toHaveAttribute('href', '#session=agent%3Asession-1');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+  });
+
   it('falls back instead of rendering stale internal prompts as titles', () => {
     render(
       <SessionCard

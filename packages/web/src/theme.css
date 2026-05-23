@@ -137,11 +137,14 @@ a { color: var(--accent); text-decoration: none; }
 
 /* Session list */
 .session-card {
+  display: block;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 12px 14px;
   margin-bottom: 8px;
   background: var(--bg);
+  color: var(--text);
+  text-decoration: none;
   cursor: pointer;
   transition: border-color 0.1s, background 0.1s;
 }

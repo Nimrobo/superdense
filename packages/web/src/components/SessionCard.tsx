@@ -1,15 +1,23 @@
 import type { Session } from '../api.js';
 import { formatDuration, formatRelativeTime, messageCountLabel, projectLabel, sessionTitle } from '../sessionDisplay.js';
 
-export function SessionCard({ session, onClick }: { session: Session; onClick: () => void }) {
+type SessionCardProps =
+  | { session: Session; onClick: () => void; href?: never }
+  | { session: Session; href: string; onClick?: never };
+
+export function SessionCard({ session, onClick, href }: SessionCardProps) {
+  if ((href === undefined) === (onClick === undefined)) {
+    throw new Error('SessionCard requires exactly one of href or onClick');
+  }
+
   const title = sessionTitle(session);
   const project = projectLabel(session.pwd);
   const duration = formatDuration(session.createdAt, session.modifiedAt);
   const messageCount = messageCountLabel(session.messageCount);
   const lastActive = formatRelativeTime(session.modifiedAt);
 
-  return (
-    <div className="session-card" onClick={onClick}>
+  const content = (
+    <>
       <div className="session-card-title">
         {title}
       </div>
@@ -24,6 +32,20 @@ export function SessionCard({ session, onClick }: { session: Session; onClick: (
         {duration && <span>{duration}</span>}
         {lastActive && <span>{lastActive}</span>}
       </div>
+    </>
+  );
+
+  if (href) {
+    return (
+      <a className="session-card" href={href} target="_blank" rel="noopener noreferrer">
+        {content}
+      </a>
+    );
+  }
+
+  return (
+    <div className="session-card" onClick={onClick}>
+      {content}
     </div>
   );
 }

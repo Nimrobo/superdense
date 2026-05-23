@@ -149,7 +149,7 @@ export const api = {
   },
   listEnrichers: () => j<{ items: EnricherInfo[] }>('/api/enrichers'),
   listFilters: () => j<{ items: FilterInfo[] }>('/api/filters'),
-  listFacets: () => j<{ pwd: string[]; agent: string[] }>('/api/facets'),
+  listFacets: () => j<{ pwd: string[]; agent: string[]; project: string[] }>('/api/facets'),
   listQueries: () => j<{ items: Query[] }>('/api/queries'),
   getQuery: (id: string) => j<Query & { members: Session[] }>(`/api/queries/${encodeURIComponent(id)}`),
   createQuery: (q: { name: string } & QueryDefinition) =>
