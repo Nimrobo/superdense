@@ -97,10 +97,7 @@ export function DashboardView({ progress, onReindex, onOpenSession, onOpenSessio
         <h1>Dashboard</h1>
         <div className="dashboard-header-actions">
           <span className="muted small">indexed {relTime(header.lastIndexedAt)}</span>
-          <button className="reindex-btn" onClick={onReindex} disabled={!!busy}>
-            {busy ? `${progress!.phase} ${progress!.done}/${progress!.total}` : 'Reindex'}
-          </button>
-          <button className="reindex-btn" onClick={refreshAll}>Refresh</button>
+          {busy && <span className="muted small">{progress!.phase} {progress!.done}/{progress!.total}</span>}
         </div>
       </div>
 
@@ -127,14 +124,15 @@ export function DashboardView({ progress, onReindex, onOpenSession, onOpenSessio
         />
       )}
 
-      {insights && <FocusPatternCard items={insights.dayKinds} />}
-
       {insights && (
-        <PersonalRecordsCard
-          streaks={header.streaks}
-          records={insights.personalRecords}
-          onOpenSession={onOpenSession}
-        />
+        <div className="activity-rhythm-row">
+          <FocusPatternCard items={insights.dayKinds} />
+          <PersonalRecordsCard
+            records={insights.personalRecords}
+            workRhythm={insights.workRhythm}
+            onOpenSession={onOpenSession}
+          />
+        </div>
       )}
 
       <RecentWorkCard
@@ -185,15 +183,19 @@ function MomentumHero({
       <div className="momentum-stats">
         <RecordTile label="Longest streak" value={`${streaks.longest}d`} detail={streaks.longestRange ? `${ymdToLabel(streaks.longestRange.start)} - ${ymdToLabel(streaks.longestRange.end)}` : undefined} />
         <RecordTile label="Best day" value={records?.bestDay ? `${records.bestDay.sessions}` : '-'} detail={records?.bestDay ? ymdToLabel(records.bestDay.date) : undefined} />
-        <RecordTile label="Longest focused session" value={records?.longestSession ? formatDuration(records.longestSession.durationMs) : '-'} />
+        <RecordTile
+          label="Longest agent runtime"
+          value={records?.longestSession ? formatDuration(records.longestSession.durationMs) : '-'}
+          title="Active conversation time, excluding idle gaps longer than 5 minutes."
+        />
       </div>
     </div>
   );
 }
 
-function RecordTile({ label, value, detail }: { label: string; value: string; detail?: string }) {
+function RecordTile({ label, value, detail, title }: { label: string; value: string; detail?: string; title?: string }) {
   return (
-    <div className="record-tile">
+    <div className="record-tile" title={title}>
       <div className="record-value">{value}</div>
       <div className="record-label">{label}</div>
       {detail && <div className="record-detail">{detail}</div>}
@@ -201,8 +203,10 @@ function RecordTile({ label, value, detail }: { label: string; value: string; de
   );
 }
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
 function ContributionHeatmap({ contributions }: { contributions: HeaderStats['contributions'] }) {
-  const [range, setRange] = useState<HeatmapRange>('30D');
+  const [range, setRange] = useState<HeatmapRange>('6M');
   const visible = useMemo(
     () => (range === '30D' ? contributions.slice(-30) : contributions.slice(-180)),
     [contributions, range],
@@ -212,7 +216,8 @@ function ContributionHeatmap({ contributions }: { contributions: HeaderStats['co
     const max = visible.reduce((m, c) => Math.max(m, c.count), 0);
     if (visible.length === 0) return { weeks: [] as Array<Array<{ date: string; count: number } | null>>, max };
     const first = visible[0]!;
-    const firstDow = new Date(`${first.date}T00:00:00Z`).getUTCDay();
+    // Use local-time day-of-week for the leading pad so columns align by weekday.
+    const firstDow = new Date(`${first.date}T12:00:00`).getDay();
     const cells: Array<{ date: string; count: number } | null> = [];
     for (let i = 0; i < firstDow; i++) cells.push(null);
     for (const c of visible) cells.push(c);
@@ -220,6 +225,19 @@ function ContributionHeatmap({ contributions }: { contributions: HeaderStats['co
     for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
     return { weeks, max };
   }, [visible]);
+
+  // Month labels above the grid, one per week column (empty if not the first
+  // week of a month, GitHub-style).
+  const monthLabels = useMemo(() => {
+    return weeks.map((week) => {
+      const firstReal = week.find((c) => c != null);
+      if (!firstReal) return '';
+      const d = new Date(`${firstReal.date}T12:00:00`);
+      // Label the column only if it contains the 1st–7th of a month.
+      const day = d.getDate();
+      return day <= 7 ? MONTHS[d.getMonth()]! : '';
+    });
+  }, [weeks]);
 
   const bucket = (count: number): number => {
     if (count === 0 || max === 0) return 0;
@@ -249,25 +267,42 @@ function ContributionHeatmap({ contributions }: { contributions: HeaderStats['co
         </div>
       </div>
       <div className="heatmap">
-        <div className="heatmap-dows">
-          <span></span><span>Mon</span><span></span><span>Wed</span><span></span><span>Fri</span><span></span>
-        </div>
-        <div className="heatmap-grid">
-          {weeks.map((week, wi) => (
-            <div key={wi} className="heatmap-col">
-              {Array.from({ length: 7 }).map((_, di) => {
-                const cell = week[di];
-                if (!cell) return <div key={di} className="heatmap-cell empty" />;
-                return (
-                  <div
-                    key={di}
-                    className={`heatmap-cell b${bucket(cell.count)}`}
-                    title={`${ymdToLabel(cell.date)} - ${cell.count} session${cell.count === 1 ? '' : 's'}`}
-                  />
-                );
-              })}
-            </div>
+        <div
+          className="heatmap-months"
+          style={{ gridTemplateColumns: `var(--hm-dow-width) repeat(${Math.max(1, weeks.length)}, var(--hm-cell))` }}
+        >
+          <span />
+          {monthLabels.map((m, i) => (
+            <span key={i} className="heatmap-month-label">{m}</span>
           ))}
+        </div>
+        <div className="heatmap-body">
+          <div className="heatmap-dows">
+            <span />
+            <span>Mon</span>
+            <span />
+            <span>Wed</span>
+            <span />
+            <span>Fri</span>
+            <span />
+          </div>
+          <div className="heatmap-grid">
+            {weeks.map((week, wi) => (
+              <div key={wi} className="heatmap-col">
+                {Array.from({ length: 7 }).map((_, di) => {
+                  const cell = week[di];
+                  if (!cell) return <div key={di} className="heatmap-cell empty" />;
+                  return (
+                    <div
+                      key={di}
+                      className={`heatmap-cell b${bucket(cell.count)}`}
+                      title={`${ymdToLabel(cell.date)} - ${cell.count} session${cell.count === 1 ? '' : 's'}`}
+                    />
+                  );
+                })}
+              </div>
+            ))}
+          </div>
         </div>
         <div className="heatmap-legend">
           <span className="muted small">Less</span>
@@ -354,7 +389,7 @@ function WindowMetricsCard({
           </div>
           {data.window.topClis.length > 0 && (
             <div className="inline-list-block">
-              <div className="card-subtitle">Top CLIs used</div>
+              <div className="card-subtitle">Top CLI commands</div>
               <ul className="chip-list">
                 {data.window.topClis.map((c) => (
                   <li key={c.cli} className="chip">
@@ -510,28 +545,24 @@ function FocusPatternCard({ items }: { items: Insights['dayKinds'] }) {
 }
 
 function PersonalRecordsCard({
-  streaks,
   records,
+  workRhythm,
   onOpenSession,
 }: {
-  streaks: HeaderStats['streaks'];
   records: Insights['personalRecords'];
+  workRhythm: Insights['workRhythm'];
   onOpenSession: (id: string) => void;
 }) {
+  const peakHour = workRhythm.peakHour;
   return (
     <div className="card">
       <div className="card-title">Personal records</div>
       <div className="records-grid">
-        <RecordTile label="Best day ever" value={records.bestDay ? `${records.bestDay.sessions} sessions` : '-'} detail={records.bestDay ? ymdToLabel(records.bestDay.date) : undefined} />
-        <RecordTile label="Longest streak" value={`${streaks.longest}d`} detail={streaks.longestRange ? `${ymdToLabel(streaks.longestRange.start)} - ${ymdToLabel(streaks.longestRange.end)}` : undefined} />
-        <button
-          className="record-tile record-button"
-          disabled={!records.longestSession}
-          onClick={() => records.longestSession && onOpenSession(records.longestSession.sessionId)}
-        >
-          <span className="record-value">{records.longestSession ? formatDuration(records.longestSession.durationMs) : '-'}</span>
-          <span className="record-label">Longest session under 24h</span>
-        </button>
+        <RecordTile
+          label="Most active hour"
+          value={peakHour ? `${DOWS[peakHour.dow]} ${String(peakHour.hour).padStart(2, '0')}:00` : '-'}
+          detail={peakHour ? `${peakHour.count} sessions` : undefined}
+        />
         <button
           className="record-tile record-button"
           disabled={!records.mostCliInSession}

@@ -1,6 +1,7 @@
 import { iterSessionEvents } from '../adapters/index.js';
 import { getEnrichment, upsertEnrichment } from '../db.js';
 import type { Session } from '../types.js';
+import { activeDurationEnricher } from './active-duration.js';
 import { bashCliCountsEnricher } from './bash-cli-counts.js';
 import { eventCountEnricher } from './event-count.js';
 import { fingerprintEnricher } from './fingerprint.js';
@@ -17,6 +18,7 @@ const BUILTINS: Enricher[] = [
   bashCliCountsEnricher,
   fingerprintEnricher,
   insightRunEnricher,
+  activeDurationEnricher,
 ];
 
 const registry: Enricher[] = [...BUILTINS];

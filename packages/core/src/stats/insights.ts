@@ -73,9 +73,12 @@ export function getWorkRhythm(now: number = Date.now()): WorkRhythm {
     const dow = d.getDay();
     const hour = d.getHours();
     hourGrid[dow]![hour]++;
-    const weekStart = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
-    weekStart.setUTCDate(weekStart.getUTCDate() - weekStart.getUTCDay());
-    weekdayWeeks[dow]!.add(weekStart.toISOString().slice(0, 10));
+    const weekStart = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+    const wy = weekStart.getFullYear();
+    const wm = String(weekStart.getMonth() + 1).padStart(2, '0');
+    const wd = String(weekStart.getDate()).padStart(2, '0');
+    weekdayWeeks[dow]!.add(`${wy}-${wm}-${wd}`);
   }
 
   let peakHour: WorkRhythm['peakHour'] = null;
@@ -140,7 +143,7 @@ export function getDayKinds(now: number = Date.now(), days = 30): DayKind[] {
   const since = now - days * DAY_MS;
   const rows = getDb()
     .prepare(`
-      SELECT date(modified_at / 1000, 'unixepoch') AS d,
+      SELECT date(modified_at / 1000, 'unixepoch', 'localtime') AS d,
              COUNT(*) AS sessions,
              COUNT(DISTINCT COALESCE(NULLIF(project_key, ''), pwd)) AS pwds
         FROM sessions
@@ -161,7 +164,7 @@ export function getPersonalRecords(): PersonalRecords {
   const db = getDb();
   const bestDay = db
     .prepare(`
-      SELECT date(modified_at / 1000, 'unixepoch') AS d, COUNT(*) AS c
+      SELECT date(modified_at / 1000, 'unixepoch', 'localtime') AS d, COUNT(*) AS c
         FROM sessions
        WHERE modified_at IS NOT NULL
        GROUP BY d
@@ -182,18 +185,20 @@ export function getPersonalRecords(): PersonalRecords {
     `)
     .get() as { sid: string; total: number } | undefined;
 
-  // Longest session: cap to 24h to avoid noise from sessions resumed days later.
+  // Longest agent runtime: cumulative active conversation time from the
+  // active_duration enricher, which excludes idle gaps > 5 min.
   const longest = db
     .prepare(`
-      SELECT id, (modified_at - created_at) AS dur
-        FROM sessions
-       WHERE created_at IS NOT NULL AND modified_at IS NOT NULL
-         AND (modified_at - created_at) > 0
-         AND (modified_at - created_at) < ?
+      SELECT qe.session_id AS id,
+             CAST(json_extract(qe.value, '$.activeMs') AS INTEGER) AS dur
+        FROM query_enrich qe
+       WHERE qe.name = 'active_duration'
+         AND dur IS NOT NULL
+         AND dur > 0
        ORDER BY dur DESC
        LIMIT 1
     `)
-    .get(24 * 60 * 60 * 1000) as { id: string; dur: number } | undefined;
+    .get() as { id: string; dur: number } | undefined;
 
   return {
     bestDay: bestDay ? { date: bestDay.d, sessions: bestDay.c } : null,
