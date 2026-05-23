@@ -118,8 +118,6 @@ Use query enrichers only to add data to matched results:
 }
 ```
 
-Do not filter on query-produced enrichments. That is future "query on query" behavior.
-
 ## Metadata Guidance
 
 Use `session enrichments` to triage sessions before compacting:
@@ -130,7 +128,7 @@ Use `session enrichments` to triage sessions before compacting:
 - `event_count`: transcript event count.
 - `fingerprint`: fixed-shape JSON with event counts, tool/error counts, role byte totals, unique paths, verbs, duration, and turns.
 
-Use `session fields` or `filter list/show` to discover filters and post-filter enrichers. Do not write old `session.*`, `enr.*`, or `plugin` predicate leaves.
+Use `session fields` or `filter list/show` to discover filters and post-filter enrichers.
 
 ## Compactor Guidance
 
