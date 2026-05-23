@@ -1,15 +1,15 @@
 import { useEffect, useState } from 'react';
 import { api, type Query, type Session } from '../api.js';
+import { sessionHref } from '../urls.js';
 import { SessionCard } from './SessionCard.js';
 
 interface Props {
   id: string;
   onBack: () => void;
-  onOpenSession: (id: string) => void;
   onDeleted: () => void;
 }
 
-export function QueryView({ id, onBack, onOpenSession, onDeleted }: Props) {
+export function QueryView({ id, onBack, onDeleted }: Props) {
   const [query, setQuery] = useState<(Query & { members: Session[] }) | null>(null);
 
   useEffect(() => {
@@ -47,7 +47,7 @@ export function QueryView({ id, onBack, onOpenSession, onDeleted }: Props) {
         </pre>
         <h3 style={{ fontSize: 12, color: 'var(--text-muted)', margin: '18px 0 10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Matches</h3>
         {query.members.length === 0 && <div className="empty">No sessions matched this query.</div>}
-        {query.members.map((s) => <SessionCard key={s.id} session={s} onClick={() => onOpenSession(s.id)} />)}
+        {query.members.map((s) => <SessionCard key={s.id} session={s} href={sessionHref(s.id)} />)}
       </div>
     </>
   );

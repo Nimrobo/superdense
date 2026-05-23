@@ -16,6 +16,20 @@ export type View =
   | { type: 'query-builder' }
   | { type: 'query'; id: string };
 
+function parseHash(): View | null {
+  const prefix = '#session=';
+  if (!window.location.hash.startsWith(prefix)) return null;
+
+  const rawId = window.location.hash.slice(prefix.length);
+  if (!rawId) return null;
+
+  try {
+    return { type: 'session', id: decodeURIComponent(rawId) };
+  } catch {
+    return null;
+  }
+}
+
 export function App() {
   const [view, setView] = useState<View>({ type: 'dashboard' });
   const [queries, setQueries] = useState<Query[]>([]);
@@ -33,7 +47,9 @@ export function App() {
   };
 
   useEffect(() => {
-    window.history.replaceState({ view: { type: 'dashboard' } satisfies View }, '');
+    const initialView = parseHash() ?? ({ type: 'dashboard' } satisfies View);
+    setView(initialView);
+    window.history.replaceState({ view: initialView }, '');
     const onPop = (e: PopStateEvent) => {
       const v = (e.state && (e.state as { view?: View }).view) as View | undefined;
       if (v) setView(v);
@@ -83,14 +99,12 @@ export function App() {
         {view.type === 'query-builder' && (
           <QueryBuilder
             onSaved={async (q) => { await refresh(); pushView({ type: 'query', id: q.id }); }}
-            onOpenSession={(id) => pushView({ type: 'session', id })}
           />
         )}
         {view.type === 'query' && (
           <QueryView
             id={view.id}
             onBack={() => window.history.back()}
-            onOpenSession={(id) => pushView({ type: 'session', id })}
             onDeleted={async () => { await refresh(); pushView({ type: 'sessions' }); }}
           />
         )}

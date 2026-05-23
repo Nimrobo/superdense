@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
-import { api, type EnricherInfo, type FilterInfo, type QueryDefinition, type QueryFilter, type Query } from '../api.js';
+import { api, type QueryDefinition, type QueryFilter, type Query } from '../api.js';
+import { sessionHref } from '../urls.js';
 
 interface Props {
   onSaved: (q: Query) => void;
-  onOpenSession: (id: string) => void;
 }
 
 interface FilterState {
   pwd: string;
+  project: string;
   agent: string;
   userPromptKeyword: string;
-  hasErrors: 'any' | 'yes' | 'no';
   toolName: string;
   toolMin: string;
   cliName: string;
@@ -19,9 +19,9 @@ interface FilterState {
 
 const EMPTY: FilterState = {
   pwd: '',
+  project: '',
   agent: '',
   userPromptKeyword: '',
-  hasErrors: 'any',
   toolName: '',
   toolMin: '1',
   cliName: '',
@@ -41,11 +41,11 @@ function buildFilters(state: FilterState): QueryFilter | null {
   if (state.pwd.trim()) {
     sessionParams.pwdContains = state.pwd.trim();
   }
+  if (state.project.trim()) {
+    sessionParams.projectContains = state.project.trim();
+  }
   if (state.agent.trim()) {
     sessionParams.agent = state.agent.trim();
-  }
-  if (state.hasErrors !== 'any') {
-    sessionParams.hasErrors = state.hasErrors === 'yes';
   }
   if (state.toolName.trim()) {
     sessionParams.toolUsed = { name: state.toolName.trim(), min: clampMin(state.toolMin) };
@@ -65,14 +65,12 @@ function buildFilters(state: FilterState): QueryFilter | null {
   return { and: leaves };
 }
 
-export function QueryBuilder({ onSaved, onOpenSession }: Props) {
+export function QueryBuilder({ onSaved }: Props) {
   const [state, setState] = useState<FilterState>(EMPTY);
   const [name, setName] = useState('');
   const [pwdOptions, setPwdOptions] = useState<string[]>([]);
+  const [projectOptions, setProjectOptions] = useState<string[]>([]);
   const [agentOptions, setAgentOptions] = useState<string[]>([]);
-  const [enrichers, setEnrichers] = useState<EnricherInfo[]>([]);
-  const [filters, setFilters] = useState<FilterInfo[]>([]);
-  const [selectedEnrichers, setSelectedEnrichers] = useState<string[]>([]);
   const [showJson, setShowJson] = useState(false);
   const [preview, setPreview] = useState<{ sessionId: string; evidence?: string | null }[] | null>(null);
   const [busy, setBusy] = useState(false);
@@ -80,22 +78,16 @@ export function QueryBuilder({ onSaved, onOpenSession }: Props) {
 
   useEffect(() => {
     api.listFacets()
-      .then((r) => { setPwdOptions(r.pwd); setAgentOptions(r.agent); })
-      .catch(console.error);
-    api.listEnrichers()
-      .then((r) => setEnrichers(r.items))
-      .catch(console.error);
-    api.listFilters()
-      .then((r) => setFilters(r.items))
+      .then((r) => { setPwdOptions(r.pwd); setAgentOptions(r.agent); setProjectOptions(r.project); })
       .catch(console.error);
   }, []);
 
   const filtersExpression = useMemo(() => buildFilters(state), [state]);
   const definition = useMemo<QueryDefinition | null>(() => (
     filtersExpression
-      ? { filters: filtersExpression, enrichers: selectedEnrichers }
+      ? { filters: filtersExpression, enrichers: [] }
       : null
-  ), [filtersExpression, selectedEnrichers]);
+  ), [filtersExpression]);
   const set = (patch: Partial<FilterState>) => setState((s) => ({ ...s, ...patch }));
 
   const runPreview = async () => {
@@ -133,11 +125,8 @@ export function QueryBuilder({ onSaved, onOpenSession }: Props) {
     ? ('and' in filtersExpression ? (filtersExpression as { and: QueryFilter[] }).and.length : 1)
     : 0;
 
-  const toggleEnricher = (enricher: string) => {
-    setSelectedEnrichers((current) => current.includes(enricher)
-      ? current.filter((x) => x !== enricher)
-      : [...current, enricher]);
-  };
+  const pwdActive = state.pwd.trim() !== '';
+  const projectActive = state.project.trim() !== '';
 
   return (
     <>
@@ -149,108 +138,100 @@ export function QueryBuilder({ onSaved, onOpenSession }: Props) {
       </div>
       <div className="work-body">
         <div style={{ display: 'grid', gap: 14, maxWidth: 720 }}>
-          <Card label="Working directory" hint="Sessions whose pwd contains this string.">
-            <input
-              list="facet-pwd"
-              value={state.pwd}
-              onChange={(e) => set({ pwd: e.target.value })}
-              placeholder="/Users/me/projects/…"
-            />
-            <datalist id="facet-pwd">
-              {pwdOptions.map((p) => <option key={p} value={p} />)}
-            </datalist>
-          </Card>
+          <Row2>
+            <Card
+              label="Working directory"
+              hint={projectActive ? 'Clear Project to use Working Directory' : 'Sessions whose pwd contains this string.'}
+            >
+              <input
+                list="facet-pwd"
+                value={state.pwd}
+                disabled={projectActive}
+                onChange={(e) => set({ pwd: e.target.value })}
+                placeholder="/Users/me/projects/…"
+              />
+              <datalist id="facet-pwd">
+                {pwdOptions.map((p) => <option key={p} value={p} />)}
+              </datalist>
+            </Card>
 
-          <Card label="Agent" hint="Restrict to one agent.">
-            <select value={state.agent} onChange={(e) => set({ agent: e.target.value })}>
-              <option value="">Any</option>
-              {agentOptions.map((a) => <option key={a} value={a}>{a}</option>)}
-            </select>
-          </Card>
+            <Card
+              label="Project"
+              hint={pwdActive ? 'Clear Working Directory to use Project' : 'Sessions whose project key contains this string.'}
+            >
+              <input
+                list="facet-project"
+                value={state.project}
+                disabled={pwdActive}
+                onChange={(e) => set({ project: e.target.value })}
+                placeholder="project-key"
+              />
+              <datalist id="facet-project">
+                {projectOptions.map((p) => <option key={p} value={p} />)}
+              </datalist>
+            </Card>
+          </Row2>
 
-          <Card label="User prompt contains" hint="Matches if any user message in the session contains this text.">
-            <input
-              value={state.userPromptKeyword}
-              onChange={(e) => set({ userPromptKeyword: e.target.value })}
-              placeholder="keyword"
-            />
-          </Card>
+          <Row2>
+            <Card label="Agent" hint="Restrict to one agent.">
+              <select value={state.agent} onChange={(e) => set({ agent: e.target.value })}>
+                <option value="">Any</option>
+                {agentOptions.map((a) => <option key={a} value={a}>{a}</option>)}
+              </select>
+            </Card>
 
-          {enrichers.length > 0 && (
-            <Card label="Result enrichers" hint="Run after filters match.">
-              <div style={{ display: 'grid', gap: 8 }}>
-                {enrichers.map((e) => (
-                  <label key={e.name} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
-                    <input
-                      type="checkbox"
-                      checked={selectedEnrichers.includes(e.name)}
-                      onChange={() => toggleEnricher(e.name)}
-                    />
-                    <span className="mono" style={{ fontSize: 12 }}>{e.name}</span>
-                    <span className="muted" style={{ fontSize: 11 }}>{e.returns}</span>
-                  </label>
-                ))}
+            <Card label="User prompt contains" hint="Matches if any user message in the session contains this text.">
+              <input
+                value={state.userPromptKeyword}
+                onChange={(e) => set({ userPromptKeyword: e.target.value })}
+                placeholder="keyword"
+              />
+            </Card>
+          </Row2>
+
+          <Row2>
+            <Card label="Tool used" hint="Tool name (e.g. Bash, Read) with a minimum invocation count.">
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  value={state.toolName}
+                  onChange={(e) => set({ toolName: e.target.value })}
+                  placeholder="Bash"
+                  style={{ flex: 1 }}
+                />
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-muted)' }}>
+                  ≥
+                  <input
+                    type="number"
+                    min={1}
+                    value={state.toolMin}
+                    onChange={(e) => set({ toolMin: e.target.value })}
+                    style={{ width: 70 }}
+                  />
+                </label>
               </div>
             </Card>
-          )}
 
-          {filters.length > 0 && (
-            <Card label="Available filters" hint="Loaded from the filter catalog.">
-              <div className="mono" style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                {filters.map((f) => f.name).join(', ')}
+            <Card label="CLI used" hint="Parsed program name from Bash calls (e.g. git, npm, gh).">
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  value={state.cliName}
+                  onChange={(e) => set({ cliName: e.target.value })}
+                  placeholder="git"
+                  style={{ flex: 1 }}
+                />
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-muted)' }}>
+                  ≥
+                  <input
+                    type="number"
+                    min={1}
+                    value={state.cliMin}
+                    onChange={(e) => set({ cliMin: e.target.value })}
+                    style={{ width: 70 }}
+                  />
+                </label>
               </div>
             </Card>
-          )}
-
-          <Card label="Has errors" hint="Based on the has_errors enricher.">
-            <select value={state.hasErrors} onChange={(e) => set({ hasErrors: e.target.value as FilterState['hasErrors'] })}>
-              <option value="any">Any</option>
-              <option value="yes">Yes</option>
-              <option value="no">No</option>
-            </select>
-          </Card>
-
-          <Card label="Tool used" hint="Tool name (e.g. Bash, Read) with a minimum invocation count.">
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                value={state.toolName}
-                onChange={(e) => set({ toolName: e.target.value })}
-                placeholder="Bash"
-                style={{ flex: 1 }}
-              />
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-muted)' }}>
-                ≥
-                <input
-                  type="number"
-                  min={1}
-                  value={state.toolMin}
-                  onChange={(e) => set({ toolMin: e.target.value })}
-                  style={{ width: 70 }}
-                />
-              </label>
-            </div>
-          </Card>
-
-          <Card label="CLI used" hint="Parsed program name from Bash calls (e.g. git, npm, gh).">
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                value={state.cliName}
-                onChange={(e) => set({ cliName: e.target.value })}
-                placeholder="git"
-                style={{ flex: 1 }}
-              />
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-muted)' }}>
-                ≥
-                <input
-                  type="number"
-                  min={1}
-                  value={state.cliMin}
-                  onChange={(e) => set({ cliMin: e.target.value })}
-                  style={{ width: 70 }}
-                />
-              </label>
-            </div>
-          </Card>
+          </Row2>
         </div>
 
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', maxWidth: 720, marginTop: 22 }}>
@@ -278,15 +259,23 @@ export function QueryBuilder({ onSaved, onOpenSession }: Props) {
             <h3 style={{ fontSize: 12, color: 'var(--text-muted)', margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Preview matches ({preview.length})</h3>
             {preview.length === 0 && <div className="muted">No sessions matched.</div>}
             {preview.map((r) => (
-              <div key={r.sessionId} className="session-card" onClick={() => onOpenSession(r.sessionId)} style={{ padding: '8px 12px' }}>
+              <a key={r.sessionId} className="session-card" href={sessionHref(r.sessionId)} target="_blank" rel="noopener noreferrer" style={{ padding: '8px 12px' }}>
                 <div className="mono" style={{ fontSize: 12 }}>{r.sessionId}</div>
                 {r.evidence && <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>{r.evidence}</div>}
-              </div>
+              </a>
             ))}
           </div>
         )}
       </div>
     </>
+  );
+}
+
+function Row2({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+      {children}
+    </div>
   );
 }
 
