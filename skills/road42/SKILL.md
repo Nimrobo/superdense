@@ -1,38 +1,48 @@
 ---
 name: road42
 version: 0.1.0
-description: Inspect and summarize Road42 stored AI-agent sessions through the road42 CLI. Use when Codex needs to find saved Road42 queries, list sessions matching a query, inspect session metadata/enrichments, run compactors such as salience or trace, or locate a raw session path only after the user explicitly asks for the stored source.
+description: Find & read context prior AI-agent sessions. Use when the user asks about previous or other agent runs, needs context from earlier work, wants to understand what happened, compare attempts, audit decisions/tools/errors, or access the original session record.
 ---
 
 # Road42 Stored Sessions
 
 ## Workflow
 
-Use the CLI as a staged inspection pipeline. Prefer compact metadata before reading any raw session source.
+Use the CLI as a staged inspection pipeline. Start with candidate discovery, then use metadata and compactors before considering any raw session source.
 
-1. Refresh the index when freshness matters:
+1. Refresh the index only when the user asks about recent/latest work, new sessions may have appeared, or results look stale:
 
 ```bash
 road42 index
 ```
 
-2. Find candidate sessions:
+2. Find candidate sessions. Use text search for simple topics, tasks, errors, file names, or quoted user phrasing:
 
 ```bash
-road42 query list
-road42 query run <query-id> --limit 20
 road42 session list --q "search text" --limit 20
 ```
 
-3. Discover filters and inspect cheap per-session metadata:
+Use ad hoc queries for structured one-off searches. This does not save the query:
 
 ```bash
-road42 filter list
-road42 filter show session
+road42 query --query '<query-json>' --limit 20
+road42 query --query @query.json --limit 20
+```
+
+Use saved queries only when the user refers to an existing reusable cohort or asks to persist one:
+
+```bash
+road42 saved-query list
+road42 saved-query run <query-id> --limit 20
+road42 saved-query save --name "name" --query '<query-json>'
+road42 saved-query save --name "name" --query @query.json
+```
+
+3. Triage candidates before compacting. Prefer session metadata and generated enrichments to raw logs:
+
+```bash
 road42 session show <session-id>
 road42 session enrichments <session-id>
-road42 session fields
-road42 enricher list
 ```
 
 4. Compact only the sessions that look relevant:
@@ -43,33 +53,17 @@ road42 compactor run salience <session-id>
 road42 compactor run trace <session-id>
 ```
 
-5. Reveal the raw stored source path only when the user explicitly asks for it:
+5. Answer with session ids, why each session matters, and the compact evidence needed for the user's question. State uncertainty when matches are weak or incomplete.
 
-```bash
-road42 session path <session-id>
-```
+## Metadata Guidance
 
-## Command Contracts
-
-All agent-facing commands emit JSON. Treat `id` as the stable Road42 session id, usually `<agent>:<native-session-id>`.
-
-- Queries are filters first, then optional post-filter enrichers. Use `road42 filter list` and `road42 filter show <name>` before writing query JSON.
-- Query JSON uses `{ filters, enrichers? }`. `filters` is a boolean tree of `{ filter: { name, params } }` leaves. `enrichers` names extra data producers to run only after sessions match.
-- `query list` returns saved queries with `id`, `name`, `filters`, `enrichers`, timestamps, and `memberCount`.
-- `query run <query-id>` evaluates a saved query and returns `query`, `matched`, `total`, `limit`, `offset`, and `items`.
-- Query result `items[]` contains `{ session, addedAt, evidence, enrichments }`.
-- `filter list` returns available filters with names, schemas, examples, and flags such as `readsLog` or `usesSystemData`.
-- `filter show <name>` returns one filter catalog item. Use this instead of guessing params.
-- `session enrichments <session-id>` returns `{ session, items }`, where each item has `name`, `version`, `computedAt`, and parsed JSON `value`.
-- `compactor list` returns compactors with `name`, `kind`, `targetBytes`, and `description`.
-- `compactor run <name> <session-id>` returns `{ session, compactor, result }`.
-- `session path <session-id>` returns `{ id, agent, sessionId, logPath }`.
-
-Session objects omit `logPath` by default. Use `--include-path` only when a command explicitly needs to include source paths in its JSON.
+Use metadata to decide whether a session is worth compacting. Useful signals include the user's prompt, working directory, tools or commands used, errors, touched paths, and any existing enrichments that identify the session's shape.
 
 ## Query Guidance
 
-Use the built-in `session` filter for session metadata and always-on system data:
+Queries are filter JSON plus optional post-filter enrichers:
+
+`--query` accepts inline JSON or `@path/to/query.json`.
 
 ```json
 {
@@ -82,9 +76,31 @@ Use the built-in `session` filter for session metadata and always-on system data
 }
 ```
 
-`session` params include `agent`, `pwd`, `pwdContains`, `firstPromptContains`, `summaryContains`, created/modified date bounds, `hasErrors`, `toolUsed`, `cliUsed`, and `eventCount`.
+Before guessing params, inspect the live filter schema:
 
-Use code filters for transcript/log matching. Built-in example:
+```bash
+road42 filter show session
+```
+
+Session filter fields:
+
+- `agent`: exact agent adapter name.
+- `pwd`: exact working directory.
+- `pwdContains`: substring in working directory.
+- `project`: exact project key.
+- `projectContains`: substring in project key.
+- `firstPromptContains`: substring in first prompt.
+- `summaryContains`: substring in session summary.
+- `createdAfter`: created at or after timestamp/date.
+- `createdBefore`: created at or before timestamp/date.
+- `modifiedAfter`: modified at or after timestamp/date.
+- `modifiedBefore`: modified at or before timestamp/date.
+- `hasErrors`: boolean error signal.
+- `toolUsed`: tool name plus optional minimum count.
+- `cliUsed`: CLI name plus optional minimum count.
+- `eventCount`: numeric event-count comparison.
+
+Use transcript filters when metadata is not enough:
 
 ```json
 {
@@ -97,44 +113,24 @@ Use code filters for transcript/log matching. Built-in example:
 }
 ```
 
-Combine filters with `and`, `or`, and `not`:
+Combine filters with `and`, `or`, and `not`.
 
-```json
-{
-  "filters": {
-    "and": [
-      { "filter": { "name": "session", "params": { "toolUsed": { "name": "Bash", "min": 1 } } } },
-      { "filter": { "name": "user_prompt_contains", "params": { "keyword": "tests" } } }
-    ]
-  }
-}
+## Compactor Choice
+
+Use `salience` when the user needs the gist of a session: what the user wanted, what happened, what changed, important decisions, outcomes, and failures.
+
+Use `trace` when order matters: timelines, workflow analysis, tool or command sequences, comparing attempts, debugging how a run unfolded, or explaining why one path was chosen over another.
+
+Run compactors only after narrowing to a small candidate set.
+
+## Raw Source Policy
+
+Treat `road42 session path <session-id>` and any command using `--include-path` as raw-source access:
+
+```bash
+road42 session path <session-id>
 ```
 
-Use query enrichers only to add data to matched results:
+Reveal paths or read raw session files only when the user asks for source access or when metadata and compactors are not enough to answer accurately.
 
-```json
-{
-  "filters": { "filter": { "name": "session", "params": { "agent": "codex" } } },
-  "enrichers": ["fingerprint"]
-}
-```
-
-## Metadata Guidance
-
-Use `session enrichments` to triage sessions before compacting:
-
-- `tool_counts`: map of tool name to invocation count.
-- `bash_cli_counts`: map of CLI program to invocation count across Bash-like tool calls.
-- `has_errors`: boolean signal for common error/exception text.
-- `event_count`: transcript event count.
-- `fingerprint`: fixed-shape JSON with event counts, tool/error counts, role byte totals, unique paths, verbs, duration, and turns.
-
-Use `session fields` or `filter list/show` to discover filters and post-filter enrichers.
-
-## Compactor Guidance
-
-Use `salience` when the task is "what was the user trying to do and what happened?" It extracts first/last asks, user turns, decision-marker assistant lines, mutations, and errors.
-
-Use `trace` when the task is workflow or sequence analysis. It preserves ordered user prompts, assistant headers, and tool-call sequence with short arguments and success/failure signals.
-
-Compactors do not cache output. Run them after filtering to a small set of candidate sessions.
+Raw session files are large and can bloat context. Prefer metadata, enrichments, and compactors first. When subagent use is available and permitted, prefer a narrow raw-source inspection by another agent before self-reading. Self-read only the minimum raw source needed.

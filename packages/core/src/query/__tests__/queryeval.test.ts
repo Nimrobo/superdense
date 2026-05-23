@@ -13,10 +13,10 @@ vi.mock('../../paths.js', () => ({
   ensureRoad42Dirs: vi.fn(),
 }));
 
-import { _resetDbForTests, getEnrichment, upsertSession } from '../../db.js';
+import { _resetDbForTests, countQueryMatches, createQuery, getEnrichment, getQuery, upsertSession } from '../../db.js';
 import { clearEnricherCache, registerEnricher } from '../../enrichers/index.js';
 import { clearFilterCache } from '../../filters/index.js';
-import { previewQuery } from '../../queryeval.js';
+import { previewQuery, runAdHocQuery } from '../../queryeval.js';
 import type { Session } from '../../types.js';
 
 let tempDir: string | undefined;
@@ -57,7 +57,7 @@ function session(id: string, logPath: string): Session {
   };
 }
 
-describe('previewQuery', () => {
+describe('runAdHocQuery', () => {
   it('filters first, then runs requested enrichers only on matched sessions', async () => {
     const matchedLog = await writeCodexLog('matched.jsonl', 'Fix billing tests');
     const skippedLog = await writeCodexLog('skipped.jsonl', 'Write docs');
@@ -67,11 +67,12 @@ describe('previewQuery', () => {
     const run = vi.fn(async () => 'post-filter-data');
     registerEnricher({ name: 'post_marker', version: 1, returns: 'string', run });
 
-    const result = await previewQuery({
+    const result = await runAdHocQuery({
       filters: { filter: { name: 'user_prompt_contains', params: { keyword: 'billing' } } },
       enrichers: ['post_marker'],
     });
 
+    expect(result).toMatchObject({ matched: 1, total: 1, limit: 500, offset: 0 });
     expect(result.items).toEqual([expect.objectContaining({
       sessionId: 'codex:matched',
       evidence: 'Fix billing tests',
@@ -88,9 +89,44 @@ describe('previewQuery', () => {
     const run = vi.fn(async () => 'always-data');
     registerEnricher({ name: 'always_marker', version: 1, returns: 'string', alwaysRun: true, run });
 
-    await expect(previewQuery({
+    await expect(runAdHocQuery({
       filters: { filter: { name: 'session', params: { agentt: 'codex' } } },
     })).rejects.toThrow('filter "session": unknown param "agentt"');
     expect(run).not.toHaveBeenCalled();
+  });
+
+  it('paginates without saving query memberships', async () => {
+    const firstLog = await writeCodexLog('first.jsonl', 'Fix billing one');
+    const secondLog = await writeCodexLog('second.jsonl', 'Fix billing two');
+    upsertSession(session('first', firstLog));
+    upsertSession(session('second', secondLog));
+    createQuery({
+      id: 'saved',
+      name: 'Saved',
+      filters: { filter: { name: 'session', params: { agent: 'codex' } } },
+      enrichers: [],
+      createdAt: 1,
+    });
+
+    const result = await runAdHocQuery({
+      filters: { filter: { name: 'user_prompt_contains', params: { keyword: 'billing' } } },
+    }, { limit: 1, offset: 1 });
+
+    expect(result).toMatchObject({ matched: 2, total: 2, limit: 1, offset: 1 });
+    expect(result.items).toHaveLength(1);
+    expect(getQuery('saved')).toMatchObject({ memberCount: 0 });
+    expect(countQueryMatches('saved')).toBe(0);
+  });
+
+  it('keeps previewQuery as a compatibility wrapper', async () => {
+    const log = await writeCodexLog('matched.jsonl', 'Fix billing tests');
+    upsertSession(session('matched', log));
+
+    const result = await previewQuery({
+      filters: { filter: { name: 'user_prompt_contains', params: { keyword: 'billing' } } },
+    }, { limit: 1 });
+
+    expect(result.items).toEqual([expect.objectContaining({ sessionId: 'codex:matched' })]);
+    expect(result.enrichers).toEqual([]);
   });
 });

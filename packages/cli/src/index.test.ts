@@ -39,8 +39,10 @@ vi.mock('@road42/core', () => ({
   localClaudeSkillsDir: (cwd: string) => join(cwd, '.claude', 'skills'),
   localCodexSkillsDir: (cwd: string) => join(cwd, '.codex', 'skills'),
   previewQuery: vi.fn(),
+  runAdHocQuery: vi.fn(),
   runDiscovery: vi.fn(),
   runQueryEvaluation: vi.fn(),
+  runSavedQuery: vi.fn(),
   validateQueryDefinition: vi.fn(),
 }));
 
@@ -127,6 +129,10 @@ beforeEach(() => {
     matched: 1,
     items: [{ sessionId: 'codex:abc123', evidence: 'matched', enrichments: { tool_counts: { Bash: 3 } } }],
   });
+  vi.mocked(core.runSavedQuery).mockResolvedValue({
+    matched: 1,
+    items: [{ sessionId: 'codex:abc123', evidence: 'matched', enrichments: { tool_counts: { Bash: 3 } } }],
+  });
   vi.mocked(core.countQueryMatches).mockReturnValue(1);
   vi.mocked(core.listQueryMatchDetails).mockReturnValue([
     { session, addedAt: 3, evidence: 'matched' },
@@ -144,6 +150,14 @@ beforeEach(() => {
     items: [{ sessionId: 'codex:abc123', evidence: 'preview matched', enrichments: {} }],
     enrichers: [],
   });
+  vi.mocked(core.runAdHocQuery).mockImplementation(async (_definition, opts = {}) => ({
+    matched: 1,
+    total: 1,
+    limit: opts.limit ?? 500,
+    offset: opts.offset ?? 0,
+    items: [{ sessionId: 'codex:abc123', evidence: 'query matched', enrichments: {} }],
+    enrichers: [],
+  }));
   vi.mocked(core.runDiscovery).mockResolvedValue({ discovered: 2 });
   vi.mocked(core.runQueryEvaluation).mockResolvedValue({ evaluated: 0 });
   vi.mocked(startServer).mockResolvedValue({ url: 'http://127.0.0.1:4242', close: vi.fn() });
@@ -284,10 +298,33 @@ describe('road42 cli agent commands', () => {
     });
   });
 
-  it('shows query matches with metadata, members, totals, and paging', async () => {
+  it('runs ad hoc queries with session metadata and evidence without saving', async () => {
+    const out = io();
+    const query = { filters: { filter: { name: 'session', params: { agent: 'codex' } } }, enrichers: [] };
+
+    await runCli(['query', '--query', JSON.stringify(query), '--limit', '12', '--offset', '2'], out.io);
+
+    expect(core.validateQueryDefinition).toHaveBeenCalledWith(query, { filters: await core.listFilters(), enrichers: core.listEnrichers() });
+    expect(core.runAdHocQuery).toHaveBeenCalledWith(query, { limit: 12, offset: 2 });
+    expect(core.createQuery).not.toHaveBeenCalled();
+    expect(core.getSession).toHaveBeenCalledWith('codex:abc123');
+    expect(json(out.stdout[0]!)).toMatchObject({
+      matched: 1,
+      total: 1,
+      limit: 12,
+      offset: 2,
+      items: [{
+        sessionId: 'codex:abc123',
+        evidence: 'query matched',
+        session: { id: 'codex:abc123' },
+      }],
+    });
+  });
+
+  it('shows saved query matches with metadata, members, totals, and paging', async () => {
     const out = io();
 
-    await runCli(['query', 'show', 'q1', '--limit', '10', '--offset', '2'], out.io);
+    await runCli(['saved-query', 'show', 'q1', '--limit', '10', '--offset', '2'], out.io);
 
     expect(core.listQueryMatchDetails).toHaveBeenCalledWith('q1', { limit: 10, offset: 2 });
     const body = json(out.stdout[0]!);
@@ -303,12 +340,28 @@ describe('road42 cli agent commands', () => {
     expect((body.members as Array<Record<string, unknown>>)[0]).not.toHaveProperty('logPath');
   });
 
-  it('returns query run matches with metadata and evidence', async () => {
+  it('saves queries without running them', async () => {
+    const out = io();
+    const query = { filters: { filter: { name: 'session', params: { agent: 'codex' } } }, enrichers: [] };
+
+    await runCli(['saved-query', 'save', '--name', 'Interesting', '--query', JSON.stringify(query)], out.io);
+
+    expect(core.createQuery).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Interesting',
+      filters: query.filters,
+      enrichers: [],
+    }));
+    expect(core.runSavedQuery).not.toHaveBeenCalled();
+    expect(core.backfillQuery).not.toHaveBeenCalled();
+    expect(json(out.stdout[0]!)).toMatchObject({ id: 'q1', name: 'Interesting' });
+  });
+
+  it('returns saved query run matches with metadata and evidence', async () => {
     const out = io();
 
-    await runCli(['query', 'run', 'q1', '--limit', '20'], out.io);
+    await runCli(['saved-query', 'run', 'q1', '--limit', '20'], out.io);
 
-    expect(core.backfillQuery).toHaveBeenCalledWith('q1');
+    expect(core.runSavedQuery).toHaveBeenCalledWith('q1');
     expect(json(out.stdout[0]!)).toMatchObject({
       matched: 1,
       total: 1,
@@ -318,20 +371,35 @@ describe('road42 cli agent commands', () => {
     });
   });
 
-  it('previews queries with session metadata and evidence', async () => {
+  it('keeps legacy query run for saved queries', async () => {
+    const out = io();
+
+    await runCli(['query', 'run', 'q1', '--limit', '20'], out.io);
+
+    expect(core.runSavedQuery).toHaveBeenCalledWith('q1');
+    expect(json(out.stdout[0]!)).toMatchObject({
+      matched: 1,
+      total: 1,
+      limit: 20,
+      offset: 0,
+      items: [{ addedAt: 3, evidence: 'matched', session: { id: 'codex:abc123' } }],
+    });
+  });
+
+  it('keeps legacy query preview as a small ad hoc query alias', async () => {
     const out = io();
     const query = { filters: { filter: { name: 'session', params: { agent: 'codex' } } }, enrichers: [] };
 
     await runCli(['query', 'preview', '--query', JSON.stringify(query), '--limit', '12'], out.io);
 
     expect(core.validateQueryDefinition).toHaveBeenCalledWith(query, { filters: await core.listFilters(), enrichers: core.listEnrichers() });
-    expect(core.previewQuery).toHaveBeenCalledWith(query, { limit: 12 });
+    expect(core.runAdHocQuery).toHaveBeenCalledWith(query, { limit: 12, offset: 0 });
     expect(core.getSession).toHaveBeenCalledWith('codex:abc123');
     expect(json(out.stdout[0]!)).toMatchObject({
       limit: 12,
       items: [{
         sessionId: 'codex:abc123',
-        evidence: 'preview matched',
+        evidence: 'query matched',
         session: { id: 'codex:abc123' },
       }],
     });

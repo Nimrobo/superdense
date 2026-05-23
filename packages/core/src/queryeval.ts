@@ -59,6 +59,15 @@ export interface EvaluateResult {
   items: QueryResultItem[];
 }
 
+export interface AdHocQueryResult {
+  matched: number;
+  total: number;
+  limit: number;
+  offset: number;
+  items: QueryResultItem[];
+  enrichers: string[];
+}
+
 export async function evaluateQuery(query: Query): Promise<EvaluateResult> {
   await loadUserEnrichers();
   const filters = await loadFilters();
@@ -105,6 +114,10 @@ export async function backfillQuery(queryId: string): Promise<EvaluateResult | n
   return evaluateQuery(q);
 }
 
+export async function runSavedQuery(queryId: string): Promise<EvaluateResult | null> {
+  return backfillQuery(queryId);
+}
+
 export async function runQueryEvaluation(_opts: { full?: boolean } = {}): Promise<{ evaluated: number }> {
   const queries = listQueries();
   for (const q of queries) {
@@ -121,6 +134,14 @@ export async function previewQuery(
   items: QueryResultItem[];
   enrichers: string[];
 }> {
+  const result = await runAdHocQuery(definition, { limit: opts.limit });
+  return { ...result, items: result.items, enrichers: result.enrichers };
+}
+
+export async function runAdHocQuery(
+  definition: QueryDefinition,
+  opts: { limit?: number; offset?: number } = {},
+): Promise<AdHocQueryResult> {
   await loadUserEnrichers();
   const filters = await loadFilters();
   const enrichers = listEnrichers();
@@ -129,24 +150,34 @@ export async function previewQuery(
 
   const filterByName = new Map(filters.map((f) => [f.name, f] as const));
   const limit = opts.limit ?? 500;
-  const items: QueryResultItem[] = [];
-  const matchedSessions: Session[] = [];
+  const offset = opts.offset ?? 0;
+  const matchedSessions: Array<{ session: Session; evidence?: string | null }> = [];
 
   for (const session of listAllSessionsForBackfill()) {
     await runEnrichersForSession(session);
     const r = await evalQueryFilter(definition.filters, session, filterByName, systemEnrichers);
     if (r.match) {
-      matchedSessions.push(session);
-      items.push({ sessionId: session.id, evidence: r.evidence ?? null });
-      if (items.length >= limit) break;
+      matchedSessions.push({ session, evidence: r.evidence ?? null });
     }
   }
 
   const names = definition.enrichers ?? [];
-  await runPostFilterEnrichers(names, matchedSessions);
-  for (const item of items) item.enrichments = requestedEnrichments(item.sessionId, names);
+  const page = matchedSessions.slice(offset, offset + limit);
+  await runPostFilterEnrichers(names, page.map((m) => m.session));
+  const items = page.map(({ session, evidence }) => ({
+    sessionId: session.id,
+    evidence: evidence ?? null,
+    enrichments: requestedEnrichments(session.id, names),
+  }));
 
-  return { items, enrichers: names };
+  return {
+    matched: matchedSessions.length,
+    total: matchedSessions.length,
+    limit,
+    offset,
+    items,
+    enrichers: names,
+  };
 }
 
 async function evalQueryFilter(

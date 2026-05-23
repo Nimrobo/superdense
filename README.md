@@ -31,8 +31,9 @@ Requires Node 20+. The single `road42` binary ships everything — the indexer, 
 road42 studio              # boot the local UI (and discover sessions)
 road42 index               # incremental re-index
 road42 session list --q "billing"
-road42 query list
-road42 query run <id>
+road42 query --query '{"filters":{"filter":{"name":"session","params":{"agent":"codex"}}}}'
+road42 saved-query list
+road42 saved-query run <id>
 road42 compactor run salience <session-id>
 road42 skill install       # install the road42 skill into Claude + Codex
 road42 help                # full command list
@@ -44,7 +45,8 @@ All non-`studio` commands emit JSON. See `road42 help` for the full surface.
 
 - **Sessions** — one transcript from one agent run, indexed by `<agent>:<native-session-id>`.
 - **Filters** — boolean predicates over session metadata or transcript content.
-- **Queries** — named saved filters (+ optional enrichers) you can replay.
+- **Queries** — ad hoc filter JSON (+ optional enrichers) you can run without saving.
+- **Saved queries** — named saved filters (+ optional enrichers) you can replay.
 - **Enrichers** — cheap per-session metadata producers (tool counts, fingerprints, error signals).
 - **Compactors** — heavier summarizers that read the raw log (e.g. `salience`, `trace`).
 
