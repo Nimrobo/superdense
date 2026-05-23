@@ -22,10 +22,25 @@ export function App() {
   const [search, setSearch] = useState('');
   const [progress, setProgress] = useState<{ phase: string; total: number; done: number } | null>(null);
 
+  const pushView = (next: View) => {
+    window.history.pushState({ view: next }, '');
+    setView(next);
+  };
+
   const refresh = async () => {
     const q = await api.listQueries();
     setQueries(q.items);
   };
+
+  useEffect(() => {
+    window.history.replaceState({ view: { type: 'dashboard' } satisfies View }, '');
+    const onPop = (e: PopStateEvent) => {
+      const v = (e.state && (e.state as { view?: View }).view) as View | undefined;
+      if (v) setView(v);
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
 
   useEffect(() => { refresh().catch(console.error); }, []);
   useEffect(() => {
@@ -44,7 +59,7 @@ export function App() {
     <div className="app">
       <Sidebar
         view={view}
-        setView={setView}
+        setView={pushView}
         queries={queries}
         search={search}
         setSearch={setSearch}
@@ -56,27 +71,27 @@ export function App() {
           <DashboardView
             progress={progress}
             onReindex={doReindex}
-            onOpenSession={(id) => setView({ type: 'session', id })}
-            onOpenSessions={() => setView({ type: 'sessions' })}
+            onOpenSession={(id) => pushView({ type: 'session', id })}
+            onOpenSessions={() => pushView({ type: 'sessions' })}
           />
         )}
         {view.type === 'insights' && (
-          <InsightsView onOpenSession={(id) => setView({ type: 'session', id })} />
+          <InsightsView onOpenSession={(id) => pushView({ type: 'session', id })} />
         )}
-        {view.type === 'sessions' && <SessionsView search={search} onOpen={(id) => setView({ type: 'session', id })} />}
-        {view.type === 'session' && <SessionReader id={view.id} onBack={() => setView({ type: 'sessions' })} />}
+        {view.type === 'sessions' && <SessionsView search={search} onOpen={(id) => pushView({ type: 'session', id })} />}
+        {view.type === 'session' && <SessionReader id={view.id} onBack={() => window.history.back()} />}
         {view.type === 'query-builder' && (
           <QueryBuilder
-            onSaved={async (q) => { await refresh(); setView({ type: 'query', id: q.id }); }}
-            onOpenSession={(id) => setView({ type: 'session', id })}
+            onSaved={async (q) => { await refresh(); pushView({ type: 'query', id: q.id }); }}
+            onOpenSession={(id) => pushView({ type: 'session', id })}
           />
         )}
         {view.type === 'query' && (
           <QueryView
             id={view.id}
-            onBack={() => setView({ type: 'sessions' })}
-            onOpenSession={(id) => setView({ type: 'session', id })}
-            onDeleted={async () => { await refresh(); setView({ type: 'sessions' }); }}
+            onBack={() => window.history.back()}
+            onOpenSession={(id) => pushView({ type: 'session', id })}
+            onDeleted={async () => { await refresh(); pushView({ type: 'sessions' }); }}
           />
         )}
       </main>
