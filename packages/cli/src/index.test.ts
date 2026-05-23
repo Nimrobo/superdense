@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -36,6 +36,8 @@ vi.mock('@road42/core', () => ({
   listSessionEnrichments: vi.fn(),
   listSessions: vi.fn(),
   loadUserEnrichers: vi.fn(),
+  localClaudeSkillsDir: (cwd: string) => join(cwd, '.claude', 'skills'),
+  localCodexSkillsDir: (cwd: string) => join(cwd, '.codex', 'skills'),
   previewQuery: vi.fn(),
   runDiscovery: vi.fn(),
   runQueryEvaluation: vi.fn(),
@@ -69,6 +71,7 @@ const sessionTwo = {
 
 const originalClaudeSkillsDir = process.env.CLAUDE_SKILLS_DIR;
 const originalCodexSkillsDir = process.env.CODEX_SKILLS_DIR;
+const originalCwd = process.cwd();
 const tempRoots: string[] = [];
 
 function io() {
@@ -148,6 +151,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  process.chdir(originalCwd);
   for (const root of tempRoots.splice(0)) rmSync(root, { recursive: true, force: true });
   if (originalClaudeSkillsDir == null) delete process.env.CLAUDE_SKILLS_DIR;
   else process.env.CLAUDE_SKILLS_DIR = originalClaudeSkillsDir;
@@ -165,7 +169,7 @@ describe('road42 cli agent commands', () => {
 
     expect(core.runDiscovery).toHaveBeenCalledTimes(1);
     expect(startServer).toHaveBeenCalledTimes(1);
-    expect(startServer).toHaveBeenCalledWith({ port: 4242, host: '127.0.0.1' });
+    expect(startServer).toHaveBeenCalledWith({ port: 4242, host: '127.0.0.1', portFallbackAttempts: 50 });
     expect(noArgs.stdout[0]).toContain('Usage: road42 <command> [options]');
     expect(start.stdout).toContain('[road42] http://127.0.0.1:4242');
   });
@@ -374,6 +378,14 @@ describe('road42 cli agent commands', () => {
     expect(readFileSync(join(codexSkill, 'SKILL.md'), 'utf8')).toContain('# Road42 Stored Sessions');
     expect(existsSync(join(claudeSkill, 'agents', 'openai.yaml'))).toBe(true);
     expect(existsSync(join(codexSkill, 'agents', 'openai.yaml'))).toBe(true);
+    expect(json(readFileSync(join(claudeSkill, '.road42-install.json'), 'utf8'))).toMatchObject({
+      version: '0.1.0',
+      scope: 'global',
+    });
+    expect(json(readFileSync(join(codexSkill, '.road42-install.json'), 'utf8'))).toMatchObject({
+      version: '0.1.0',
+      scope: 'global',
+    });
     expect(json(out.stdout[0]!)).toEqual({
       installed: [{
         name: 'road42',
@@ -402,5 +414,94 @@ describe('road42 cli agent commands', () => {
     ]));
     expect(existsSync(join(root, 'claude', 'road42', 'agents', 'openai.yaml'))).toBe(true);
     expect(existsSync(join(root, 'codex', 'road42', 'agents', 'openai.yaml'))).toBe(true);
+  });
+
+  it('installs a skill locally under the current working directory', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'road42-local-skills-'));
+    tempRoots.push(root);
+    process.chdir(root);
+    const cwd = process.cwd();
+    process.env.CLAUDE_SKILLS_DIR = join(root, 'global-claude');
+    process.env.CODEX_SKILLS_DIR = join(root, 'global-codex');
+    const out = io();
+
+    await runCli(['skill', 'install', 'road42', '--locally'], out.io);
+
+    const claudeSkill = join(cwd, '.claude', 'skills', 'road42');
+    const codexSkill = join(cwd, '.codex', 'skills', 'road42');
+    expect(existsSync(join(claudeSkill, 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(codexSkill, 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, 'global-claude', 'road42'))).toBe(false);
+    expect(existsSync(join(root, 'global-codex', 'road42'))).toBe(false);
+    expect(json(readFileSync(join(claudeSkill, '.road42-install.json'), 'utf8'))).toMatchObject({
+      version: '0.1.0',
+      scope: 'local',
+    });
+    expect(json(out.stdout[0]!)).toEqual({
+      installed: [{
+        name: 'road42',
+        claude: claudeSkill,
+        codex: codexSkill,
+      }],
+    });
+  });
+
+  it('prints a non-tty studio hint for missing skills without mutating disk', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'road42-studio-missing-'));
+    tempRoots.push(root);
+    process.chdir(root);
+    process.env.CLAUDE_SKILLS_DIR = join(root, 'global-claude');
+    process.env.CODEX_SKILLS_DIR = join(root, 'global-codex');
+    const out = io();
+
+    await runCli(['studio', '--no-open'], out.io);
+
+    expect(out.stdout[0]).toBe('[road42] hint: skill missing. Run `road42 skill install` to update.');
+    expect(existsSync(join(root, 'global-claude', 'road42'))).toBe(false);
+    expect(existsSync(join(root, 'global-codex', 'road42'))).toBe(false);
+    expect(startServer).toHaveBeenCalled();
+  });
+
+  it('does not print a studio skill hint when the installed skill is current', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'road42-studio-current-'));
+    tempRoots.push(root);
+    process.chdir(root);
+    process.env.CLAUDE_SKILLS_DIR = join(root, 'global-claude');
+    process.env.CODEX_SKILLS_DIR = join(root, 'global-codex');
+    await runCli(['skill', 'install', 'road42'], io().io);
+    vi.clearAllMocks();
+    vi.mocked(core.runDiscovery).mockResolvedValue({ discovered: 2 });
+    vi.mocked(core.runQueryEvaluation).mockResolvedValue({ evaluated: 0 });
+    vi.mocked(startServer).mockResolvedValue({ url: 'http://127.0.0.1:4242', close: vi.fn() });
+    vi.mocked(open).mockResolvedValue({} as Awaited<ReturnType<typeof open>>);
+    const out = io();
+
+    await runCli(['studio', '--no-open'], out.io);
+
+    expect(out.stdout[0]).toBe('[road42] discovering sessions...');
+    expect(out.stdout.some((line) => line.includes('hint: skill'))).toBe(false);
+    expect(startServer).toHaveBeenCalled();
+  });
+
+  it('prints a non-tty studio hint for outdated legacy installs without mutating disk', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'road42-studio-outdated-'));
+    tempRoots.push(root);
+    process.chdir(root);
+    process.env.CLAUDE_SKILLS_DIR = join(root, 'global-claude');
+    process.env.CODEX_SKILLS_DIR = join(root, 'global-codex');
+    const claudeSkill = join(root, 'global-claude', 'road42');
+    const codexSkill = join(root, 'global-codex', 'road42');
+    mkdirSync(claudeSkill, { recursive: true });
+    mkdirSync(codexSkill, { recursive: true });
+    writeFileSync(join(claudeSkill, 'SKILL.md'), '---\nname: road42\nversion: 0.0.1\n---\n');
+    writeFileSync(join(codexSkill, 'SKILL.md'), '---\nname: road42\nversion: 0.0.1\n---\n');
+    const out = io();
+
+    await runCli(['studio', '--no-open'], out.io);
+
+    expect(out.stdout[0]).toBe('[road42] hint: skill outdated (0.0.1 -> 0.1.0). Run `road42 skill install` to update.');
+    expect(existsSync(join(claudeSkill, '.road42-install.json'))).toBe(false);
+    expect(existsSync(join(codexSkill, '.road42-install.json'))).toBe(false);
+    expect(startServer).toHaveBeenCalled();
   });
 });

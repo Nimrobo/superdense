@@ -1,5 +1,6 @@
 ---
 name: road42
+version: 0.1.0
 description: Inspect and summarize Road42 stored AI-agent sessions through the road42 CLI. Use when Codex needs to find saved Road42 queries, list sessions matching a query, inspect session metadata/enrichments, run compactors such as salience or trace, or locate a raw session path only after the user explicitly asks for the stored source.
 ---
 
