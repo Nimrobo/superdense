@@ -1,5 +1,26 @@
 import type { FastifyInstance } from 'fastify';
-import { countSessions, getSession, iterSessionEvents, listSessions } from '@nimrobo/superdense-core';
+import {
+  compactSession,
+  countSessions,
+  getCompactor,
+  getSession,
+  iterSessionEvents,
+  listSessions,
+  type Compactor,
+} from '@nimrobo/superdense-core';
+
+function serializeCompactor(compactor: Compactor): Record<string, unknown> {
+  return {
+    name: compactor.name,
+    kind: compactor.kind,
+    targetBytes: compactor.targetBytes ?? null,
+    description: compactor.description ?? null,
+  };
+}
+
+function isAllowedCompactorName(name: string): name is 'trace' | 'salience' {
+  return name === 'trace' || name === 'salience';
+}
 
 export async function registerSessionsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/sessions', async (req) => {
@@ -38,5 +59,20 @@ export async function registerSessionsRoutes(app: FastifyInstance): Promise<void
       if (err?.code !== 'ENOENT') throw err;
     }
     return { items: events, offset, limit, missing: events.length === 0 && i === 0 };
+  });
+
+  app.get('/api/sessions/:id/compactors/:name', async (req, reply) => {
+    const { id, name } = req.params as { id: string; name: string };
+    if (!isAllowedCompactorName(name)) { reply.status(404); return { error: 'not found' }; }
+    const s = getSession(id);
+    if (!s) { reply.status(404); return { error: 'not found' }; }
+    const compactor = getCompactor(name);
+    if (!compactor) { reply.status(404); return { error: 'not found' }; }
+    const result = await compactSession(name, s);
+    return {
+      session: s,
+      compactor: serializeCompactor(compactor),
+      result,
+    };
   });
 }

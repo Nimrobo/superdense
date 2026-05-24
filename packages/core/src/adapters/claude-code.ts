@@ -195,12 +195,35 @@ async function* iterJsonlEvents(logPath: string): AsyncIterable<TranscriptEvent>
     return;
   }
   const rl = createInterface({ input: stream, crlfDelay: Infinity });
+  let lastMode: string | undefined;
+  // Some Claude rows carry permissionMode without a timestamp (e.g. dedicated
+  // {"type":"permission-mode",...} rows). Defer emitting mode_change until we
+  // have a real timestamp to anchor the enricher's duration math; if the
+  // session ends with a pending transition, flush it at EOF using the last
+  // observed timestamp so the exit is not lost.
+  let pendingMode: string | undefined;
+  let lastTs: number | undefined;
   try {
     for await (const line of rl) {
       if (!line.trim()) continue;
       let obj: any;
       try { obj = JSON.parse(line); } catch { continue; }
+      const mode = typeof obj?.permissionMode === 'string' ? obj.permissionMode : undefined;
+      const ts = obj?.timestamp ? Date.parse(obj.timestamp) : undefined;
+      if (ts != null) lastTs = ts;
+      if (mode) {
+        if (mode !== lastMode) pendingMode = mode;
+        else pendingMode = undefined;
+      }
+      if (pendingMode != null && ts != null) {
+        yield { ts, kind: 'mode_change', mode: pendingMode, prevMode: lastMode };
+        lastMode = pendingMode;
+        pendingMode = undefined;
+      }
       yield* extractEvents(obj);
+    }
+    if (pendingMode != null && lastTs != null) {
+      yield { ts: lastTs, kind: 'mode_change', mode: pendingMode, prevMode: lastMode };
     }
   } catch (err: any) {
     if (err?.code !== 'ENOENT') throw err;
@@ -248,6 +271,7 @@ function* extractEvents(obj: any): Generator<TranscriptEvent> {
           role,
           toolCallId: typeof part.tool_use_id === 'string' ? part.tool_use_id : undefined,
           text,
+          isError: typeof part.is_error === 'boolean' ? part.is_error : undefined,
         };
       }
     }

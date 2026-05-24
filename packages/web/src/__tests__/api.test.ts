@@ -80,6 +80,14 @@ describe('api.getTranscript', () => {
   });
 });
 
+describe('api.runSessionCompactor', () => {
+  it('calls the session compactor endpoint', async () => {
+    mockOk({ session: { id: 'agent:abc' }, compactor: { name: 'trace' }, result: { v: 1 } });
+    await api.runSessionCompactor('agent:abc', 'trace');
+    expect(mockFetch).toHaveBeenCalledWith('/api/sessions/agent%3Aabc/compactors/trace', expect.anything());
+  });
+});
+
 describe('api.reindex', () => {
   it('sends POST to /api/reindex', async () => {
     mockOk({ ok: true });

@@ -8,6 +8,7 @@ import { fingerprintEnricher } from './fingerprint.js';
 import { hasErrorsEnricher } from './has-errors.js';
 import { insightRunEnricher } from './insight-run.js';
 import { readUserEnrichers } from './loader.js';
+import { planModeEnricher } from './plan-mode.js';
 import { toolCountsEnricher } from './tool-counts.js';
 import type { Enricher } from './types.js';
 
@@ -19,6 +20,7 @@ const BUILTINS: Enricher[] = [
   fingerprintEnricher,
   insightRunEnricher,
   activeDurationEnricher,
+  planModeEnricher,
 ];
 
 const registry: Enricher[] = [...BUILTINS];

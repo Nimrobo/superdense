@@ -338,6 +338,21 @@ a { color: var(--accent); text-decoration: none; }
   font-size: 11.5px;
   font-style: italic;
 }
+.event.mode-change {
+  border-left-style: dashed;
+  border-left-color: var(--accent);
+  padding: 4px 0 4px 12px;
+  margin-bottom: 6px;
+  font-size: 11.5px;
+  font-style: italic;
+  color: var(--text-muted);
+}
+.event.mode-change .mode-change-label {
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 11.5px;
+  color: var(--accent);
+}
 .event-row-head {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -404,11 +419,19 @@ a { color: var(--accent); text-decoration: none; }
 .conversation-filters {
   display: flex;
   flex-wrap: wrap;
-  gap: 14px;
+  gap: 10px 18px;
   align-items: center;
+  justify-content: space-between;
   margin-bottom: 14px;
   color: var(--text-muted);
   font-size: 12.5px;
+}
+.conversation-filter-group,
+.compactor-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  align-items: center;
 }
 .conversation-filters label {
   display: inline-flex;
@@ -417,6 +440,55 @@ a { color: var(--accent); text-decoration: none; }
   cursor: pointer;
 }
 .conversation-filters input { margin: 0; }
+.compactor-label {
+  color: var(--text-faint);
+  font-size: 11.5px;
+}
+.compactor-btn.active {
+  background: var(--bg-active);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.compactor-drawer {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  margin: 0 0 14px;
+  overflow: hidden;
+}
+.compactor-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  padding: 7px 10px;
+  text-transform: uppercase;
+}
+.compactor-status,
+.compactor-error {
+  margin: 10px;
+  font-size: 12px;
+}
+.compactor-status {
+  color: var(--text-muted);
+}
+.compactor-json {
+  max-height: 520px;
+  overflow: auto;
+  margin: 0;
+  padding: 10px;
+  background: var(--bg-soft);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.45;
+  white-space: pre;
+}
 
 @media (max-width: 700px) {
   .work-header {
@@ -428,6 +500,13 @@ a { color: var(--accent); text-decoration: none; }
   .event-row-head {
     grid-template-columns: minmax(0, 1fr);
     gap: 2px;
+  }
+  .conversation-filters {
+    align-items: flex-start;
+  }
+  .conversation-filter-group,
+  .compactor-controls {
+    width: 100%;
   }
 }
 

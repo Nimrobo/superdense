@@ -90,7 +90,7 @@ describe('codexAdapter', () => {
       JSON.stringify({ timestamp: '2026-05-21T04:00:02.000Z', type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Run tests' }] } }),
       JSON.stringify({ timestamp: '2026-05-21T04:00:03.000Z', type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'I will run a command.' }] } }),
       JSON.stringify({ timestamp: '2026-05-21T04:00:04.000Z', type: 'response_item', payload: { type: 'function_call', call_id: 'call_123', name: 'exec_command', arguments: { cmd: 'pnpm test' } } }),
-      JSON.stringify({ timestamp: '2026-05-21T04:00:05.000Z', type: 'event_msg', payload: { type: 'token_count' } }),
+      JSON.stringify({ timestamp: '2026-05-21T04:00:05.000Z', type: 'event_msg', payload: { type: 'exec_command_end', call_id: 'call_123', exit_code: 0 } }),
       JSON.stringify({ timestamp: '2026-05-21T04:00:06.000Z', type: 'response_item', payload: { type: 'function_call_output', call_id: 'call_123', output: 'ok' } }),
       JSON.stringify({ timestamp: '2026-05-21T04:00:07.000Z', type: 'response_item', payload: { type: 'reasoning', content: [] } }),
     ].join('\n'), 'utf8');
@@ -108,7 +108,48 @@ describe('codexAdapter', () => {
         toolName: 'exec_command',
         inputText: '{"cmd":"pnpm test"}',
       },
-      { kind: 'tool_result', role: 'user', toolCallId: 'call_123', text: 'ok' },
+      { kind: 'tool_result', role: 'user', toolCallId: 'call_123', isError: false, text: 'ok' },
+    ]);
+  });
+
+  it('marks Codex tool outputs as errors only when command end status is nonzero', async () => {
+    const dir = await makeTempDir();
+    const rolloutPath = join(dir, 'rollout.jsonl');
+    await writeFile(rolloutPath, [
+      JSON.stringify({ timestamp: '2026-05-21T04:00:00.000Z', type: 'response_item', payload: { type: 'function_call', call_id: 'ok_call', name: 'exec_command', arguments: { cmd: 'node script.js' } } }),
+      JSON.stringify({ timestamp: '2026-05-21T04:00:01.000Z', type: 'event_msg', payload: { type: 'exec_command_end', call_id: 'ok_call', exit_code: 0 } }),
+      JSON.stringify({ timestamp: '2026-05-21T04:00:02.000Z', type: 'response_item', payload: { type: 'function_call_output', call_id: 'ok_call', output: 'throw new Error("example text")' } }),
+      JSON.stringify({ timestamp: '2026-05-21T04:00:03.000Z', type: 'response_item', payload: { type: 'function_call', call_id: 'bad_call', name: 'exec_command', arguments: { cmd: 'npm test' } } }),
+      JSON.stringify({ timestamp: '2026-05-21T04:00:04.000Z', type: 'event_msg', payload: { type: 'exec_command_end', call_id: 'bad_call', exit_code: 1 } }),
+      JSON.stringify({ timestamp: '2026-05-21T04:00:05.000Z', type: 'response_item', payload: { type: 'function_call_output', call_id: 'bad_call', output: 'AssertionError: failed' } }),
+    ].join('\n'), 'utf8');
+
+    const events = [];
+    for await (const event of codexAdapter.iterEvents(rolloutPath)) events.push(event);
+    const results = events.filter((event) => event.kind === 'tool_result');
+
+    expect(results).toMatchObject([
+      { kind: 'tool_result', toolCallId: 'ok_call', isError: false, text: 'throw new Error("example text")' },
+      { kind: 'tool_result', toolCallId: 'bad_call', isError: true, text: 'AssertionError: failed' },
+    ]);
+  });
+
+  it('emits mode_change on turn_context collaboration_mode transitions', async () => {
+    const dir = await makeTempDir();
+    const rolloutPath = join(dir, 'rollout.jsonl');
+    await writeFile(rolloutPath, [
+      JSON.stringify({ timestamp: '2026-05-21T04:00:00.000Z', type: 'turn_context', payload: { collaboration_mode: { mode: 'plan' } } }),
+      JSON.stringify({ timestamp: '2026-05-21T04:00:01.000Z', type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'while in plan' }] } }),
+      JSON.stringify({ timestamp: '2026-05-21T04:00:02.000Z', type: 'turn_context', payload: { collaboration_mode: { mode: 'plan' } } }),
+      JSON.stringify({ timestamp: '2026-05-21T04:00:03.000Z', type: 'turn_context', payload: { collaboration_mode: { mode: 'default' } } }),
+    ].join('\n'), 'utf8');
+
+    const events = [];
+    for await (const event of codexAdapter.iterEvents(rolloutPath)) events.push(event);
+    const modeChanges = events.filter((e) => e.kind === 'mode_change');
+    expect(modeChanges).toEqual([
+      { ts: Date.parse('2026-05-21T04:00:00.000Z'), kind: 'mode_change', mode: 'plan', prevMode: undefined },
+      { ts: Date.parse('2026-05-21T04:00:03.000Z'), kind: 'mode_change', mode: 'default', prevMode: 'plan' },
     ]);
   });
 });

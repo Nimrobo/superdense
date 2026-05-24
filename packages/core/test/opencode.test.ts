@@ -165,6 +165,67 @@ describe('openCodeAdapter', () => {
     ]);
   });
 
+  it('emits mode_change when message.data.agent transitions', async () => {
+    const dir = await makeTempDir();
+    const dbPath = join(dir, 'opencode.db');
+    writeOpenCodeDb(dbPath);
+    const db = new Database(dbPath);
+    db.prepare('INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?)').run(
+      'msg_plan_user',
+      'ses_1',
+      1300,
+      1300,
+      JSON.stringify({ role: 'user', agent: 'plan' }),
+    );
+    db.prepare('INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)').run(
+      'part_plan_user_text',
+      'msg_plan_user',
+      'ses_1',
+      1301,
+      1301,
+      JSON.stringify({ type: 'text', text: 'switch to plan' }),
+    );
+    db.prepare('INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?)').run(
+      'msg_plan_assistant',
+      'ses_1',
+      1400,
+      1400,
+      JSON.stringify({ role: 'assistant', agent: 'plan' }),
+    );
+    db.prepare('INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)').run(
+      'part_plan_assistant_text',
+      'msg_plan_assistant',
+      'ses_1',
+      1401,
+      1401,
+      JSON.stringify({ type: 'text', text: 'in plan now' }),
+    );
+    db.prepare('INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?)').run(
+      'msg_build_user',
+      'ses_1',
+      1500,
+      1500,
+      JSON.stringify({ role: 'user', agent: 'build' }),
+    );
+    db.prepare('INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)').run(
+      'part_build_user_text',
+      'msg_build_user',
+      'ses_1',
+      1501,
+      1501,
+      JSON.stringify({ type: 'text', text: 'back to build' }),
+    );
+    db.close();
+
+    const events = [];
+    for await (const event of openCodeAdapter.iterEvents(`opencode:${dbPath}#ses_1`)) events.push(event);
+    const modeChanges = events.filter((e) => e.kind === 'mode_change');
+    expect(modeChanges).toEqual([
+      { ts: 1300, kind: 'mode_change', mode: 'plan', prevMode: undefined },
+      { ts: 1500, kind: 'mode_change', mode: 'build', prevMode: 'plan' },
+    ]);
+  });
+
   it('returns no sessions when the OpenCode DB is missing', async () => {
     const dir = await makeTempDir();
     process.env.OPENCODE_DB = join(dir, 'missing.db');

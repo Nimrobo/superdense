@@ -15,12 +15,15 @@ export interface Session {
 
 export interface TranscriptEvent {
   ts?: number;
-  kind?: 'text' | 'tool_call' | 'tool_result';
+  kind?: 'text' | 'tool_call' | 'tool_result' | 'mode_change';
   toolCallId?: string;
   toolName?: string;
   inputText?: string;
   role?: 'user' | 'assistant' | 'system';
   text?: string;
+  isError?: boolean;
+  mode?: string;
+  prevMode?: string;
 }
 
 export interface EnricherInfo {
@@ -29,6 +32,21 @@ export interface EnricherInfo {
   returns: 'string' | 'int' | 'bool' | 'json';
   jsonSchema?: object;
   description?: string;
+}
+
+export type CompactorName = 'trace' | 'salience';
+
+export interface CompactorInfo {
+  name: CompactorName;
+  kind: string;
+  targetBytes: number | null;
+  description?: string | null;
+}
+
+export interface SessionCompactorResponse {
+  session: Session;
+  compactor: CompactorInfo;
+  result: unknown;
 }
 
 export type QueryFilter =
@@ -147,6 +165,8 @@ export const api = {
     if (opts.limit) sp.set('limit', String(opts.limit));
     return j<{ items: TranscriptEvent[]; offset: number; limit: number }>(`/api/sessions/${encodeURIComponent(id)}/transcript?${sp}`);
   },
+  runSessionCompactor: (id: string, name: CompactorName) =>
+    j<SessionCompactorResponse>(`/api/sessions/${encodeURIComponent(id)}/compactors/${name}`),
   listEnrichers: () => j<{ items: EnricherInfo[] }>('/api/enrichers'),
   listFilters: () => j<{ items: FilterInfo[] }>('/api/filters'),
   listFacets: () => j<{ pwd: string[]; agent: string[]; project: string[] }>('/api/facets'),
