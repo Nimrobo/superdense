@@ -100,7 +100,7 @@ describe('api.createQuery', () => {
     mockOk({ id: 'q1' });
     await api.createQuery({ name: 'Q', ...query });
     expect(mockFetch).toHaveBeenCalledWith(
-      '/api/queries',
+      '/api/saved-queries',
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({ name: 'Q', ...query }),
@@ -113,7 +113,7 @@ describe('api.deleteQuery', () => {
   it('sends DELETE request', async () => {
     mockOk({ ok: true });
     await api.deleteQuery('q1');
-    expect(mockFetch).toHaveBeenCalledWith('/api/queries/q1', expect.objectContaining({ method: 'DELETE' }));
+    expect(mockFetch).toHaveBeenCalledWith('/api/saved-queries/q1', expect.objectContaining({ method: 'DELETE' }));
   });
 });
 

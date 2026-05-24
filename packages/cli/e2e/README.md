@@ -1,0 +1,56 @@
+# Road42 release smoke test
+
+Docker-based end-to-end suite that validates the **published npm tarball** of
+`@nimrobo/road42` end-to-end. **Not** wired into CI — run this manually as the
+last gate before `npm publish`.
+
+## What it covers
+
+| Scenario | Catches |
+| --- | --- |
+| `a-install-bootstrap` | global install + binary on PATH; `better-sqlite3` native module loads; first-run creates `~/.road42/index.db` on an empty HOME |
+| `b-adapters` | Claude Code, Codex, OpenCode discovery + indexing against synthetic fixtures; empty-home discover is a no-op |
+| `c-query-compactor` | ad hoc query, saved-query lifecycle (save/list/run/delete), `compactor run salience`, `insight list` / `insight prompt` — proves `dist/skills`, `dist/insights`, and compactor wiring shipped |
+| `d-server-web` | `road42 studio` boots, `/api/stats` returns 200, `/` serves the bundled web SPA, port fallback works when 4242 is busy |
+| `e-skill-install` | `skill install` writes to `~/.claude/skills/road42` and `~/.codex/skills/road42` with the right marker; re-install is idempotent; `--locally` writes under cwd |
+| `f-robustness` | malformed JSONL doesn't kill discovery; corrupt index.db doesn't unhandled-reject; invalid `--query` and unknown commands exit non-zero with a structured JSON error |
+
+Full scenario list is in `scenarios/*.sh` — one bash file per group, each prints
+`ok` / `FAIL` lines per assertion.
+
+## Running it
+
+From the repo root:
+
+```sh
+bash packages/cli/e2e/run-e2e.sh
+```
+
+What it does:
+
+1. Builds `@road42/core`, `@road42/server`, `@road42/web`.
+2. Runs `packages/cli/scripts/build.mjs` to produce the publishable bundle.
+3. `npm pack`s the CLI into a tarball.
+4. Builds the `road42-e2e` Docker image (Node 20 slim + jq + curl + sqlite3),
+   `npm install -g`s the tarball inside.
+5. Runs every scenario in a fresh `$HOME` and reports `PASS` / `FAIL` per
+   scenario plus an overall exit code.
+
+Total runtime: roughly 1–2 minutes on a warm Docker.
+
+## Verifying the suite actually catches regressions
+
+Easiest way to confirm the suite has teeth:
+
+```sh
+# Break something deliberately and re-run.
+rm -rf packages/cli/dist/insights
+bash packages/cli/e2e/run-e2e.sh   # c-query-compactor should FAIL
+```
+
+## Extending
+
+Add a new file `scenarios/<letter>-<name>.sh`, source `_common.sh`, call
+`new_home`, drive the CLI, use `expect` / `expect_eq`, and end with `finish`.
+Files named with a leading underscore (e.g. `_common.sh`) are skipped by the
+runner.

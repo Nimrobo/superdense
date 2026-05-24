@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { readFile } from 'node:fs/promises';
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -867,6 +867,18 @@ async function main(): Promise<void> {
   }
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+function isMainModule(): boolean {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  const here = fileURLToPath(import.meta.url);
+  if (entry === here) return true;
+  try {
+    return realpathSync(entry) === here;
+  } catch {
+    return false;
+  }
+}
+
+if (isMainModule()) {
   main();
 }
