@@ -6,11 +6,11 @@ Treat the **current working directory** as the repository scope.
 
 ## Before you start
 
-Load and follow the Road42 skill before running any `road42` commands. If the agent environment cannot load skills, use the `road42` CLI as a staged inspection pipeline: list candidates, inspect cheap enrichments first, then run compactors only on reduced candidates.
+Load and follow the Superdense skill before running any `superdense` commands. If the agent environment cannot load skills, use the `superdense` CLI as a staged inspection pipeline: list candidates, inspect cheap enrichments first, then run compactors only on reduced candidates.
 
-Use Road42 only as the analysis tool for finding evidence in past sessions. Do **not** propose Road42 enrichers, filters, compactors, query changes, dashboard changes, or Road42 product features in the final answer.
+Use Superdense only as the analysis tool for finding evidence in past sessions. Do **not** propose Superdense enrichers, filters, compactors, query changes, dashboard changes, or Superdense product features in the final answer.
 
-Do not start by running `road42 compactor run salience` across many sessions. Use cheap metadata and filters to narrow the work first.
+Do not start by running `superdense compactor run salience` across many sessions. Use cheap metadata and filters to narrow the work first.
 
 ## What to do
 
@@ -22,16 +22,16 @@ Do not start by running `road42 compactor run salience` across many sessions. Us
 
 ```bash
 # Sessions in this repo.
-road42 session list --pwd "$(pwd)" --limit 200
+superdense session list --pwd "$(pwd)" --limit 200
 
 # Per-session precomputed signals; use these before compactors.
-road42 session enrichments <session-id>
+superdense session enrichments <session-id>
 
 # For reduced candidate clusters, inspect what the agent actually did.
-road42 compactor run trace <session-id>
+superdense compactor run trace <session-id>
 
 # For sessions that still look important after metadata/trace triage.
-road42 compactor run salience <session-id>
+superdense compactor run salience <session-id>
 ```
 
 ## Funnel strategy
@@ -66,4 +66,4 @@ End your reply with a single `## Answer` heading. Under it, list each proposed s
 - **Evidence** — name 2–4 specific session ids and the recurring pattern they share
 - **Expected impact** — one sentence on the time it saves or mistake it prevents
 
-Cap the list at 6 — quality over completeness. If a pattern is real but would be better served by Road42 itself, a context file, or a code change instead of a coding-agent skill, say so explicitly rather than forcing it into the list.
+Cap the list at 6 — quality over completeness. If a pattern is real but would be better served by Superdense itself, a context file, or a code change instead of a coding-agent skill, say so explicitly rather than forcing it into the list.

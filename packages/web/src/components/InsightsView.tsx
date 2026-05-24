@@ -45,7 +45,7 @@ export function InsightsView({ onOpenSession }: Props) {
       const { prompt } = await api.insightsPrompt(recipe.name);
       await navigator.clipboard.writeText(prompt);
       setToast(
-        `"${recipe.title}" prompt copied. Paste it into your coding agent (Claude Code, Codex, OpenCode) — Road42 will pick up the run automatically.`,
+        `"${recipe.title}" prompt copied. Paste it into your coding agent (Claude Code, Codex, OpenCode) — Superdense will pick up the run automatically.`,
       );
       setTimeout(() => setToast(null), 5500);
     } catch (e) {

@@ -1,6 +1,6 @@
-# Road42 Query Reference
+# Superdense Query Reference
 
-A query is filter JSON, optionally with post-filter enrichers. `--query` accepts inline JSON or `@path/to/query.json`. Always run `road42 filter show <name>` to confirm the live param schema before guessing.
+A query is filter JSON, optionally with post-filter enrichers. `--query` accepts inline JSON or `@path/to/query.json`. Always run `superdense filter show <name>` to confirm the live param schema before guessing.
 
 ## Combinators
 
@@ -26,7 +26,7 @@ A query is filter JSON, optionally with post-filter enrichers. `--query` accepts
 
 ## Session Filter Fields
 
-`road42 filter show session` is authoritative. Fields:
+`superdense filter show session` is authoritative. Fields:
 
 - `agent` — exact agent adapter name.
 - `pwd` — exact working directory.
@@ -75,7 +75,7 @@ Built-ins:
 - `user_prompt_contains` — `{ "keyword": "..." }` substring match in user messages.
 - `is_insight_run` — no params.
 
-Plus any user-loaded filters from `~/.road42/filters/` and `~/.road42/plugins/`. Run `road42 filter show <name>` for the live param schema of any filter.
+Plus any user-loaded filters from `~/.superdense/filters/` and `~/.superdense/plugins/`. Run `superdense filter show <name>` for the live param schema of any filter.
 
 ```json
 {
@@ -93,7 +93,7 @@ Plus any user-loaded filters from `~/.road42/filters/` and `~/.road42/plugins/`.
 - `salience` — gist of a session.
 - `trace` — timeline / ordered tool & command sequence.
 
-No user-loadable compactors at present. `road42 compactor list` is the live source of truth.
+No user-loadable compactors at present. `superdense compactor list` is the live source of truth.
 
 ## Session ID Format
 

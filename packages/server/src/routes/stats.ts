@@ -12,7 +12,7 @@ import {
   getTopTools,
   getWindowMetrics,
   listRecentSessions,
-} from '@road42/core';
+} from '@nimrobo/superdense-core';
 
 export async function registerStatsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/stats', async () => {

@@ -1,45 +1,41 @@
-# Road42
+# Superdense
 
 Uncover patterns, workflows, and failures from your coding agent sessions.
 
 Your coding agents ran a thousand sessions this month. Tool calls, loops, dead ends, the shape of your codebase under pressure — all of it sitting in sessions nobody reads.
 
-Road42 indexes every session from Claude Code, Codex, and friends, and hands your agent the tool to query. Local CLI. No cloud.
-
-## Why 42?
-
-In *The Hitchhiker's Guide to the Galaxy*, the answer (42) meant nothing because nobody knew the question. Like 42, an outcome without the context is useless. Road42 indexes the journey so you can search, trace, and uncover agent patterns.
+Superdense indexes every session from Claude Code, Codex, and friends, and hands your agent the tool to query. Local CLI. No cloud.
 
 ## Install
 
 ```bash
-npm i -g @nimrobo/road42
-road42 studio
+npm i -g @nimrobo/superdense
+superdense studio
 ```
 
-Requires Node 20+. The single `road42` binary ships everything — the indexer, the local server, and the web UI.
+Requires Node 20+. The single `superdense` binary ships everything — the indexer, the local server, and the web UI.
 
 ## What you get
 
 - **Studio** — a local web UI at `http://127.0.0.1:4242` that lists every session your agents have produced, with filters, queries, and compactor views.
 - **CLI** — agent-friendly JSON output for every operation, so your *other* agents can read your *previous* agents' work.
-- **Skill** — a packaged Claude/Codex skill that teaches agents how to use Road42 to inspect prior sessions.
+- **Skill** — a packaged Claude/Codex skill that teaches agents how to use Superdense to inspect prior sessions.
 
 ## Quickstart
 
 ```bash
-road42 studio              # boot the local UI (and discover sessions)
-road42 index               # incremental re-index
-road42 session list --q "billing"
-road42 query --query '{"filters":{"filter":{"name":"session","params":{"agent":"codex"}}}}'
-road42 saved-query list
-road42 saved-query run <id>
-road42 compactor run salience <session-id>
-road42 skill install       # install the road42 skill into Claude + Codex
-road42 help                # full command list
+superdense studio              # boot the local UI (and discover sessions)
+superdense index               # incremental re-index
+superdense session list --q "billing"
+superdense query --query '{"filters":{"filter":{"name":"session","params":{"agent":"codex"}}}}'
+superdense saved-query list
+superdense saved-query run <id>
+superdense compactor run salience <session-id>
+superdense skill install       # install the superdense skill into Claude + Codex
+superdense help                # full command list
 ```
 
-All non-`studio` commands emit JSON. See `road42 help` for the full surface.
+All non-`studio` commands emit JSON. See `superdense help` for the full surface.
 
 ## Concepts
 
@@ -58,13 +54,13 @@ This is a pnpm workspace.
 pnpm install
 pnpm dev                   # runs the CLI in studio mode + the vite dev server
 pnpm -r run build          # builds all workspaces
-pnpm --filter=@nimrobo/road42 run build   # produce the publishable CLI bundle
+pnpm --filter=@nimrobo/superdense run build   # produce the publishable CLI bundle
 pnpm test
 ```
 
 Packages:
 
-- `packages/cli` — the only published package (`@nimrobo/road42`). Bundles core + server + web via esbuild.
+- `packages/cli` — the only published package (`@nimrobo/superdense`). Bundles core + server + web via esbuild.
 - `packages/core` — indexer, filters, enrichers, compactors, query engine, sqlite store.
 - `packages/server` — Fastify server serving the JSON API and static web UI.
 - `packages/web` — React UI.

@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { countSessions, getSession, iterSessionEvents, listSessions } from '@road42/core';
+import { countSessions, getSession, iterSessionEvents, listSessions } from '@nimrobo/superdense-core';
 
 export async function registerSessionsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/sessions', async (req) => {

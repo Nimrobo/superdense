@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('@road42/server', () => ({
+vi.mock('@nimrobo/superdense-server', () => ({
   startServer: vi.fn(),
 }));
 
@@ -11,7 +11,7 @@ vi.mock('open', () => ({
   default: vi.fn(),
 }));
 
-vi.mock('@road42/core', () => ({
+vi.mock('@nimrobo/superdense-core', () => ({
   CLAUDE_SKILLS_DIR: '/unused/claude/skills',
   CODEX_SKILLS_DIR: '/unused/codex/skills',
   backfillQuery: vi.fn(),
@@ -20,7 +20,7 @@ vi.mock('@road42/core', () => ({
   countSessions: vi.fn(),
   createQuery: vi.fn(),
   deleteQuery: vi.fn(),
-  ensureRoad42Dirs: vi.fn(),
+  ensureSuperdenseDirs: vi.fn(),
   getCompactor: vi.fn(),
   getEnrichment: vi.fn(),
   getQuery: vi.fn(),
@@ -46,8 +46,8 @@ vi.mock('@road42/core', () => ({
   validateQueryDefinition: vi.fn(),
 }));
 
-import * as core from '@road42/core';
-import { startServer } from '@road42/server';
+import * as core from '@nimrobo/superdense-core';
+import { startServer } from '@nimrobo/superdense-server';
 import open from 'open';
 import { runCli } from './index.js';
 
@@ -55,7 +55,7 @@ const session = {
   id: 'codex:abc123',
   agent: 'codex',
   sessionId: 'abc123',
-  logPath: '/tmp/road42/abc123.jsonl',
+  logPath: '/tmp/superdense/abc123.jsonl',
   pwd: '/repo',
   projectKey: '/repo',
   summary: 'Fix tests',
@@ -66,7 +66,7 @@ const sessionTwo = {
   id: 'claude:def456',
   agent: 'claude',
   sessionId: 'def456',
-  logPath: '/tmp/road42/def456.jsonl',
+  logPath: '/tmp/superdense/def456.jsonl',
   summary: 'Review code',
   modifiedAt: 1779322000000,
 };
@@ -173,7 +173,7 @@ afterEach(() => {
   else process.env.CODEX_SKILLS_DIR = originalCodexSkillsDir;
 });
 
-describe('road42 cli agent commands', () => {
+describe('superdense cli agent commands', () => {
   it('prints help with no args and keeps start compatibility for the web UI', async () => {
     const noArgs = io();
     const start = io();
@@ -184,8 +184,8 @@ describe('road42 cli agent commands', () => {
     expect(core.runDiscovery).toHaveBeenCalledTimes(1);
     expect(startServer).toHaveBeenCalledTimes(1);
     expect(startServer).toHaveBeenCalledWith({ port: 4242, host: '127.0.0.1', portFallbackAttempts: 50 });
-    expect(noArgs.stdout[0]).toContain('Usage: road42 <command> [options]');
-    expect(start.stdout).toContain('[road42] http://127.0.0.1:4242');
+    expect(noArgs.stdout[0]).toContain('Usage: superdense <command> [options]');
+    expect(start.stdout).toContain('[superdense] http://127.0.0.1:4242');
   });
 
   it('starts the studio command without opening the browser when requested', async () => {
@@ -195,7 +195,7 @@ describe('road42 cli agent commands', () => {
 
     expect(startServer).toHaveBeenCalledWith({ port: 5050, host: '127.0.0.1' });
     expect(open).not.toHaveBeenCalled();
-    expect(out.stdout).toContain('[road42] discovered 2 sessions.');
+    expect(out.stdout).toContain('[superdense] discovered 2 sessions.');
   });
 
   it('lists sessions with filters and paging without exposing logPath by default', async () => {
@@ -244,7 +244,7 @@ describe('road42 cli agent commands', () => {
     expect(json(out.stdout[0]!)).toMatchObject({
       session: {
         id: 'codex:abc123',
-        logPath: '/tmp/road42/abc123.jsonl',
+        logPath: '/tmp/superdense/abc123.jsonl',
       },
     });
   });
@@ -281,7 +281,7 @@ describe('road42 cli agent commands', () => {
       id: 'codex:abc123',
       agent: 'codex',
       sessionId: 'abc123',
-      logPath: '/tmp/road42/abc123.jsonl',
+      logPath: '/tmp/superdense/abc123.jsonl',
     });
   });
 
@@ -432,31 +432,31 @@ describe('road42 cli agent commands', () => {
   });
 
   it('installs one named bundled skill into configured Claude and Codex skill dirs', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'road42-skills-'));
+    const root = mkdtempSync(join(tmpdir(), 'superdense-skills-'));
     tempRoots.push(root);
     process.env.CLAUDE_SKILLS_DIR = join(root, 'claude');
     process.env.CODEX_SKILLS_DIR = join(root, 'codex');
     const out = io();
 
-    await runCli(['skill', 'install', 'road42'], out.io);
+    await runCli(['skill', 'install', 'superdense'], out.io);
 
-    const claudeSkill = join(root, 'claude', 'road42');
-    const codexSkill = join(root, 'codex', 'road42');
-    expect(readFileSync(join(claudeSkill, 'SKILL.md'), 'utf8')).toContain('# Road42 Stored Sessions');
-    expect(readFileSync(join(codexSkill, 'SKILL.md'), 'utf8')).toContain('# Road42 Stored Sessions');
+    const claudeSkill = join(root, 'claude', 'superdense');
+    const codexSkill = join(root, 'codex', 'superdense');
+    expect(readFileSync(join(claudeSkill, 'SKILL.md'), 'utf8')).toContain('# Superdense Stored Sessions');
+    expect(readFileSync(join(codexSkill, 'SKILL.md'), 'utf8')).toContain('# Superdense Stored Sessions');
     expect(existsSync(join(claudeSkill, 'agents', 'openai.yaml'))).toBe(true);
     expect(existsSync(join(codexSkill, 'agents', 'openai.yaml'))).toBe(true);
-    expect(json(readFileSync(join(claudeSkill, '.road42-install.json'), 'utf8'))).toMatchObject({
+    expect(json(readFileSync(join(claudeSkill, '.superdense-install.json'), 'utf8'))).toMatchObject({
       version: '0.1.0',
       scope: 'global',
     });
-    expect(json(readFileSync(join(codexSkill, '.road42-install.json'), 'utf8'))).toMatchObject({
+    expect(json(readFileSync(join(codexSkill, '.superdense-install.json'), 'utf8'))).toMatchObject({
       version: '0.1.0',
       scope: 'global',
     });
     expect(json(out.stdout[0]!)).toEqual({
       installed: [{
-        name: 'road42',
+        name: 'superdense',
         claude: claudeSkill,
         codex: codexSkill,
       }],
@@ -464,7 +464,7 @@ describe('road42 cli agent commands', () => {
   });
 
   it('installs all bundled skills when no skill name is provided', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'road42-skills-'));
+    const root = mkdtempSync(join(tmpdir(), 'superdense-skills-'));
     tempRoots.push(root);
     process.env.CLAUDE_SKILLS_DIR = join(root, 'claude');
     process.env.CODEX_SKILLS_DIR = join(root, 'codex');
@@ -475,17 +475,17 @@ describe('road42 cli agent commands', () => {
     const body = json(out.stdout[0]!);
     expect(body.installed).toEqual(expect.arrayContaining([
       expect.objectContaining({
-        name: 'road42',
-        claude: join(root, 'claude', 'road42'),
-        codex: join(root, 'codex', 'road42'),
+        name: 'superdense',
+        claude: join(root, 'claude', 'superdense'),
+        codex: join(root, 'codex', 'superdense'),
       }),
     ]));
-    expect(existsSync(join(root, 'claude', 'road42', 'agents', 'openai.yaml'))).toBe(true);
-    expect(existsSync(join(root, 'codex', 'road42', 'agents', 'openai.yaml'))).toBe(true);
+    expect(existsSync(join(root, 'claude', 'superdense', 'agents', 'openai.yaml'))).toBe(true);
+    expect(existsSync(join(root, 'codex', 'superdense', 'agents', 'openai.yaml'))).toBe(true);
   });
 
   it('installs a skill locally under the current working directory', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'road42-local-skills-'));
+    const root = mkdtempSync(join(tmpdir(), 'superdense-local-skills-'));
     tempRoots.push(root);
     process.chdir(root);
     const cwd = process.cwd();
@@ -493,21 +493,21 @@ describe('road42 cli agent commands', () => {
     process.env.CODEX_SKILLS_DIR = join(root, 'global-codex');
     const out = io();
 
-    await runCli(['skill', 'install', 'road42', '--locally'], out.io);
+    await runCli(['skill', 'install', 'superdense', '--locally'], out.io);
 
-    const claudeSkill = join(cwd, '.claude', 'skills', 'road42');
-    const codexSkill = join(cwd, '.codex', 'skills', 'road42');
+    const claudeSkill = join(cwd, '.claude', 'skills', 'superdense');
+    const codexSkill = join(cwd, '.codex', 'skills', 'superdense');
     expect(existsSync(join(claudeSkill, 'SKILL.md'))).toBe(true);
     expect(existsSync(join(codexSkill, 'SKILL.md'))).toBe(true);
-    expect(existsSync(join(root, 'global-claude', 'road42'))).toBe(false);
-    expect(existsSync(join(root, 'global-codex', 'road42'))).toBe(false);
-    expect(json(readFileSync(join(claudeSkill, '.road42-install.json'), 'utf8'))).toMatchObject({
+    expect(existsSync(join(root, 'global-claude', 'superdense'))).toBe(false);
+    expect(existsSync(join(root, 'global-codex', 'superdense'))).toBe(false);
+    expect(json(readFileSync(join(claudeSkill, '.superdense-install.json'), 'utf8'))).toMatchObject({
       version: '0.1.0',
       scope: 'local',
     });
     expect(json(out.stdout[0]!)).toEqual({
       installed: [{
-        name: 'road42',
+        name: 'superdense',
         claude: claudeSkill,
         codex: codexSkill,
       }],
@@ -515,7 +515,7 @@ describe('road42 cli agent commands', () => {
   });
 
   it('prints a non-tty studio hint for missing skills without mutating disk', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'road42-studio-missing-'));
+    const root = mkdtempSync(join(tmpdir(), 'superdense-studio-missing-'));
     tempRoots.push(root);
     process.chdir(root);
     process.env.CLAUDE_SKILLS_DIR = join(root, 'global-claude');
@@ -524,19 +524,19 @@ describe('road42 cli agent commands', () => {
 
     await runCli(['studio', '--no-open'], out.io);
 
-    expect(out.stdout[0]).toBe('[road42] hint: skill missing. Run `road42 skill install` to update.');
-    expect(existsSync(join(root, 'global-claude', 'road42'))).toBe(false);
-    expect(existsSync(join(root, 'global-codex', 'road42'))).toBe(false);
+    expect(out.stdout[0]).toBe('[superdense] hint: skill missing. Run `superdense skill install` to update.');
+    expect(existsSync(join(root, 'global-claude', 'superdense'))).toBe(false);
+    expect(existsSync(join(root, 'global-codex', 'superdense'))).toBe(false);
     expect(startServer).toHaveBeenCalled();
   });
 
   it('does not print a studio skill hint when the installed skill is current', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'road42-studio-current-'));
+    const root = mkdtempSync(join(tmpdir(), 'superdense-studio-current-'));
     tempRoots.push(root);
     process.chdir(root);
     process.env.CLAUDE_SKILLS_DIR = join(root, 'global-claude');
     process.env.CODEX_SKILLS_DIR = join(root, 'global-codex');
-    await runCli(['skill', 'install', 'road42'], io().io);
+    await runCli(['skill', 'install', 'superdense'], io().io);
     vi.clearAllMocks();
     vi.mocked(core.runDiscovery).mockResolvedValue({ discovered: 2 });
     vi.mocked(core.runQueryEvaluation).mockResolvedValue({ evaluated: 0 });
@@ -546,30 +546,30 @@ describe('road42 cli agent commands', () => {
 
     await runCli(['studio', '--no-open'], out.io);
 
-    expect(out.stdout[0]).toBe('[road42] discovering sessions...');
+    expect(out.stdout[0]).toBe('[superdense] discovering sessions...');
     expect(out.stdout.some((line) => line.includes('hint: skill'))).toBe(false);
     expect(startServer).toHaveBeenCalled();
   });
 
   it('prints a non-tty studio hint for outdated legacy installs without mutating disk', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'road42-studio-outdated-'));
+    const root = mkdtempSync(join(tmpdir(), 'superdense-studio-outdated-'));
     tempRoots.push(root);
     process.chdir(root);
     process.env.CLAUDE_SKILLS_DIR = join(root, 'global-claude');
     process.env.CODEX_SKILLS_DIR = join(root, 'global-codex');
-    const claudeSkill = join(root, 'global-claude', 'road42');
-    const codexSkill = join(root, 'global-codex', 'road42');
+    const claudeSkill = join(root, 'global-claude', 'superdense');
+    const codexSkill = join(root, 'global-codex', 'superdense');
     mkdirSync(claudeSkill, { recursive: true });
     mkdirSync(codexSkill, { recursive: true });
-    writeFileSync(join(claudeSkill, 'SKILL.md'), '---\nname: road42\nversion: 0.0.1\n---\n');
-    writeFileSync(join(codexSkill, 'SKILL.md'), '---\nname: road42\nversion: 0.0.1\n---\n');
+    writeFileSync(join(claudeSkill, 'SKILL.md'), '---\nname: superdense\nversion: 0.0.1\n---\n');
+    writeFileSync(join(codexSkill, 'SKILL.md'), '---\nname: superdense\nversion: 0.0.1\n---\n');
     const out = io();
 
     await runCli(['studio', '--no-open'], out.io);
 
-    expect(out.stdout[0]).toBe('[road42] hint: skill outdated (0.0.1 -> 0.1.0). Run `road42 skill install` to update.');
-    expect(existsSync(join(claudeSkill, '.road42-install.json'))).toBe(false);
-    expect(existsSync(join(codexSkill, '.road42-install.json'))).toBe(false);
+    expect(out.stdout[0]).toBe('[superdense] hint: skill outdated (0.0.1 -> 0.1.0). Run `superdense skill install` to update.');
+    expect(existsSync(join(claudeSkill, '.superdense-install.json'))).toBe(false);
+    expect(existsSync(join(codexSkill, '.superdense-install.json'))).toBe(false);
     expect(startServer).toHaveBeenCalled();
   });
 });

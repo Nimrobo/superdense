@@ -1,16 +1,16 @@
 ---
-name: road42
+name: superdense
 version: 0.1.0
 description: Find & read context prior AI-agent sessions. Use when the user asks about previous or other agent runs, needs context from earlier work, wants to understand what happened, compare attempts, audit decisions/tools/errors, or access the original session record.
 ---
 
-# Road42 Stored Sessions
+# Superdense Stored Sessions
 
 ## Concepts
 
 - **Session** — one stored agent run, identified by `<adapter>:<sessionId>` (e.g. `codex:abc-123`).
-- **Index** — local SQLite catalog of discovered sessions and their enrichments. `road42 index` rescans adapter directories, runs enrichers on new/changed sessions (version-checked, idempotent), and re-evaluates saved queries.
-- **Enrichment** — precomputed metadata attached to a session and stored in the index. Produced during `road42 index`; cheap to read.
+- **Index** — local SQLite catalog of discovered sessions and their enrichments. `superdense index` rescans adapter directories, runs enrichers on new/changed sessions (version-checked, idempotent), and re-evaluates saved queries.
+- **Enrichment** — precomputed metadata attached to a session and stored in the index. Produced during `superdense index`; cheap to read.
 - **Compactor** — on-demand view that re-reads the session log and prints to stdout. Only `salience` (gist) and `trace` (timeline).
 
 ## Workflow
@@ -20,46 +20,46 @@ Use the CLI as a staged inspection pipeline: candidate discovery → triage with
 **Precondition.** Refresh the index only when the user asks about recent/latest work, new sessions may have appeared, or results look stale:
 
 ```bash
-road42 index
+superdense index
 ```
 
 1. Find candidate sessions. Pick the discovery path that matches the search:
 
-   - `road42 session list --q "text"` — substring search across **first prompt, summary, and working directory** only (case-insensitive `LIKE`). Use for quick keyword/topic/pwd hits.
+   - `superdense session list --q "text"` — substring search across **first prompt, summary, and working directory** only (case-insensitive `LIKE`). Use for quick keyword/topic/pwd hits.
 
      ```bash
-     road42 session list --q "search text" --limit 20
+     superdense session list --q "search text" --limit 20
      ```
 
-   - `road42 query` — use whenever the search needs a field `--q` doesn't cover: agent, project, time bounds, `hasErrors`, `toolUsed`, `cliUsed`, `eventCount`, transcript filters, or any `and`/`or`/`not` combinator. Ad hoc, not saved:
+   - `superdense query` — use whenever the search needs a field `--q` doesn't cover: agent, project, time bounds, `hasErrors`, `toolUsed`, `cliUsed`, `eventCount`, transcript filters, or any `and`/`or`/`not` combinator. Ad hoc, not saved:
 
      ```bash
-     road42 query --query '<query-json>' --limit 20
-     road42 query --query @query.json --limit 20
+     superdense query --query '<query-json>' --limit 20
+     superdense query --query @query.json --limit 20
      ```
 
-   - `road42 saved-query` — use only when the user names an existing reusable cohort or asks to persist one:
+   - `superdense saved-query` — use only when the user names an existing reusable cohort or asks to persist one:
 
      ```bash
-     road42 saved-query list
-     road42 saved-query run <query-id> --limit 20
-     road42 saved-query save --name "name" --query '<query-json>'
-     road42 saved-query save --name "name" --query @query.json
+     superdense saved-query list
+     superdense saved-query run <query-id> --limit 20
+     superdense saved-query save --name "name" --query '<query-json>'
+     superdense saved-query save --name "name" --query @query.json
      ```
 
 2. Triage candidates before compacting. Prefer session metadata and existing enrichments to raw logs:
 
    ```bash
-   road42 session show <session-id>
-   road42 session enrichments <session-id>
+   superdense session show <session-id>
+   superdense session enrichments <session-id>
    ```
 
 3. Compact only the sessions that look relevant:
 
    ```bash
-   road42 compactor list
-   road42 compactor run salience <session-id>
-   road42 compactor run trace <session-id>
+   superdense compactor list
+   superdense compactor run salience <session-id>
+   superdense compactor run trace <session-id>
    ```
 
 4. Answer with session ids, why each session matters, and the compact evidence needed for the user's question. State uncertainty when matches are weak or incomplete.
@@ -75,7 +75,7 @@ Queries are filter JSON plus optional post-filter enrichers. `--query` accepts i
 Before guessing params, inspect the live filter schema:
 
 ```bash
-road42 filter show session
+superdense filter show session
 ```
 
 Minimal example:
@@ -85,7 +85,7 @@ Minimal example:
   "filters": {
     "filter": {
       "name": "session",
-      "params": { "agent": "codex", "pwdContains": "road42", "hasErrors": true }
+      "params": { "agent": "codex", "pwdContains": "superdense", "hasErrors": true }
     }
   }
 }
@@ -103,10 +103,10 @@ Use `trace` when order matters: timelines, workflow analysis, tool or command se
 
 ## Raw Source Policy
 
-Treat `road42 session path <session-id>` and any command using `--include-path` as raw-source access:
+Treat `superdense session path <session-id>` and any command using `--include-path` as raw-source access:
 
 ```bash
-road42 session path <session-id>
+superdense session path <session-id>
 ```
 
 Reveal paths or read raw session files only when the user asks for source access. If metadata, enrichments, and compactors are insufficient to answer accurately,then read the raw source.

@@ -1,20 +1,14 @@
-# @nimrobo/road42
-
-> *"The Answer to the Ultimate Question of Life, the Universe, and what your coding agent was actually doing."*
+# @nimrobo/superdense
 
 A local studio + CLI that indexes the session logs your coding agents (Claude Code, Codex, ...) leave behind so you can search, filter, summarize, and replay them.
-
-## Why "42"?
-
-42 is the Answer to the Ultimate Question of Life, the Universe, and Everything, per Deep Thought in *The Hitchhiker's Guide to the Galaxy*. The trouble in the book is that nobody knew the Question. Same energy here: your agents have already produced the answers — Road42 helps you ask better questions of them. Don't panic.
 
 ## Install
 
 ```bash
-npx @nimrobo/road42 studio
+npx @nimrobo/superdense studio
 # or
-npm i -g @nimrobo/road42
-road42 studio
+npm i -g @nimrobo/superdense
+superdense studio
 ```
 
 Requires Node 20+.
@@ -22,20 +16,20 @@ Requires Node 20+.
 ## Quickstart
 
 ```bash
-road42 studio                          # local UI at http://127.0.0.1:4242
-road42 index                           # incremental re-index
-road42 session list --q "billing"
-road42 query --query '{"filters":{"filter":{"name":"session","params":{"agent":"codex"}}}}'
-road42 saved-query list
-road42 saved-query run <id>
-road42 compactor run salience <id>
-road42 skill install                   # install the road42 skill for Claude + Codex
-road42 help
+superdense studio                          # local UI at http://127.0.0.1:4242
+superdense index                           # incremental re-index
+superdense session list --q "billing"
+superdense query --query '{"filters":{"filter":{"name":"session","params":{"agent":"codex"}}}}'
+superdense saved-query list
+superdense saved-query run <id>
+superdense compactor run salience <id>
+superdense skill install                   # install the superdense skill for Claude + Codex
+superdense help
 ```
 
 All non-`studio` commands emit JSON for agent-friendly piping.
 
 ## Links
 
-- Source, docs, issues: https://github.com/nimrobo/road42
+- Source, docs, issues: https://github.com/nimrobo/superdense
 - License: Apache-2.0

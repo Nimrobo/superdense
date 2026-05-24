@@ -1,5 +1,5 @@
 {
-  "name": "road42",
+  "name": "superdense",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -8,8 +8,8 @@
   ],
   "scripts": {
     "build": "pnpm -r --filter=./packages/* run build",
-    "predev": "pnpm --filter=@road42/core --filter=@road42/server run build",
-    "dev": "concurrently \"pnpm --filter=@nimrobo/road42 run dev\" \"pnpm --filter=@road42/web run dev\"",
+    "predev": "pnpm --filter=@nimrobo/superdense-core --filter=@nimrobo/superdense-server run build",
+    "dev": "concurrently \"pnpm --filter=@nimrobo/superdense run dev\" \"pnpm --filter=@nimrobo/superdense-web run dev\"",
     "start": "node packages/cli/dist/index.js",
     "typecheck": "pnpm -r run typecheck",
     "test": "pnpm -r run test"

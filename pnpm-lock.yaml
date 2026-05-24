@@ -27,10 +27,10 @@ importers:
         specifier: ^10.1.0
         version: 10.2.0
     devDependencies:
-      '@road42/core':
+      '@nimrobo/superdense-core':
         specifier: workspace:*
         version: link:../core
-      '@road42/server':
+      '@nimrobo/superdense-server':
         specifier: workspace:*
         version: link:../server
       '@types/better-sqlite3':
@@ -76,7 +76,7 @@ importers:
       '@fastify/static':
         specifier: ^7.0.4
         version: 7.0.4
-      '@road42/core':
+      '@nimrobo/superdense-core':
         specifier: workspace:*
         version: link:../core
       fastify:

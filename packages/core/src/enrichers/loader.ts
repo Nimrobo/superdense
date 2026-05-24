@@ -33,10 +33,10 @@ export async function readUserEnrichers(dir: string = USER_ENRICHERS_DIR): Promi
       if (isEnricher(candidate)) {
         out.push(candidate);
       } else {
-        console.warn(`[road42] enricher ${f} missing required fields (name, version, returns, run)`);
+        console.warn(`[superdense] enricher ${f} missing required fields (name, version, returns, run)`);
       }
     } catch (err) {
-      console.warn(`[road42] failed to load enricher ${f}:`, err);
+      console.warn(`[superdense] failed to load enricher ${f}:`, err);
     }
   }
   return out;

@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { clearFilterCache, getProgress, runDiscovery, runQueryEvaluation } from '@road42/core';
+import { clearFilterCache, getProgress, runDiscovery, runQueryEvaluation } from '@nimrobo/superdense-core';
 
 let running = false;
 
@@ -17,7 +17,7 @@ export async function registerReindexRoutes(app: FastifyInstance): Promise<void>
         await runDiscovery();
         await runQueryEvaluation({ full });
       } catch (err) {
-        console.error('[road42] reindex failed:', err);
+        console.error('[superdense] reindex failed:', err);
       } finally {
         running = false;
       }

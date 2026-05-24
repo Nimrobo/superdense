@@ -14,7 +14,7 @@ mkdirSync(distDir, { recursive: true });
 
 const pkg = JSON.parse(readFileSync(resolve(cliRoot, 'package.json'), 'utf8'));
 const external = [
-  ...Object.keys(pkg.dependencies ?? {}).filter((d) => !d.startsWith('@road42/')),
+  ...Object.keys(pkg.dependencies ?? {}).filter((d) => !d.startsWith('@nimrobo/superdense-')),
   ...Object.keys(pkg.peerDependencies ?? {}),
   ...Object.keys(pkg.optionalDependencies ?? {}),
 ];
@@ -34,7 +34,7 @@ chmodSync(resolve(distDir, 'index.js'), 0o755);
 
 const webDist = resolve(repoRoot, 'packages/web/dist');
 if (!existsSync(webDist)) {
-  throw new Error(`web dist not found at ${webDist} — run \`pnpm --filter=@road42/web run build\` first`);
+  throw new Error(`web dist not found at ${webDist} — run \`pnpm --filter=@nimrobo/superdense-web run build\` first`);
 }
 cpSync(webDist, resolve(distDir, 'web'), { recursive: true });
 
@@ -46,4 +46,4 @@ const insightsSrc = resolve(repoRoot, 'packages/core/insights');
 if (!existsSync(insightsSrc)) throw new Error(`insights directory not found at ${insightsSrc}`);
 cpSync(insightsSrc, resolve(distDir, 'insights'), { recursive: true });
 
-console.log('[road42] bundled CLI to', distDir);
+console.log('[superdense] bundled CLI to', distDir);

@@ -6,11 +6,11 @@ Treat *all* of the user's sessions as candidates — across every project, every
 
 ## Before you start
 
-Load and follow the Road42 skill before running any `road42` commands. If the agent environment cannot load skills, use the `road42` CLI as a staged inspection pipeline: list candidates, inspect cheap enrichments first, then run compactors only on reduced candidates.
+Load and follow the Superdense skill before running any `superdense` commands. If the agent environment cannot load skills, use the `superdense` CLI as a staged inspection pipeline: list candidates, inspect cheap enrichments first, then run compactors only on reduced candidates.
 
-Use Road42 only as the analysis tool for finding and compacting past sessions. Do not recommend changes to Road42 itself in the final answer.
+Use Superdense only as the analysis tool for finding and compacting past sessions. Do not recommend changes to Superdense itself in the final answer.
 
-Do not start by running `road42 compactor run salience` across many sessions. This insight scans all sessions, so the funnel must be strict.
+Do not start by running `superdense compactor run salience` across many sessions. This insight scans all sessions, so the funnel must be strict.
 
 ## What to do
 
@@ -22,20 +22,20 @@ Do not start by running `road42 compactor run salience` across many sessions. Th
 
 ```bash
 # Every session, newest first.
-road42 session list --limit 1000
+superdense session list --limit 1000
 
 # Precomputed signals you should lean on heavily (cheap and already indexed).
-road42 session enrichments <session-id>
+superdense session enrichments <session-id>
 #   - event_count: rough size of the session
 #   - has_errors: did the agent hit and work through real failures
 #   - tool_counts / bash_cli_counts: what was actually done (edits, builds, deploys)
 #   - fingerprint: verb mentions, role byte totals, duration
 
 # For sessions that survive metadata triage, get a compacted summary.
-road42 compactor run salience <session-id>
+superdense compactor run salience <session-id>
 
 # For close calls, inspect the workflow sequence.
-road42 compactor run trace <session-id>
+superdense compactor run trace <session-id>
 ```
 
 ## Funnel strategy
@@ -65,7 +65,7 @@ Penalize: trivial fixes, dependency bumps, chores, very short sessions, sessions
 
 End your reply with a single `## Answer` heading. Under it, list the top 5 sessions as numbered items, highest score first. For each:
 
-- **Session id** (so the user can open it in Road42)
+- **Session id** (so the user can open it in Superdense)
 - **Project** (pwd or projectKey)
 - **One-paragraph pitch** — how this session reads in a YC application, including the most YC-credible specific moment from the session
 - **Score breakdown** — the five rubric numbers on one line

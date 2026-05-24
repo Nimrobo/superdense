@@ -1,14 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Fastify from 'fastify';
 
-vi.mock('@road42/core', () => ({
+vi.mock('@nimrobo/superdense-core', () => ({
   countSessions: vi.fn(),
   getSession: vi.fn(),
   iterSessionEvents: vi.fn(),
   listSessions: vi.fn(),
 }));
 
-import * as core from '@road42/core';
+import * as core from '@nimrobo/superdense-core';
 import { registerSessionsRoutes } from '../routes/sessions.js';
 
 const session = {

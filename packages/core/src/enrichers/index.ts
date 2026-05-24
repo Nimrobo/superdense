@@ -52,7 +52,7 @@ export function refreshActiveEnricherNames(): Set<string> {
   return new Set(activeNames);
 }
 
-/** Load user-supplied enrichers from ~/.road42/enrichers. Idempotent. */
+/** Load user-supplied enrichers from ~/.superdense/enrichers. Idempotent. */
 export async function loadUserEnrichers(): Promise<void> {
   if (userLoaded) return;
   userLoaded = true;
@@ -61,7 +61,7 @@ export async function loadUserEnrichers(): Promise<void> {
     try {
       registerEnricher(e);
     } catch (err) {
-      console.error(`[road42] ${(err as Error).message}`);
+      console.error(`[superdense] ${(err as Error).message}`);
     }
   }
 }

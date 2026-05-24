@@ -105,10 +105,10 @@ async function readFilterDir(dir: string, legacy: boolean): Promise<Filter[]> {
       } else if (legacy && isLegacyMatcher(candidate)) {
         out.push(legacyMatcherToFilter(candidate));
       } else {
-        console.warn(`[road42] filter ${f} missing required fields (name, title, paramsSchema, run)`);
+        console.warn(`[superdense] filter ${f} missing required fields (name, title, paramsSchema, run)`);
       }
     } catch (err) {
-      console.error(`[road42] failed to load filter ${f}:`, err);
+      console.error(`[superdense] failed to load filter ${f}:`, err);
     }
   }
   return out;
@@ -117,7 +117,7 @@ async function readFilterDir(dir: string, legacy: boolean): Promise<Filter[]> {
 function registerInto(all: Filter[], filter: Filter): void {
   const existing = all.find((x) => x.name === filter.name);
   if (existing) {
-    console.error(`[road42] filter name collision: "${filter.name}" is already registered`);
+    console.error(`[superdense] filter name collision: "${filter.name}" is already registered`);
     return;
   }
   all.push(filter);

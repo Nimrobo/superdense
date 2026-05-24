@@ -177,7 +177,7 @@ export const api = {
     const res = await fetch(`/api/insights/recipes/${encodeURIComponent(name)}/prompt`);
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
     const prompt = await res.text();
-    return { prompt, runId: res.headers.get('x-road42-run-id') };
+    return { prompt, runId: res.headers.get('x-superdense-run-id') };
   },
   insightsRuns: () => j<{ items: InsightRun[] }>('/api/insights/runs'),
 };

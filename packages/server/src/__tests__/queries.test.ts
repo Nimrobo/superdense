@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Fastify from 'fastify';
 
-vi.mock('@road42/core', () => ({
+vi.mock('@nimrobo/superdense-core', () => ({
   createQuery: vi.fn(),
   deleteQuery: vi.fn(),
   getQuery: vi.fn(),
@@ -17,7 +17,7 @@ vi.mock('@road42/core', () => ({
   validateQueryDefinition: vi.fn(),
 }));
 
-import * as core from '@road42/core';
+import * as core from '@nimrobo/superdense-core';
 import { registerQueriesRoutes } from '../routes/queries.js';
 
 const definition = {

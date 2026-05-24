@@ -13,7 +13,7 @@ afterEach(async () => {
 });
 
 async function tempDir(): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), 'road42-enrichers-'));
+  const dir = await mkdtemp(join(tmpdir(), 'superdense-enrichers-'));
   tempDirs.push(dir);
   return dir;
 }

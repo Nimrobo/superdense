@@ -10,7 +10,7 @@ repo_root="$(cd "$cli_dir/../.." && pwd)"
 cd "$repo_root"
 
 echo "[e2e] Building CLI bundle (prepublishOnly pipeline)..."
-pnpm --filter=@road42/core --filter=@road42/server --filter=@road42/web run build >/dev/null
+pnpm --filter=@nimrobo/superdense-core --filter=@nimrobo/superdense-server --filter=@nimrobo/superdense-web run build >/dev/null
 node "$cli_dir/scripts/build.mjs" >/dev/null
 
 echo "[e2e] Packing tarball..."
@@ -20,14 +20,14 @@ trap 'rm -rf "$pack_dir"' EXIT
 tgz="$(ls "$pack_dir"/*.tgz | head -n1)"
 echo "[e2e] Packed: $(basename "$tgz")"
 
-cp "$tgz" "$here/road42.tgz"
-trap 'rm -rf "$pack_dir"; rm -f "$here/road42.tgz"' EXIT
+cp "$tgz" "$here/superdense.tgz"
+trap 'rm -rf "$pack_dir"; rm -f "$here/superdense.tgz"' EXIT
 
-echo "[e2e] Building Docker image (road42-e2e)..."
-docker build -t road42-e2e "$here" >/dev/null
+echo "[e2e] Building Docker image (superdense-e2e)..."
+docker build -t superdense-e2e "$here" >/dev/null
 
 echo "[e2e] Running suite..."
-docker run --rm road42-e2e
+docker run --rm superdense-e2e
 status=$?
 
 if [ $status -eq 0 ]; then

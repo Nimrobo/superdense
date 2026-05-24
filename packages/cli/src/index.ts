@@ -14,7 +14,7 @@ import {
   countSessions,
   createQuery,
   deleteQuery,
-  ensureRoad42Dirs,
+  ensureSuperdenseDirs,
   getCompactor,
   getEnrichment,
   getQuery,
@@ -42,8 +42,8 @@ import {
   type QueryMatchDetail,
   type QueryDefinition,
   type Session,
-} from '@road42/core';
-import { startServer } from '@road42/server';
+} from '@nimrobo/superdense-core';
+import { startServer } from '@nimrobo/superdense-server';
 import open from 'open';
 
 interface CliIo {
@@ -528,7 +528,7 @@ function readSkillVersion(skillDir: string): string | null {
 }
 
 function readInstalledMarker(dest: string): SkillInstallMarker | null {
-  const markerPath = join(dest, '.road42-install.json');
+  const markerPath = join(dest, '.superdense-install.json');
   if (!existsSync(markerPath)) return null;
   try {
     const parsed = JSON.parse(readFileSync(markerPath, 'utf8')) as Partial<SkillInstallMarker>;
@@ -574,7 +574,7 @@ function writeInstallMarker(dest: string, version: string, scope: SkillScope): v
     installedAt: new Date().toISOString(),
     scope,
   };
-  writeFileSync(join(dest, '.road42-install.json'), `${JSON.stringify(marker, null, 2)}\n`);
+  writeFileSync(join(dest, '.superdense-install.json'), `${JSON.stringify(marker, null, 2)}\n`);
 }
 
 function classifySkillInstall(dest: string, sourceVersion: string): { status: SkillInstallStatus; version: string | null } {
@@ -693,7 +693,7 @@ async function confirm(prompt: string): Promise<boolean> {
 }
 
 async function checkSkillsForStudio(io: CliIo, opts: { cwd: string }): Promise<void> {
-  const name = 'road42';
+  const name = 'superdense';
   const summary = studioSkillSummary(name, opts.cwd);
   const action = chooseStudioSkillAction(summary);
   if (!action) return;
@@ -703,17 +703,17 @@ async function checkSkillsForStudio(io: CliIo, opts: { cwd: string }): Promise<v
     const detail = action.status === 'outdated' && action.version
       ? `skill outdated (${action.version} -> ${summary.sourceVersion})`
       : `skill missing`;
-    const command = action.scope === 'local' ? 'road42 skill install --locally' : 'road42 skill install';
-    io.stdout.log(`[road42] hint: ${detail}. Run \`${command}\` to update.`);
+    const command = action.scope === 'local' ? 'superdense skill install --locally' : 'superdense skill install';
+    io.stdout.log(`[superdense] hint: ${detail}. Run \`${command}\` to update.`);
     return;
   }
 
   const prompt = action.status === 'outdated' && action.version
-    ? `Update road42 skill ${scopeLabel} (${action.version} -> ${summary.sourceVersion})? [Y/n] `
-    : `Install road42 skill ${scopeLabel}? [Y/n] `;
+    ? `Update superdense skill ${scopeLabel} (${action.version} -> ${summary.sourceVersion})? [Y/n] `
+    : `Install superdense skill ${scopeLabel}? [Y/n] `;
   if (await confirm(prompt)) {
     installSkills([name], { scope: action.scope, cwd: opts.cwd });
-    io.stdout.log(`[road42] ${action.status === 'outdated' ? 'updated' : 'installed'} road42 skill ${scopeLabel}.`);
+    io.stdout.log(`[superdense] ${action.status === 'outdated' ? 'updated' : 'installed'} superdense skill ${scopeLabel}.`);
   }
 }
 
@@ -722,7 +722,7 @@ export async function runCli(argv: string[], io: CliIo = {
   stderr: console,
   isTty: process.stdout.isTTY,
 }): Promise<number> {
-  ensureRoad42Dirs();
+  ensureSuperdenseDirs();
   const { cmd, args, flags } = parseArgs(argv);
 
   if (cmd === 'skill') {
@@ -768,31 +768,31 @@ export async function runCli(argv: string[], io: CliIo = {
   }
 
   if (cmd === 'index') {
-    io.stdout.log('[road42] running incremental index...');
+    io.stdout.log('[superdense] running incremental index...');
     await indexAll({ full: !!flags.full });
-    io.stdout.log('[road42] done.');
+    io.stdout.log('[superdense] done.');
     return 0;
   }
 
   if (cmd === 'reindex') {
-    io.stdout.log('[road42] running full reindex...');
+    io.stdout.log('[superdense] running full reindex...');
     await indexAll({ full: true });
-    io.stdout.log('[road42] done.');
+    io.stdout.log('[superdense] done.');
     return 0;
   }
 
   if (cmd === 'discover') {
     const r = await runDiscovery();
-    io.stdout.log(`[road42] discovered ${r.discovered} sessions.`);
+    io.stdout.log(`[superdense] discovered ${r.discovered} sessions.`);
     return 0;
   }
 
   if (cmd === 'help') {
     io.stdout.log([
-      'Usage: road42 <command> [options]',
+      'Usage: superdense <command> [options]',
       '',
       'Commands:',
-      '  start|studio        Start the Road42 web UI',
+      '  start|studio        Start the Superdense web UI',
       '  session list        List indexed sessions',
       '  session show <id>   Show session metadata',
       '  session path <id>   Get raw log file path',
@@ -837,19 +837,19 @@ export async function runCli(argv: string[], io: CliIo = {
   }
 
   // Run discovery synchronously so the UI immediately shows sessions.
-  io.stdout.log('[road42] discovering sessions...');
+  io.stdout.log('[superdense] discovering sessions...');
   const d = await runDiscovery();
-  io.stdout.log(`[road42] discovered ${d.discovered} sessions.`);
+  io.stdout.log(`[superdense] discovered ${d.discovered} sessions.`);
 
   const { url } = await startServer({
     port,
     host: '127.0.0.1',
     ...(explicitPort ? {} : { portFallbackAttempts: 50 }),
   });
-  io.stdout.log(`[road42] ${url}`);
+  io.stdout.log(`[superdense] ${url}`);
 
   // Background: run query evaluation if any queries exist.
-  runQueryEvaluation().catch((e) => io.stderr.error('[road42] query eval failed:', e));
+  runQueryEvaluation().catch((e) => io.stderr.error('[superdense] query eval failed:', e));
 
   if (!flags['no-open']) {
     open(url).catch(() => { /* ignore */ });

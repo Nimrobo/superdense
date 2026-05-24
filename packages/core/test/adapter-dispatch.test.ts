@@ -16,7 +16,7 @@ afterEach(async () => {
 });
 
 async function makeTempDir(): Promise<string> {
-  tempDir = await mkdtemp(join(tmpdir(), 'road42-dispatch-test-'));
+  tempDir = await mkdtemp(join(tmpdir(), 'superdense-dispatch-test-'));
   return tempDir;
 }
 

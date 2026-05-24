@@ -2,12 +2,12 @@ import { vi, describe, it, expect, beforeEach } from 'vitest';
 
 vi.mock('../../paths.js', () => ({
   DB_PATH: ':memory:',
-  ROAD42_HOME: '/tmp/road42-test',
-  GROUPS_DIR: '/tmp/road42-test/queries',
-  USER_FILTERS_DIR: '/tmp/road42-test/filters',
-  LEGACY_USER_FILTERS_DIR: '/tmp/road42-test/plugins',
-  USER_ENRICHERS_DIR: '/tmp/road42-test/enrichers',
-  ensureRoad42Dirs: vi.fn(),
+  SUPERDENSE_HOME: '/tmp/superdense-test',
+  GROUPS_DIR: '/tmp/superdense-test/queries',
+  USER_FILTERS_DIR: '/tmp/superdense-test/filters',
+  LEGACY_USER_FILTERS_DIR: '/tmp/superdense-test/plugins',
+  USER_ENRICHERS_DIR: '/tmp/superdense-test/enrichers',
+  ensureSuperdenseDirs: vi.fn(),
 }));
 
 import { getDb, upsertSession, upsertEnrichment } from '../../db.js';
@@ -50,8 +50,8 @@ describe('getHeaderTotals', () => {
 
   it('counts Conductor sibling workspaces as one header project', () => {
     const now = utcNoon(2026, 5, 21);
-    upsertSession({ ...BASE, id: 's1', pwd: '/Users/x/conductor/workspaces/road42/provo-v1', modifiedAt: now });
-    upsertSession({ ...BASE, id: 's2', pwd: '/Users/x/conductor/workspaces/road42/provo-v2', modifiedAt: now });
+    upsertSession({ ...BASE, id: 's1', pwd: '/Users/x/conductor/workspaces/superdense/provo-v1', modifiedAt: now });
+    upsertSession({ ...BASE, id: 's2', pwd: '/Users/x/conductor/workspaces/superdense/provo-v2', modifiedAt: now });
     upsertSession({ ...BASE, id: 's3', pwd: '/Users/x/conductor/workspaces/other/provo-v1', modifiedAt: now });
 
     expect(getHeaderTotals().distinctPwds).toBe(2);
@@ -184,15 +184,15 @@ describe('getWindowMetrics', () => {
 
   it('groups active projects by Conductor projectKey', () => {
     const now = utcNoon(2026, 5, 21);
-    upsertSession({ ...BASE, id: 's1', pwd: '/Users/x/conductor/workspaces/road42/provo-v1', modifiedAt: now - 1 * DAY });
-    upsertSession({ ...BASE, id: 's2', pwd: '/Users/x/conductor/workspaces/road42/provo-v2', modifiedAt: now - 2 * DAY });
+    upsertSession({ ...BASE, id: 's1', pwd: '/Users/x/conductor/workspaces/superdense/provo-v1', modifiedAt: now - 1 * DAY });
+    upsertSession({ ...BASE, id: 's2', pwd: '/Users/x/conductor/workspaces/superdense/provo-v2', modifiedAt: now - 2 * DAY });
     upsertSession({ ...BASE, id: 's3', pwd: '/Users/x/conductor/workspaces/other/provo-v1', modifiedAt: now - 1 * DAY });
 
     const w = getWindowMetrics(7, now);
 
     expect(w.window.projects).toBe(2);
     expect(w.window.activeProjects[0]).toMatchObject({
-      pwd: '/Users/x/conductor/workspaces/road42',
+      pwd: '/Users/x/conductor/workspaces/superdense',
       count: 2,
     });
   });

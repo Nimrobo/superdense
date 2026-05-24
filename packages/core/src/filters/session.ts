@@ -112,7 +112,7 @@ export const sessionFilter: Filter = {
   },
   examples: [
     { filter: { name: 'session', params: { agent: 'codex', hasErrors: true } } },
-    { filter: { name: 'session', params: { pwdContains: 'road42', toolUsed: { name: 'Bash', min: 1 } } } },
+    { filter: { name: 'session', params: { pwdContains: 'superdense', toolUsed: { name: 'Bash', min: 1 } } } },
     { filter: { name: 'session', params: { cliUsed: { name: 'git', min: 2 } } } },
   ],
   async run(ctx, params) {

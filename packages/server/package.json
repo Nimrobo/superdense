@@ -1,5 +1,5 @@
 {
-  "name": "@road42/server",
+  "name": "@nimrobo/superdense-server",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@fastify/static": "^7.0.4",
-    "@road42/core": "workspace:*",
+    "@nimrobo/superdense-core": "workspace:*",
     "fastify": "^4.28.1"
   },
   "devDependencies": {

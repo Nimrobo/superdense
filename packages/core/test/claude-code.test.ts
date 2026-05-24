@@ -13,7 +13,7 @@ afterEach(async () => {
 });
 
 async function collectEvents(lines: unknown[]) {
-  tempDir = await mkdtemp(join(tmpdir(), 'road42-claude-test-'));
+  tempDir = await mkdtemp(join(tmpdir(), 'superdense-claude-test-'));
   const logPath = join(tempDir, 'session.jsonl');
   await writeFile(logPath, lines.map((line) => JSON.stringify(line)).join('\n'), 'utf8');
 

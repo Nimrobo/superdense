@@ -6,11 +6,11 @@ Treat the **current working directory** as the repository scope. Every recommend
 
 ## Before you start
 
-Load and follow the Road42 skill before running any `road42` commands. If the agent environment cannot load skills, use the `road42` CLI as a staged inspection pipeline: list candidates, inspect cheap enrichments first, then run compactors only on reduced candidates.
+Load and follow the Superdense skill before running any `superdense` commands. If the agent environment cannot load skills, use the `superdense` CLI as a staged inspection pipeline: list candidates, inspect cheap enrichments first, then run compactors only on reduced candidates.
 
-Use Road42 only as the analysis tool for finding evidence in past sessions. Do not recommend Road42 product changes in the final answer.
+Use Superdense only as the analysis tool for finding evidence in past sessions. Do not recommend Superdense product changes in the final answer.
 
-Do not start by running `road42 compactor run salience` across many sessions. Use cheap metadata, filters, and small candidate batches first.
+Do not start by running `superdense compactor run salience` across many sessions. Use cheap metadata, filters, and small candidate batches first.
 
 ## What to do
 
@@ -21,20 +21,20 @@ Do not start by running `road42 compactor run salience` across many sessions. Us
 
 ## How to gather the data
 
-Run these `road42` CLI commands. Prefer compacted views so you keep your own context manageable.
+Run these `superdense` CLI commands. Prefer compacted views so you keep your own context manageable.
 
 ```bash
 # Sessions in this repo, newest first, JSON for easy parsing.
-road42 session list --pwd "$(pwd)" --limit 200
+superdense session list --pwd "$(pwd)" --limit 200
 
 # Useful precomputed signals already on every session; use these before compactors.
-road42 session enrichments <session-id>
+superdense session enrichments <session-id>
 
 # For reduced candidate sessions, use trace to inspect reads/searches.
-road42 compactor run trace <session-id>
+superdense compactor run trace <session-id>
 
 # For sessions that still look important after trace/enrichment triage.
-road42 compactor run salience <session-id>
+superdense compactor run salience <session-id>
 ```
 
 ## Funnel strategy

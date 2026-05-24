@@ -93,7 +93,7 @@ const [session] = await claudeCodeAdapter.discover();
         type: 'user',
         message: {
           role: 'user',
-          content: '<command-message>road42</command-message>\n<command-name>/road42</command-name>\n<command-args>Find my best coding session</command-args>',
+          content: '<command-message>superdense</command-message>\n<command-name>/superdense</command-name>\n<command-args>Find my best coding session</command-args>',
         },
       },
     ]);

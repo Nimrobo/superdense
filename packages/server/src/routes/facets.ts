@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { getDb } from '@road42/core';
+import { getDb } from '@nimrobo/superdense-core';
 
 export async function registerFacetsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/facets', async () => {

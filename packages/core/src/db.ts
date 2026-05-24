@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { DB_PATH, ensureRoad42Dirs } from './paths.js';
+import { DB_PATH, ensureSuperdenseDirs } from './paths.js';
 import { normalizeQueryDefinition, type QueryDefinition } from './query/types.js';
 import type { Query, QueryMatch, Session } from './types.js';
 import { resolveProjectKey } from './util/project-key.js';
@@ -8,7 +8,7 @@ let dbInstance: Database.Database | null = null;
 
 export function getDb(): Database.Database {
   if (dbInstance) return dbInstance;
-  ensureRoad42Dirs();
+  ensureSuperdenseDirs();
   const db = new Database(DB_PATH);
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');

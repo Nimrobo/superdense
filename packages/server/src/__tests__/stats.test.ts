@@ -1,7 +1,7 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import Fastify from 'fastify';
 
-vi.mock('@road42/core', () => ({
+vi.mock('@nimrobo/superdense-core', () => ({
   getContributions: vi.fn(),
   getHeaderTotals: vi.fn(),
   getInsightsBundle: vi.fn(),
@@ -16,7 +16,7 @@ vi.mock('@road42/core', () => ({
   listRecentSessions: vi.fn(),
 }));
 
-import * as core from '@road42/core';
+import * as core from '@nimrobo/superdense-core';
 import { registerStatsRoutes } from '../routes/stats.js';
 
 const mockTotals = {
