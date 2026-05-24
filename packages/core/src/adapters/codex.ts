@@ -153,19 +153,53 @@ async function* iterCodexEvents(logPath: string): AsyncIterable<TranscriptEvent>
     return;
   }
   const rl = createInterface({ input: stream, crlfDelay: Infinity });
+  let lastMode: string | undefined;
+  const toolResultErrors = new Map<string, boolean>();
   try {
     for await (const line of rl) {
       if (!line.trim()) continue;
       const obj = safeJsonParse(line);
       if (!obj || typeof obj !== 'object') continue;
-      yield* extractCodexEvents(obj);
+      const record = obj as { type?: unknown; payload?: any };
+      if (record.type === 'turn_context') {
+        const mode = record.payload?.collaboration_mode?.mode;
+        if (typeof mode === 'string' && mode !== lastMode) {
+          yield { ts: timestampMs(obj), kind: 'mode_change', mode, prevMode: lastMode };
+          lastMode = mode;
+        }
+        continue;
+      }
+      if (record.type === 'event_msg') {
+        const status = extractToolEndStatus(record.payload);
+        if (status) toolResultErrors.set(status.callId, status.isError);
+        continue;
+      }
+      yield* extractCodexEvents(obj, toolResultErrors);
     }
   } finally {
     try { rl.close(); stream.destroy(); } catch { /* ignore */ }
   }
 }
 
-function* extractCodexEvents(obj: unknown): Generator<TranscriptEvent> {
+function extractToolEndStatus(payload: unknown): { callId: string; isError: boolean } | undefined {
+  if (!payload || typeof payload !== 'object') return undefined;
+  const p = payload as Record<string, unknown>;
+  const callId = p.call_id ?? p.callId ?? p.tool_call_id ?? p.toolCallId;
+  if (typeof callId !== 'string' || !callId) return undefined;
+
+  const exitCode = p.exit_code ?? p.exitCode;
+  if (typeof exitCode === 'number') return { callId, isError: exitCode !== 0 };
+  if (typeof exitCode === 'string' && exitCode.trim()) {
+    const parsed = Number(exitCode);
+    if (Number.isFinite(parsed)) return { callId, isError: parsed !== 0 };
+  }
+  return undefined;
+}
+
+function* extractCodexEvents(
+  obj: unknown,
+  toolResultErrors: ReadonlyMap<string, boolean> = new Map(),
+): Generator<TranscriptEvent> {
   const record = obj as { type?: unknown; payload?: any };
   if (record.type !== 'response_item') return;
   const payload = record.payload;
@@ -193,11 +227,13 @@ function* extractCodexEvents(obj: unknown): Generator<TranscriptEvent> {
   }
 
   if (payload?.type === 'function_call_output') {
+    const toolCallId = typeof payload.call_id === 'string' ? payload.call_id : undefined;
     yield {
       ts,
       kind: 'tool_result',
       role: 'user',
-      toolCallId: typeof payload.call_id === 'string' ? payload.call_id : undefined,
+      toolCallId,
+      isError: toolCallId ? toolResultErrors.get(toolCallId) : undefined,
       text: stringifyValue(payload.output),
       raw: obj,
     };

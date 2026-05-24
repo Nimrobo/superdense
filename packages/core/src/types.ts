@@ -34,12 +34,15 @@ export interface DiscoveredSession {
 
 export interface TranscriptEvent {
   ts?: number;
-  kind?: 'text' | 'tool_call' | 'tool_result';
+  kind?: 'text' | 'tool_call' | 'tool_result' | 'mode_change';
   toolCallId?: string;
   toolName?: string;
   inputText?: string;
   role?: 'user' | 'assistant' | 'system';
   text?: string;
+  isError?: boolean;
+  mode?: string;
+  prevMode?: string;
   raw?: unknown;
 }
 

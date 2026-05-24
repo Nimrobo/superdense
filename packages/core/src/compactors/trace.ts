@@ -31,7 +31,19 @@ interface OmittedTurns {
   tools: Record<string, number>;
 }
 
-type Turn = UserTurn | AssistantTurn | OmittedTurns;
+interface PhaseDivider {
+  phase: 'plan_enter' | 'plan_exit';
+  t: number;
+}
+
+type Turn = UserTurn | AssistantTurn | OmittedTurns | PhaseDivider;
+type LiveTurn = UserTurn | AssistantTurn | PhaseDivider;
+
+const PROTECT_WINDOW = 5;
+
+function isPhaseDivider(turn: Turn): turn is PhaseDivider {
+  return 'phase' in turn;
+}
 
 interface TraceOutput {
   v: 1;
@@ -74,24 +86,56 @@ function truncateAssistant(text: string): string {
   return clean;
 }
 
-function collapseTurns(turns: (UserTurn | AssistantTurn)[], maxTurns: number): Turn[] {
-  if (turns.length <= maxTurns) return turns;
+function computeProtectedIndices(turns: LiveTurn[]): Set<number> {
+  const out = new Set<number>();
+  turns.forEach((turn, idx) => {
+    if (!isPhaseDivider(turn)) return;
+    const start = Math.max(0, idx - PROTECT_WINDOW);
+    const end = Math.min(turns.length - 1, idx + PROTECT_WINDOW);
+    for (let i = start; i <= end; i++) out.add(i);
+  });
+  return out;
+}
+
+function collapseTurns(turns: LiveTurn[], maxTurns: number): Turn[] {
+  const protectedIdx = computeProtectedIndices(turns);
+  const nonProtectedIdx: number[] = [];
+  for (let i = 0; i < turns.length; i++) if (!protectedIdx.has(i)) nonProtectedIdx.push(i);
+
+  if (nonProtectedIdx.length <= maxTurns) return turns.slice();
 
   const visible = Math.max(2, maxTurns - 1);
   const head = Math.max(1, Math.floor(visible / 2));
   const tail = Math.max(1, visible - head);
-  const middle = turns.slice(head, turns.length - tail);
-  const omittedTools: Record<string, number> = {};
-  for (const turn of middle) {
+  const keepHead = new Set(nonProtectedIdx.slice(0, head));
+  const keepTail = new Set(nonProtectedIdx.slice(nonProtectedIdx.length - tail));
+  const keepNonProtected = new Set<number>([...keepHead, ...keepTail]);
+
+  const out: Turn[] = [];
+  let pendingOmitted: { count: number; tools: Record<string, number> } | null = null;
+
+  const flushOmitted = () => {
+    if (!pendingOmitted) return;
+    out.push({ omitted: pendingOmitted.count, tools: pendingOmitted.tools });
+    pendingOmitted = null;
+  };
+
+  for (let i = 0; i < turns.length; i++) {
+    const turn = turns[i];
+    if (protectedIdx.has(i) || keepNonProtected.has(i)) {
+      flushOmitted();
+      out.push(turn);
+      continue;
+    }
+    // Omitted non-protected turn — accumulate into the running placeholder.
+    if (!pendingOmitted) pendingOmitted = { count: 0, tools: {} };
+    pendingOmitted.count += 1;
     if ('calls' in turn && turn.calls) {
-      for (const c of turn.calls) omittedTools[c.tool] = (omittedTools[c.tool] ?? 0) + 1;
+      for (const c of turn.calls) pendingOmitted.tools[c.tool] = (pendingOmitted.tools[c.tool] ?? 0) + 1;
     }
   }
-  return [
-    ...turns.slice(0, head),
-    { omitted: middle.length, tools: omittedTools },
-    ...turns.slice(turns.length - tail),
-  ];
+  flushOmitted();
+  return out;
 }
 
 function capCalls(turns: Turn[]): Turn[] {
@@ -117,7 +161,9 @@ function capCalls(turns: Turn[]): Turn[] {
   });
 }
 
-function budgetTurns(turns: (UserTurn | AssistantTurn)[], targetBytes: number): Turn[] {
+function budgetTurns(turns: LiveTurn[], targetBytes: number): Turn[] {
+  // Note: protected turns around plan-mode dividers bypass `maxTurns` and can push
+  // the output past `targetBytes`; that's accepted — plan context is mandatory.
   let maxTurns = Math.min(MAX_TURNS_KEPT, turns.length);
   let out = capCalls(collapseTurns(turns, maxTurns));
   while (jsonBytes({ v: 1, turns: out }) > targetBytes && maxTurns > 10) {
@@ -133,12 +179,31 @@ export const traceCompactor: Compactor<TraceOutput> = {
   targetBytes: 10_000,
   description: 'Ordered turn sequence: user prompts + assistant headers + tool-call sequence with brief args and success/failure. Drops assistant prose bodies and tool result content. Designed for workflow / retry / sequence pattern mining.',
   async run(ctx) {
-    const turns: (UserTurn | AssistantTurn)[] = [];
+    const turns: LiveTurn[] = [];
     let current: AssistantTurn | null = null;
     let turnIdx = -1;
+    let currentMode: string | undefined;
     const callIdToCall = new Map<string, ToolCall>();
 
     for await (const ev of ctx.iterEvents(ctx.logPath)) {
+      if (ev.kind === 'mode_change') {
+        const newMode = ev.mode;
+        if (!newMode || newMode === currentMode) continue;
+        if (current) {
+          turns.push(current);
+          current = null;
+        }
+        if (newMode === 'plan' && currentMode !== 'plan') {
+          turnIdx++;
+          turns.push({ phase: 'plan_enter', t: turnIdx });
+        } else if (currentMode === 'plan' && newMode !== 'plan') {
+          turnIdx++;
+          turns.push({ phase: 'plan_exit', t: turnIdx });
+        }
+        currentMode = newMode;
+        continue;
+      }
+
       if (ev.role === 'user' && ev.kind === 'text') {
         if (current) {
           turns.push(current);

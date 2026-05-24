@@ -51,6 +51,7 @@ describe('claudeCodeAdapter.iterEvents', () => {
               type: 'tool_result',
               tool_use_id: 'toolu_test_123',
               content: 'hi',
+              is_error: false,
             },
           ],
         },
@@ -72,8 +73,38 @@ describe('claudeCodeAdapter.iterEvents', () => {
         toolName: 'Bash',
         inputText: '{"command":"printf hi"}',
       },
-      { kind: 'tool_result', role: 'user', toolCallId: 'toolu_test_123', text: 'hi' },
+      { kind: 'tool_result', role: 'user', toolCallId: 'toolu_test_123', text: 'hi', isError: false },
       { kind: 'text', role: 'assistant', text: 'Done.' },
+    ]);
+  });
+
+  it('preserves Claude tool result error status', async () => {
+    const events = await collectEvents([
+      {
+        type: 'user',
+        timestamp: '2026-05-21T04:00:01.000Z',
+        message: {
+          role: 'user',
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 'toolu_failed',
+              content: 'fatal: command failed',
+              is_error: true,
+            },
+          ],
+        },
+      },
+    ]);
+
+    expect(events).toMatchObject([
+      {
+        kind: 'tool_result',
+        role: 'user',
+        toolCallId: 'toolu_failed',
+        text: 'fatal: command failed',
+        isError: true,
+      },
     ]);
   });
 
@@ -102,6 +133,90 @@ describe('claudeCodeAdapter.iterEvents', () => {
       toolCallId: 'toolu_array_result',
       text: 'line one\nline two',
     });
+  });
+
+  it('emits mode_change on permissionMode transitions only', async () => {
+    const events = await collectEvents([
+      {
+        type: 'user',
+        timestamp: '2026-05-21T04:00:00.000Z',
+        permissionMode: 'plan',
+        message: { role: 'user', content: 'first in plan' },
+      },
+      {
+        type: 'assistant',
+        timestamp: '2026-05-21T04:00:01.000Z',
+        permissionMode: 'plan',
+        message: { role: 'assistant', content: 'still plan' },
+      },
+      {
+        type: 'user',
+        timestamp: '2026-05-21T04:00:02.000Z',
+        permissionMode: 'default',
+        message: { role: 'user', content: 'back to default' },
+      },
+    ]);
+
+    const modeChanges = events.filter((e) => e.kind === 'mode_change');
+    expect(modeChanges).toEqual([
+      { ts: Date.parse('2026-05-21T04:00:00.000Z'), kind: 'mode_change', mode: 'plan', prevMode: undefined },
+      { ts: Date.parse('2026-05-21T04:00:02.000Z'), kind: 'mode_change', mode: 'default', prevMode: 'plan' },
+    ]);
+  });
+
+  it('defers mode_change to the next timestamped row when the permissionMode row has no timestamp', async () => {
+    const events = await collectEvents([
+      // Standalone permission-mode row without a timestamp — must not consume
+      // the transition; the next timestamped row sharing the mode should emit
+      // it so duration math has a real anchor.
+      { permissionMode: 'plan' },
+      {
+        type: 'user',
+        timestamp: '2026-05-21T04:00:00.000Z',
+        permissionMode: 'plan',
+        message: { role: 'user', content: 'first ts in plan' },
+      },
+      { permissionMode: 'default' },
+      {
+        type: 'assistant',
+        timestamp: '2026-05-21T04:00:05.000Z',
+        permissionMode: 'default',
+        message: { role: 'assistant', content: 'exited' },
+      },
+    ]);
+
+    const modeChanges = events.filter((e) => e.kind === 'mode_change');
+    expect(modeChanges).toEqual([
+      { ts: Date.parse('2026-05-21T04:00:00.000Z'), kind: 'mode_change', mode: 'plan', prevMode: undefined },
+      { ts: Date.parse('2026-05-21T04:00:05.000Z'), kind: 'mode_change', mode: 'default', prevMode: 'plan' },
+    ]);
+  });
+
+  it('flushes a pending mode_change at EOF using the last observed timestamp', async () => {
+    // Real Claude sessions emit trailing {type:"permission-mode",...} rows with
+    // no timestamp after the final transcript turn. The exit must still be
+    // recorded so plan_mode.unclosed / lastExitTs are accurate.
+    const events = await collectEvents([
+      {
+        type: 'user',
+        timestamp: '2026-05-21T04:00:00.000Z',
+        permissionMode: 'plan',
+        message: { role: 'user', content: 'in plan' },
+      },
+      {
+        type: 'assistant',
+        timestamp: '2026-05-21T04:00:05.000Z',
+        permissionMode: 'plan',
+        message: { role: 'assistant', content: 'still plan' },
+      },
+      { type: 'permission-mode', permissionMode: 'default' },
+    ]);
+
+    const modeChanges = events.filter((e) => e.kind === 'mode_change');
+    expect(modeChanges).toEqual([
+      { ts: Date.parse('2026-05-21T04:00:00.000Z'), kind: 'mode_change', mode: 'plan', prevMode: undefined },
+      { ts: Date.parse('2026-05-21T04:00:05.000Z'), kind: 'mode_change', mode: 'default', prevMode: 'plan' },
+    ]);
   });
 
   it('skips Claude metadata records that are not transcript turns', async () => {

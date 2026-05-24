@@ -6,12 +6,13 @@ import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SessionReader } from './SessionReader.js';
-import { api, type Session, type TranscriptEvent } from '../api.js';
+import { api, type Session, type SessionCompactorResponse, type TranscriptEvent } from '../api.js';
 
 vi.mock('../api.js', () => ({
   api: {
     getSession: vi.fn(),
     getTranscript: vi.fn(),
+    runSessionCompactor: vi.fn(),
   },
 }));
 
@@ -38,6 +39,24 @@ function mockTranscript(events: TranscriptEvent[]) {
   vi.mocked(api.getTranscript).mockResolvedValue({ items: events, offset: 0, limit: 2000 });
 }
 
+function mockCompactor(result: unknown = { v: 1 }) {
+  vi.mocked(api.runSessionCompactor).mockResolvedValue({
+    session: baseSession,
+    compactor: { name: 'trace', kind: 'structural', targetBytes: 10000, description: 'Trace timeline' },
+    result,
+  });
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 async function renderReader() {
   render(<SessionReader id="agent:session-1" onBack={vi.fn()} />);
   await screen.findByText(baseSession.agent);
@@ -52,6 +71,7 @@ describe('SessionReader', () => {
     vi.clearAllMocks();
     mockSession();
     mockTranscript([]);
+    mockCompactor();
   });
 
   it('renders a composed header and hides log path behind details', async () => {
@@ -126,6 +146,71 @@ describe('SessionReader', () => {
 
     await userEvent.click(screen.getByLabelText('Show tool calls'));
     expect(screen.queryByTestId('tool-event-shell')).not.toBeInTheDocument();
+  });
+
+  it('loads trace compactor output into an inline pretty JSON drawer', async () => {
+    const traceResponse: SessionCompactorResponse = {
+      session: baseSession,
+      compactor: { name: 'trace', kind: 'structural', targetBytes: 10000, description: 'Trace timeline' },
+      result: { v: 1, turns: [{ role: 'user', t: 0, text: 'Build the thing' }] },
+    };
+    const pending = deferred<typeof traceResponse>();
+    vi.mocked(api.runSessionCompactor).mockReturnValueOnce(pending.promise);
+
+    await renderReader();
+
+    expect(screen.getByRole('button', { name: 'Trace' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Salience' })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Trace' }));
+    expect(screen.getByText('Loading trace compactor...')).toBeInTheDocument();
+
+    pending.resolve(traceResponse);
+    const json = await screen.findByTestId('compactor-json');
+
+    expect(api.runSessionCompactor).toHaveBeenCalledWith('agent:session-1', 'trace');
+    expect(json.textContent).toBe(JSON.stringify(traceResponse, null, 2));
+    expect(screen.getByRole('button', { name: 'Copy JSON' })).toBeInTheDocument();
+  });
+
+  it('switches between cached trace output and salience output', async () => {
+    const traceResponse: SessionCompactorResponse = {
+      session: baseSession,
+      compactor: { name: 'trace', kind: 'structural', targetBytes: 10000, description: 'Trace timeline' },
+      result: { v: 1, turns: [] },
+    };
+    const salienceResponse: SessionCompactorResponse = {
+      session: baseSession,
+      compactor: { name: 'salience', kind: 'semantic', targetBytes: 4000, description: 'Session salience' },
+      result: { v: 1, firstAsk: 'Build the thing', decisions: [] },
+    };
+    vi.mocked(api.runSessionCompactor)
+      .mockResolvedValueOnce(traceResponse)
+      .mockResolvedValueOnce(salienceResponse);
+
+    await renderReader();
+    await userEvent.click(screen.getByRole('button', { name: 'Trace' }));
+    expect((await screen.findByTestId('compactor-json')).textContent).toBe(JSON.stringify(traceResponse, null, 2));
+
+    await userEvent.click(screen.getByRole('button', { name: 'Salience' }));
+    expect((await screen.findByTestId('compactor-json')).textContent).toBe(JSON.stringify(salienceResponse, null, 2));
+
+    await userEvent.click(screen.getByRole('button', { name: 'Trace' }));
+    expect(screen.getByTestId('compactor-json').textContent).toBe(JSON.stringify(traceResponse, null, 2));
+    expect(api.runSessionCompactor).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows compactor errors without hiding the transcript', async () => {
+    mockTranscript([{ kind: 'text', role: 'assistant', text: 'visible assistant text' }]);
+    vi.mocked(api.runSessionCompactor).mockRejectedValueOnce(new Error('500 Internal Server Error'));
+
+    await renderReader();
+    expect(await screen.findByText('visible assistant text')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Salience' }));
+
+    expect(await screen.findByText('Failed to load salience: 500 Internal Server Error')).toBeInTheDocument();
+    expect(screen.getByText('visible assistant text')).toBeInTheDocument();
   });
 
   it('pairs tool calls and results into one expandable row', async () => {
@@ -249,6 +334,28 @@ describe('SessionReader', () => {
     expect(screen.getByText(hiddenSystemText)).toBeInTheDocument();
     expect(screen.getByText(longToolInput, { exact: false })).toBeInTheDocument();
     expect(screen.queryByText(longAssistantText)).not.toBeInTheDocument();
+  });
+
+  it('renders plan-mode enter/exit rows inline with the transcript', async () => {
+    mockTranscript([
+      { kind: 'text', role: 'user', text: 'first prompt', ts: 1000 },
+      { kind: 'mode_change', mode: 'plan', prevMode: undefined, ts: 1100 },
+      { kind: 'text', role: 'assistant', text: 'planning response', ts: 1200 },
+      { kind: 'mode_change', mode: 'default', prevMode: 'plan', ts: 1300 },
+      { kind: 'text', role: 'assistant', text: 'executing response', ts: 1400 },
+    ]);
+
+    await renderReader();
+
+    const rows = await screen.findAllByTestId('mode-change-row');
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toHaveTextContent('entered plan mode');
+    expect(rows[1]).toHaveTextContent('exited plan mode');
+    expect(screen.getByText('planning response')).toBeInTheDocument();
+    expect(screen.getByText('executing response')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByLabelText('Show tool calls'));
+    expect(screen.getAllByTestId('mode-change-row')).toHaveLength(2);
   });
 
   it('renders partial and unknown adapter-normalized events safely', async () => {

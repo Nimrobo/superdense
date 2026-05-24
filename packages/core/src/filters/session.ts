@@ -107,6 +107,48 @@ export const sessionFilter: Filter = {
           value: { type: 'number' },
         },
       },
+      enteredPlanMode: { type: 'boolean', description: 'Matches sessions that entered plan mode at least once.' },
+      planEnterCount: {
+        type: 'object',
+        required: ['value'],
+        properties: {
+          op: { type: 'string', enum: ['=', '!=', '<', '<=', '>', '>='], default: '=' },
+          value: { type: 'number' },
+        },
+      },
+      planDurationMs: {
+        type: 'object',
+        required: ['value'],
+        properties: {
+          op: { type: 'string', enum: ['=', '!=', '<', '<=', '>', '>='], default: '=' },
+          value: { type: 'number' },
+        },
+      },
+      planUnclosed: { type: 'boolean', description: 'Matches sessions that entered plan mode and never exited it.' },
+      planFinalized: { type: 'boolean', description: 'Matches sessions where a plan was finalized (ExitPlanMode or <proposed_plan>).' },
+      toolUsedInPlan: {
+        type: 'object',
+        required: ['name'],
+        properties: {
+          name: { type: 'string' },
+          min: { type: 'number', default: 1 },
+        },
+      },
+      toolUsedOnlyOutOfPlan: {
+        type: 'object',
+        required: ['name'],
+        properties: {
+          name: { type: 'string' },
+        },
+      },
+      userPromptsInPlan: {
+        type: 'object',
+        required: ['value'],
+        properties: {
+          op: { type: 'string', enum: ['=', '!=', '<', '<=', '>', '>='], default: '=' },
+          value: { type: 'number' },
+        },
+      },
     },
     additionalProperties: false,
   },
@@ -114,6 +156,11 @@ export const sessionFilter: Filter = {
     { filter: { name: 'session', params: { agent: 'codex', hasErrors: true } } },
     { filter: { name: 'session', params: { pwdContains: 'superdense', toolUsed: { name: 'Bash', min: 1 } } } },
     { filter: { name: 'session', params: { cliUsed: { name: 'git', min: 2 } } } },
+    { filter: { name: 'session', params: { enteredPlanMode: true } } },
+    { filter: { name: 'session', params: { planUnclosed: true } } },
+    { filter: { name: 'session', params: { toolUsedInPlan: { name: 'Edit', min: 1 } } } },
+    { filter: { name: 'session', params: { planFinalized: true } } },
+    { filter: { name: 'session', params: { userPromptsInPlan: { op: '>', value: 3 } } } },
   ],
   async run(ctx, params) {
     const session = ctx.session;
@@ -170,6 +217,51 @@ export const sessionFilter: Filter = {
       const value = ctx.getSystemEnrichment('event_count')?.value;
       const count = typeof value === 'number' ? value : 0;
       if (!matchCountParam(params.eventCount, count)) return false;
+    }
+
+    const planParams = [
+      'enteredPlanMode', 'planEnterCount', 'planDurationMs', 'planUnclosed',
+      'planFinalized', 'toolUsedInPlan', 'toolUsedOnlyOutOfPlan', 'userPromptsInPlan',
+    ];
+    if (planParams.some((k) => params[k] !== undefined)) {
+      const value = ctx.getSystemEnrichment('plan_mode')?.value;
+      const plan = (value && typeof value === 'object') ? value as Record<string, unknown> : {};
+
+      if (typeof params.enteredPlanMode === 'boolean') {
+        const entered = plan.entered === true;
+        if (entered !== params.enteredPlanMode) return false;
+      }
+      if (params.planEnterCount !== undefined) {
+        const n = typeof plan.enterCount === 'number' ? plan.enterCount : 0;
+        if (!matchCountParam(params.planEnterCount, n)) return false;
+      }
+      if (params.planDurationMs !== undefined) {
+        const n = typeof plan.totalDurationMs === 'number' ? plan.totalDurationMs : 0;
+        if (!matchCountParam(params.planDurationMs, n)) return false;
+      }
+      if (typeof params.planUnclosed === 'boolean') {
+        const unclosed = plan.unclosed === true;
+        if (unclosed !== params.planUnclosed) return false;
+      }
+      if (typeof params.planFinalized === 'boolean') {
+        const finalized = typeof plan.proposedPlanFinalized === 'number' && plan.proposedPlanFinalized > 0;
+        if (finalized !== params.planFinalized) return false;
+      }
+      if (params.toolUsedInPlan !== undefined) {
+        if (!matchUsedParam(params.toolUsedInPlan, plan.toolCallsInPlan)) return false;
+      }
+      if (params.toolUsedOnlyOutOfPlan !== undefined) {
+        const p = params.toolUsedOnlyOutOfPlan as { name?: unknown };
+        const name = typeof p?.name === 'string' ? p.name : '';
+        if (!name) return false;
+        const inPlan = countFromRecord(plan.toolCallsInPlan, name);
+        const outOfPlan = countFromRecord(plan.toolCallsOutOfPlan, name);
+        if (!(inPlan === 0 && outOfPlan > 0)) return false;
+      }
+      if (params.userPromptsInPlan !== undefined) {
+        const n = typeof plan.userPromptsInPlan === 'number' ? plan.userPromptsInPlan : 0;
+        if (!matchCountParam(params.userPromptsInPlan, n)) return false;
+      }
     }
 
     return true;

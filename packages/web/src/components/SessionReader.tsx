@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, type Session, type TranscriptEvent } from '../api.js';
+import { api, type CompactorName, type Session, type SessionCompactorResponse, type TranscriptEvent } from '../api.js';
 import {
   formatDuration,
   formatFullTime,
@@ -22,6 +22,7 @@ interface Props {
 type TranscriptDisplayRow =
   | { type: 'event'; key: string; index: number; ev: TranscriptEvent }
   | { type: 'tool'; key: string; index: number; call?: TranscriptEvent; result?: TranscriptEvent }
+  | { type: 'mode'; key: string; index: number; ev: TranscriptEvent }
   | { type: 'collapsed'; key: string; toolCount: number };
 
 export function SessionReader({ id, onBack }: Props) {
@@ -56,7 +57,7 @@ export function SessionReader({ id, onBack }: Props) {
         </div>
 
         {tab === 'conversation' && (
-          <ConversationTab events={events} loading={loadingEvents} />
+          <ConversationTab sessionId={session.id} events={events} loading={loadingEvents} />
         )}
 
         {tab === 'summary' && <SummaryTab session={session} />}
@@ -130,10 +131,22 @@ function SummaryTab({ session }: { session: Session }) {
   );
 }
 
-function ConversationTab({ events, loading }: { events: TranscriptEvent[] | null; loading: boolean }) {
+function ConversationTab({
+  sessionId,
+  events,
+  loading,
+}: {
+  sessionId: string;
+  events: TranscriptEvent[] | null;
+  loading: boolean;
+}) {
   const [showSystem, setShowSystem] = useState(false);
   const [showTools, setShowTools] = useState(true);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const [activeCompactor, setActiveCompactor] = useState<CompactorName | null>(null);
+  const [compactorCache, setCompactorCache] = useState<Partial<Record<CompactorName, SessionCompactorResponse>>>({});
+  const [loadingCompactor, setLoadingCompactor] = useState<CompactorName | null>(null);
+  const [compactorError, setCompactorError] = useState<string | null>(null);
 
   const rows = events ? buildTranscriptRows(events) : null;
   const systemFiltered = rows?.filter((row) => {
@@ -153,18 +166,70 @@ function ConversationTab({ events, loading }: { events: TranscriptEvent[] | null
     });
   };
 
+  const runCompactor = async (name: CompactorName) => {
+    setActiveCompactor(name);
+    setCompactorError(null);
+    if (compactorCache[name]) return;
+    setLoadingCompactor(name);
+    try {
+      const result = await api.runSessionCompactor(sessionId, name);
+      setCompactorCache((current) => ({ ...current, [name]: result }));
+    } catch (err) {
+      setCompactorError(`Failed to load ${name}: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setLoadingCompactor((current) => (current === name ? null : current));
+    }
+  };
+
+  const activeOutput = activeCompactor ? compactorCache[activeCompactor] : undefined;
+  const activeJson = activeOutput ? JSON.stringify(activeOutput, null, 2) : null;
+
   return (
     <div>
       <div className="conversation-filters" aria-label="Conversation filters">
-        <label>
-          <input type="checkbox" checked={showSystem} onChange={(e) => setShowSystem(e.target.checked)} />
-          Show system events
-        </label>
-        <label>
-          <input type="checkbox" checked={showTools} onChange={(e) => setShowTools(e.target.checked)} />
-          Show tool calls
-        </label>
+        <div className="conversation-filter-group">
+          <label>
+            <input type="checkbox" checked={showSystem} onChange={(e) => setShowSystem(e.target.checked)} />
+            Show system events
+          </label>
+          <label>
+            <input type="checkbox" checked={showTools} onChange={(e) => setShowTools(e.target.checked)} />
+            Show tool calls
+          </label>
+        </div>
+        <div className="compactor-controls" aria-label="Session compactors">
+          <span className="compactor-label">Compactors</span>
+          <button
+            className={`text-btn compactor-btn ${activeCompactor === 'trace' ? 'active' : ''}`}
+            disabled={loadingCompactor !== null}
+            onClick={() => { void runCompactor('trace'); }}
+          >
+            {loadingCompactor === 'trace' ? 'Loading...' : 'Trace'}
+          </button>
+          <button
+            className={`text-btn compactor-btn ${activeCompactor === 'salience' ? 'active' : ''}`}
+            disabled={loadingCompactor !== null}
+            onClick={() => { void runCompactor('salience'); }}
+          >
+            {loadingCompactor === 'salience' ? 'Loading...' : 'Salience'}
+          </button>
+          {activeJson && (
+            <button className="text-btn compactor-btn" onClick={() => { void copyText(activeJson); }}>
+              Copy JSON
+            </button>
+          )}
+        </div>
       </div>
+      {activeCompactor && (
+        <div className="compactor-drawer" data-testid="compactor-drawer">
+          <div className="compactor-drawer-head">
+            <span>{activeCompactor} compactor output</span>
+          </div>
+          {loadingCompactor === activeCompactor && <div className="compactor-status">Loading {activeCompactor} compactor...</div>}
+          {compactorError && <div className="error compactor-error">{compactorError}</div>}
+          {activeJson && <pre className="compactor-json" data-testid="compactor-json">{activeJson}</pre>}
+        </div>
+      )}
       {loading && <div className="empty">Loading conversation...</div>}
       {!loading && visibleRows?.map((row) => {
         if (row.type === 'tool') {
@@ -176,6 +241,9 @@ function ConversationTab({ events, loading }: { events: TranscriptEvent[] | null
               onToggleExpanded={() => toggleExpanded(row.key)}
             />
           );
+        }
+        if (row.type === 'mode') {
+          return <ModeChangeRow key={row.key} ev={row.ev} />;
         }
         if (row.type === 'collapsed') {
           return <CollapsedToolsRow key={row.key} count={row.toolCount} />;
@@ -217,6 +285,9 @@ function buildTranscriptRows(events: TranscriptEvent[]): TranscriptDisplayRow[] 
   );
 
   return events.flatMap((ev, index): TranscriptDisplayRow[] => {
+    if (ev.kind === 'mode_change') {
+      return [{ type: 'mode', key: `mode:${index}`, index, ev }];
+    }
     const kind = eventKind(ev);
     if (kind === 'tool_call') {
       const paired = ev.toolCallId ? firstResultById.get(ev.toolCallId) : undefined;
@@ -356,6 +427,28 @@ function EventRow({
       {isLong && <ExpandButton expanded={expanded} onClick={onToggleExpanded} />}
     </div>
   );
+}
+
+function ModeChangeRow({ ev }: { ev: TranscriptEvent }) {
+  const label = modeChangeLabel(ev.mode, ev.prevMode);
+  return (
+    <div className="event event-row mode-change" data-testid="mode-change-row">
+      <div className="event-row-head">
+        <div className="event-role mode-change-label">→ {label}</div>
+        <EventTime ts={ev.ts} />
+      </div>
+    </div>
+  );
+}
+
+function modeChangeLabel(mode: string | undefined, prevMode: string | undefined): string {
+  if (mode === 'plan' && prevMode !== 'plan') return 'entered plan mode';
+  if (prevMode === 'plan' && mode !== 'plan') {
+    return mode && mode !== 'default' ? `exited plan mode → ${mode}` : 'exited plan mode';
+  }
+  if (mode && prevMode) return `mode: ${prevMode} → ${mode}`;
+  if (mode) return `mode: ${mode}`;
+  return 'mode change';
 }
 
 function CollapsedToolsRow({ count }: { count: number }) {

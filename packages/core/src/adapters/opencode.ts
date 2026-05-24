@@ -20,6 +20,7 @@ interface OpenCodeSessionRow {
 interface OpenCodePartRow {
   message_id: string;
   message_role: string | null;
+  message_agent: string | null;
   message_time: number;
   part_id: string;
   part_time: number;
@@ -198,6 +199,7 @@ async function* iterOpenCodeEvents(logPath: string): AsyncIterable<TranscriptEve
       SELECT
         m.id AS message_id,
         json_extract(m.data, '$.role') AS message_role,
+        json_extract(m.data, '$.agent') AS message_agent,
         m.time_created AS message_time,
         p.id AS part_id,
         p.time_created AS part_time,
@@ -208,7 +210,17 @@ async function* iterOpenCodeEvents(logPath: string): AsyncIterable<TranscriptEve
       ORDER BY m.time_created ASC, p.time_created ASC, p.id ASC
     `).all(parsed.sessionId) as OpenCodePartRow[];
 
+    let lastMode: string | undefined;
+    let lastMessageId: string | undefined;
     for (const row of rows) {
+      if (row.message_id !== lastMessageId) {
+        lastMessageId = row.message_id;
+        const mode = typeof row.message_agent === 'string' && row.message_agent ? row.message_agent : undefined;
+        if (mode && mode !== lastMode) {
+          yield { ts: row.message_time, kind: 'mode_change', mode, prevMode: lastMode };
+          lastMode = mode;
+        }
+      }
       yield* extractOpenCodePart(row);
     }
   } finally {
