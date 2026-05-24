@@ -2,13 +2,13 @@ import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../paths.js', () => ({
-  USER_FILTERS_DIR: '/tmp/road42-filter-test/filters',
-  LEGACY_USER_FILTERS_DIR: '/tmp/road42-filter-test/plugins',
+  USER_FILTERS_DIR: '/tmp/superdense-filter-test/filters',
+  LEGACY_USER_FILTERS_DIR: '/tmp/superdense-filter-test/plugins',
 }));
 
 import { clearFilterCache, listFilterCatalog, loadFilters } from '../index.js';
 
-const root = '/tmp/road42-filter-test';
+const root = '/tmp/superdense-filter-test';
 const filtersDir = `${root}/filters`;
 const pluginsDir = `${root}/plugins`;
 
@@ -28,7 +28,7 @@ describe('filters registry', () => {
     ]));
   });
 
-  it('loads a user filter from ~/.road42/filters', async () => {
+  it('loads a user filter from ~/.superdense/filters', async () => {
     await writeFile(`${filtersDir}/custom.mjs`, `
       export default {
         name: 'custom_log_filter',

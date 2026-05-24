@@ -28,7 +28,7 @@ function resolveInsightsRoot(): string {
       return c;
     }
   }
-  throw new Error(`road42 insights folder not found (looked in: ${CANDIDATES.join(', ')})`);
+  throw new Error(`superdense insights folder not found (looked in: ${CANDIDATES.join(', ')})`);
 }
 
 let cachedRecipes: InsightRecipe[] | null = null;
@@ -61,11 +61,11 @@ export function assembleInsightPrompt(name: string, runId: string): string {
   const recipe = getInsightRecipe(name);
   if (!recipe) throw new Error(`insight not found: ${name}`);
   const body = loadInsightPromptBody(name);
-  const marker = `<!-- road42:insight name="${recipe.name}" run="${runId}" v=${INSIGHT_MARKER_VERSION} -->`;
+  const marker = `<!-- superdense:insight name="${recipe.name}" run="${runId}" v=${INSIGHT_MARKER_VERSION} -->`;
   return `${marker}\n\n${body}`;
 }
 
-const MARKER_RE = /<!--\s*road42:insight\s+name="([\w-]+)"\s+run="([0-9a-fA-F-]+)"\s+v=(\d+)\s*-->/;
+const MARKER_RE = /<!--\s*superdense:insight\s+name="([\w-]+)"\s+run="([0-9a-fA-F-]+)"\s+v=(\d+)\s*-->/;
 
 export interface InsightMarker {
   name: string;

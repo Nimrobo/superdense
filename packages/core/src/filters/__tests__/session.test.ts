@@ -20,14 +20,14 @@ function makeCtx(projectKey: string): FilterContext {
 
 describe('sessionFilter project params', () => {
   it('matches an exact project key', async () => {
-    const ctx = makeCtx('/Users/me/projects/road42');
-    expect(await sessionFilter.run(ctx, { project: '/Users/me/projects/road42' })).toBe(true);
+    const ctx = makeCtx('/Users/me/projects/superdense');
+    expect(await sessionFilter.run(ctx, { project: '/Users/me/projects/superdense' })).toBe(true);
     expect(await sessionFilter.run(ctx, { project: '/Users/me/projects/other' })).toBe(false);
   });
 
   it('matches a substring on projectContains', async () => {
-    const ctx = makeCtx('/Users/me/projects/road42');
-    expect(await sessionFilter.run(ctx, { projectContains: 'road42' })).toBe(true);
+    const ctx = makeCtx('/Users/me/projects/superdense');
+    expect(await sessionFilter.run(ctx, { projectContains: 'superdense' })).toBe(true);
     expect(await sessionFilter.run(ctx, { projectContains: 'nope' })).toBe(false);
   });
 });

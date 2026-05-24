@@ -16,7 +16,7 @@ import {
   validateQueryDefinition,
   type QueryDefinition,
   type ValidationError,
-} from '@road42/core';
+} from '@nimrobo/superdense-core';
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);

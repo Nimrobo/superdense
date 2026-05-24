@@ -1,18 +1,18 @@
-# Road42 release smoke test
+# Superdense release smoke test
 
 Docker-based end-to-end suite that validates the **published npm tarball** of
-`@nimrobo/road42` end-to-end. **Not** wired into CI — run this manually as the
+`@nimrobo/superdense` end-to-end. **Not** wired into CI — run this manually as the
 last gate before `npm publish`.
 
 ## What it covers
 
 | Scenario | Catches |
 | --- | --- |
-| `a-install-bootstrap` | global install + binary on PATH; `better-sqlite3` native module loads; first-run creates `~/.road42/index.db` on an empty HOME |
+| `a-install-bootstrap` | global install + binary on PATH; `better-sqlite3` native module loads; first-run creates `~/.superdense/index.db` on an empty HOME |
 | `b-adapters` | Claude Code, Codex, OpenCode discovery + indexing against synthetic fixtures; empty-home discover is a no-op |
 | `c-query-compactor` | ad hoc query, saved-query lifecycle (save/list/run/delete), `compactor run salience`, `insight list` / `insight prompt` — proves `dist/skills`, `dist/insights`, and compactor wiring shipped |
-| `d-server-web` | `road42 studio` boots, `/api/stats` returns 200, `/` serves the bundled web SPA, port fallback works when 4242 is busy |
-| `e-skill-install` | `skill install` writes to `~/.claude/skills/road42` and `~/.codex/skills/road42` with the right marker; re-install is idempotent; `--locally` writes under cwd |
+| `d-server-web` | `superdense studio` boots, `/api/stats` returns 200, `/` serves the bundled web SPA, port fallback works when 4242 is busy |
+| `e-skill-install` | `skill install` writes to `~/.claude/skills/superdense` and `~/.codex/skills/superdense` with the right marker; re-install is idempotent; `--locally` writes under cwd |
 | `f-robustness` | malformed JSONL doesn't kill discovery; corrupt index.db doesn't unhandled-reject; invalid `--query` and unknown commands exit non-zero with a structured JSON error |
 
 Full scenario list is in `scenarios/*.sh` — one bash file per group, each prints
@@ -28,10 +28,10 @@ bash packages/cli/e2e/run-e2e.sh
 
 What it does:
 
-1. Builds `@road42/core`, `@road42/server`, `@road42/web`.
+1. Builds `@nimrobo/superdense-core`, `@nimrobo/superdense-server`, `@nimrobo/superdense-web`.
 2. Runs `packages/cli/scripts/build.mjs` to produce the publishable bundle.
 3. `npm pack`s the CLI into a tarball.
-4. Builds the `road42-e2e` Docker image (Node 20 slim + jq + curl + sqlite3),
+4. Builds the `superdense-e2e` Docker image (Node 20 slim + jq + curl + sqlite3),
    `npm install -g`s the tarball inside.
 5. Runs every scenario in a fresh `$HOME` and reports `PASS` / `FAIL` per
    scenario plus an overall exit code.

@@ -17,7 +17,7 @@ export function Sidebar({ view, setView, queries, search, setSearch, progress, o
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
-        <div className="brand">road42</div>
+        <div className="brand">superdense</div>
         <div className="brand-sub">your coding agent traces</div>
         <input
           className="search-input"

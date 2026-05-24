@@ -2,7 +2,7 @@
 # Shared helpers for scenario scripts.
 # Each scenario sources this and gets:
 #   - a fresh HOME under /tmp
-#   - ROAD42_HOME pointing inside it
+#   - SUPERDENSE_HOME pointing inside it
 #   - adapter directories empty by default
 #   - assert helpers
 set -uo pipefail
@@ -15,7 +15,7 @@ new_home() {
   local dir
   dir="$(mktemp -d)"
   export HOME="$dir"
-  export ROAD42_HOME="$dir/.road42"
+  export SUPERDENSE_HOME="$dir/.superdense"
   # Point adapter env overrides at locations that don't exist yet so the
   # discoverers cleanly find nothing unless the scenario seeds them.
   export CLAUDE_PROJECTS_DIR="$dir/.claude/projects"

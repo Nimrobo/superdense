@@ -5,12 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../paths.js', () => ({
   DB_PATH: ':memory:',
-  ROAD42_HOME: '/tmp/road42-queryeval-test',
-  GROUPS_DIR: '/tmp/road42-queryeval-test/queries',
-  USER_FILTERS_DIR: '/tmp/road42-queryeval-test/filters',
-  LEGACY_USER_FILTERS_DIR: '/tmp/road42-queryeval-test/plugins',
-  USER_ENRICHERS_DIR: '/tmp/road42-queryeval-test/enrichers',
-  ensureRoad42Dirs: vi.fn(),
+  SUPERDENSE_HOME: '/tmp/superdense-queryeval-test',
+  GROUPS_DIR: '/tmp/superdense-queryeval-test/queries',
+  USER_FILTERS_DIR: '/tmp/superdense-queryeval-test/filters',
+  LEGACY_USER_FILTERS_DIR: '/tmp/superdense-queryeval-test/plugins',
+  USER_ENRICHERS_DIR: '/tmp/superdense-queryeval-test/enrichers',
+  ensureSuperdenseDirs: vi.fn(),
 }));
 
 import { _resetDbForTests, countQueryMatches, createQuery, getEnrichment, getQuery, upsertSession } from '../../db.js';
@@ -25,7 +25,7 @@ beforeEach(async () => {
   _resetDbForTests();
   clearFilterCache();
   clearEnricherCache();
-  tempDir = await mkdtemp(join(tmpdir(), 'road42-queryeval-'));
+  tempDir = await mkdtemp(join(tmpdir(), 'superdense-queryeval-'));
 });
 
 afterEach(async () => {

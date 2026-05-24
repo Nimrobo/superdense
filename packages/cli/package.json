@@ -1,10 +1,10 @@
 {
-  "name": "@nimrobo/road42",
+  "name": "@nimrobo/superdense",
   "version": "0.1.0",
-  "description": "Road42 — index, inspect, and summarize sessions from your coding agents. The Answer to what your agent was actually doing.",
+  "description": "Superdense — index, inspect, and summarize sessions from your coding agents.",
   "type": "module",
   "bin": {
-    "road42": "./dist/index.js"
+    "superdense": "./dist/index.js"
   },
   "files": [
     "dist",
@@ -22,7 +22,7 @@
     "dev": "tsx src/index.ts studio --no-open",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "prepublishOnly": "pnpm --filter=@road42/core --filter=@road42/server --filter=@road42/web run build && node scripts/build.mjs"
+    "prepublishOnly": "pnpm --filter=@nimrobo/superdense-core --filter=@nimrobo/superdense-server --filter=@nimrobo/superdense-web run build && node scripts/build.mjs"
   },
   "dependencies": {
     "@fastify/static": "^7.0.4",
@@ -31,8 +31,8 @@
     "open": "^10.1.0"
   },
   "devDependencies": {
-    "@road42/core": "workspace:*",
-    "@road42/server": "workspace:*",
+    "@nimrobo/superdense-core": "workspace:*",
+    "@nimrobo/superdense-server": "workspace:*",
     "@types/better-sqlite3": "^7.6.11",
     "@types/node": "^20.14.0",
     "esbuild": "^0.24.0",
@@ -42,7 +42,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/nimrobo/road42.git"
+    "url": "https://github.com/nimrobo/superdense.git"
   },
   "keywords": [
     "claude",

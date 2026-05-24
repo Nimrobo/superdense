@@ -6,10 +6,10 @@ describe('prompt extraction', () => {
     const prompt = extractMeaningfulPrompt(`
 <system_instruction>
 You are working inside Conductor, a Mac app that lets the user run many coding agents in parallel.
-Your work should take place in /Users/virangjhaveri/conductor/workspaces/road42/semarang.
+Your work should take place in /Users/virangjhaveri/conductor/workspaces/superdense/semarang.
 </system_instruction>
 <environment_context>
-{"cwd":"/Users/virangjhaveri/conductor/workspaces/road42/semarang"}
+{"cwd":"/Users/virangjhaveri/conductor/workspaces/superdense/semarang"}
 </environment_context>
 
 can the claude code, codex, open code adapter figure out the plan mode enter and exit events from the session logs and then emit that to our internal system as well
@@ -20,8 +20,8 @@ can the claude code, codex, open code adapter figure out the plan mode enter and
 
   it('uses command args when present', () => {
     expect(extractMeaningfulPrompt(`
-<command-name>/road42</command-name>
-<command-message>road42</command-message>
+<command-name>/superdense</command-name>
+<command-message>superdense</command-message>
 <command-args>Find my best coding session</command-args>
 `)).toBe('Find my best coding session');
   });

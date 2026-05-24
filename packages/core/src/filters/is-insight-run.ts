@@ -3,7 +3,7 @@ import type { Filter } from './types.js';
 export const isInsightRunFilter: Filter = {
   name: 'is_insight_run',
   title: 'Is insight run',
-  description: 'Matches sessions whose first user message contains a Road42 insight marker. Optionally restrict to a specific recipe name.',
+  description: 'Matches sessions whose first user message contains a Superdense insight marker. Optionally restrict to a specific recipe name.',
   usesSystemData: true,
   paramsSchema: {
     type: 'object',

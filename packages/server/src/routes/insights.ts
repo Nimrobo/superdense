@@ -5,7 +5,7 @@ import {
   getInsightRecipe,
   listInsightRecipes,
   listInsightRuns,
-} from '@road42/core';
+} from '@nimrobo/superdense-core';
 
 export async function registerInsightsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/insights/recipes', async () => ({ items: listInsightRecipes() }));
@@ -20,8 +20,8 @@ export async function registerInsightsRoutes(app: FastifyInstance): Promise<void
     const runId = randomUUID();
     const body = assembleInsightPrompt(name, runId);
     reply.header('content-type', 'text/markdown; charset=utf-8');
-    reply.header('x-road42-run-id', runId);
-    reply.header('x-road42-insight', name);
+    reply.header('x-superdense-run-id', runId);
+    reply.header('x-superdense-insight', name);
     return body;
   });
 

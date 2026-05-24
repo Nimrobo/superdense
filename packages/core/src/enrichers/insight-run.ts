@@ -18,7 +18,7 @@ export const insightRunEnricher: Enricher = {
   returns: 'json',
   alwaysRun: true,
   description:
-    'Detects sessions that were started by pasting a Road42 insight prompt. Stores the insight name, run id, and the final `## Answer` block from the last assistant message.',
+    'Detects sessions that were started by pasting a Superdense insight prompt. Stores the insight name, run id, and the final `## Answer` block from the last assistant message.',
   async run(ctx) {
     let firstRealUserTextSeen = false;
     let marker: ReturnType<typeof parseInsightMarker> | null = null;

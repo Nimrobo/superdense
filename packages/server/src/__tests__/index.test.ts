@@ -54,7 +54,7 @@ describe('startServer', () => {
 
   it('does not swallow non-address-in-use listen errors', async () => {
     await expect(startServer({
-      host: 'not-a-real-road42-host.invalid',
+      host: 'not-a-real-superdense-host.invalid',
       port: 4242,
       portFallbackAttempts: 1,
     })).rejects.not.toMatchObject({ code: 'EADDRINUSE' });

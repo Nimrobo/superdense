@@ -3,12 +3,12 @@ import Database from 'better-sqlite3';
 
 vi.mock('../paths.js', () => ({
   DB_PATH: ':memory:',
-  ROAD42_HOME: '/tmp/road42-test',
-  GROUPS_DIR: '/tmp/road42-test/queries',
-  USER_FILTERS_DIR: '/tmp/road42-test/filters',
-  LEGACY_USER_FILTERS_DIR: '/tmp/road42-test/plugins',
-  USER_ENRICHERS_DIR: '/tmp/road42-test/enrichers',
-  ensureRoad42Dirs: vi.fn(),
+  SUPERDENSE_HOME: '/tmp/superdense-test',
+  GROUPS_DIR: '/tmp/superdense-test/queries',
+  USER_FILTERS_DIR: '/tmp/superdense-test/filters',
+  LEGACY_USER_FILTERS_DIR: '/tmp/superdense-test/plugins',
+  USER_ENRICHERS_DIR: '/tmp/superdense-test/enrichers',
+  ensureSuperdenseDirs: vi.fn(),
 }));
 
 import {
@@ -84,9 +84,9 @@ describe('sessions', () => {
 
   it('updates existing session on conflict', () => {
     upsertSession(BASE);
-    upsertSession({ ...BASE, pwd: '/Users/x/conductor/workspaces/road42/provo-v1/packages/core' });
-    expect(getSession('sess-1')!.pwd).toBe('/Users/x/conductor/workspaces/road42/provo-v1/packages/core');
-    expect(getSession('sess-1')!.projectKey).toBe('/Users/x/conductor/workspaces/road42');
+    upsertSession({ ...BASE, pwd: '/Users/x/conductor/workspaces/superdense/provo-v1/packages/core' });
+    expect(getSession('sess-1')!.pwd).toBe('/Users/x/conductor/workspaces/superdense/provo-v1/packages/core');
+    expect(getSession('sess-1')!.projectKey).toBe('/Users/x/conductor/workspaces/superdense');
   });
 
   it('backfills projectKey when migrating a v1 database', () => {
@@ -122,7 +122,7 @@ describe('sessions', () => {
         'claude-code',
         'abc',
         '/tmp/abc.jsonl',
-        '/Users/x/conductor/workspaces/road42/provo-v1/packages/core',
+        '/Users/x/conductor/workspaces/superdense/provo-v1/packages/core',
         null,
         null,
         null,
@@ -138,7 +138,7 @@ describe('sessions', () => {
 
       expect(db.pragma('user_version', { simple: true })).toBe(2);
       expect(db.prepare('SELECT project_key FROM sessions WHERE id = ?').get('old'))
-        .toEqual({ project_key: '/Users/x/conductor/workspaces/road42' });
+        .toEqual({ project_key: '/Users/x/conductor/workspaces/superdense' });
     } finally {
       db.close();
     }
@@ -419,8 +419,8 @@ describe('stats aggregates', () => {
   });
 
   it('getStatsTotals counts Conductor sibling workspaces as one project', () => {
-    upsertSession({ ...BASE, id: 's1', pwd: '/Users/x/conductor/workspaces/road42/provo-v1' });
-    upsertSession({ ...BASE, id: 's2', pwd: '/Users/x/conductor/workspaces/road42/provo-v2/packages/core' });
+    upsertSession({ ...BASE, id: 's1', pwd: '/Users/x/conductor/workspaces/superdense/provo-v1' });
+    upsertSession({ ...BASE, id: 's2', pwd: '/Users/x/conductor/workspaces/superdense/provo-v2/packages/core' });
     upsertSession({ ...BASE, id: 's3', pwd: '/Users/x/conductor/workspaces/other/provo-v1' });
 
     expect(getStatsTotals().distinctPwds).toBe(2);
@@ -455,13 +455,13 @@ describe('stats aggregates', () => {
   });
 
   it('getTopPwds groups Conductor sibling workspaces by projectKey', () => {
-    upsertSession({ ...BASE, id: 's1', pwd: '/Users/x/conductor/workspaces/road42/provo-v1' });
-    upsertSession({ ...BASE, id: 's2', pwd: '/Users/x/conductor/workspaces/road42/provo-v2/packages/core' });
+    upsertSession({ ...BASE, id: 's1', pwd: '/Users/x/conductor/workspaces/superdense/provo-v1' });
+    upsertSession({ ...BASE, id: 's2', pwd: '/Users/x/conductor/workspaces/superdense/provo-v2/packages/core' });
     upsertSession({ ...BASE, id: 's3', pwd: '/Users/x/conductor/workspaces/other/provo-v1' });
 
     const tops = getTopPwds(5);
 
-    expect(tops[0]).toEqual({ pwd: '/Users/x/conductor/workspaces/road42', count: 2 });
+    expect(tops[0]).toEqual({ pwd: '/Users/x/conductor/workspaces/superdense', count: 2 });
     expect(tops[1]).toEqual({ pwd: '/Users/x/conductor/workspaces/other', count: 1 });
   });
 

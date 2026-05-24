@@ -17,7 +17,7 @@ afterEach(async () => {
 });
 
 async function makeTempDir(): Promise<string> {
-  tempDir = await mkdtemp(join(tmpdir(), 'road42-opencode-test-'));
+  tempDir = await mkdtemp(join(tmpdir(), 'superdense-opencode-test-'));
   return tempDir;
 }
 

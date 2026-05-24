@@ -2,12 +2,12 @@ import { vi, describe, it, expect, beforeEach } from 'vitest';
 
 vi.mock('../../paths.js', () => ({
   DB_PATH: ':memory:',
-  ROAD42_HOME: '/tmp/road42-test',
-  GROUPS_DIR: '/tmp/road42-test/queries',
-  USER_FILTERS_DIR: '/tmp/road42-test/filters',
-  LEGACY_USER_FILTERS_DIR: '/tmp/road42-test/plugins',
-  USER_ENRICHERS_DIR: '/tmp/road42-test/enrichers',
-  ensureRoad42Dirs: vi.fn(),
+  SUPERDENSE_HOME: '/tmp/superdense-test',
+  GROUPS_DIR: '/tmp/superdense-test/queries',
+  USER_FILTERS_DIR: '/tmp/superdense-test/filters',
+  LEGACY_USER_FILTERS_DIR: '/tmp/superdense-test/plugins',
+  USER_ENRICHERS_DIR: '/tmp/superdense-test/enrichers',
+  ensureSuperdenseDirs: vi.fn(),
 }));
 
 import { getDb, upsertSession } from '../../db.js';
@@ -46,13 +46,13 @@ describe('getComebackProjects', () => {
 
   it('groups Conductor sibling workspaces for comeback projects', () => {
     const now = utcNoon(2026, 5, 21);
-    upsertSession({ ...BASE, id: 'old', pwd: '/Users/x/conductor/workspaces/road42/provo-v1', modifiedAt: now - 40 * DAY });
-    upsertSession({ ...BASE, id: 'new', pwd: '/Users/x/conductor/workspaces/road42/provo-v2', modifiedAt: now - 2 * DAY });
+    upsertSession({ ...BASE, id: 'old', pwd: '/Users/x/conductor/workspaces/superdense/provo-v1', modifiedAt: now - 40 * DAY });
+    upsertSession({ ...BASE, id: 'new', pwd: '/Users/x/conductor/workspaces/superdense/provo-v2', modifiedAt: now - 2 * DAY });
 
     const items = getComebackProjects(now);
 
     expect(items).toHaveLength(1);
-    expect(items[0]!.pwd).toBe('/Users/x/conductor/workspaces/road42');
+    expect(items[0]!.pwd).toBe('/Users/x/conductor/workspaces/superdense');
   });
 
   it('does not flag projects with a recent prior session', () => {
@@ -104,9 +104,9 @@ describe('getDayKinds', () => {
 
   it('uses projectKey for focus and scatter project counts', () => {
     const now = utcNoon(2026, 5, 21);
-    upsertSession({ ...BASE, id: 's1', pwd: '/Users/x/conductor/workspaces/road42/provo-v1', modifiedAt: now - 1 * DAY });
-    upsertSession({ ...BASE, id: 's2', pwd: '/Users/x/conductor/workspaces/road42/provo-v2', modifiedAt: now - 1 * DAY });
-    upsertSession({ ...BASE, id: 's3', pwd: '/Users/x/conductor/workspaces/road42/provo-v3', modifiedAt: now - 1 * DAY });
+    upsertSession({ ...BASE, id: 's1', pwd: '/Users/x/conductor/workspaces/superdense/provo-v1', modifiedAt: now - 1 * DAY });
+    upsertSession({ ...BASE, id: 's2', pwd: '/Users/x/conductor/workspaces/superdense/provo-v2', modifiedAt: now - 1 * DAY });
+    upsertSession({ ...BASE, id: 's3', pwd: '/Users/x/conductor/workspaces/superdense/provo-v3', modifiedAt: now - 1 * DAY });
 
     const kinds = getDayKinds(now, 7);
 
