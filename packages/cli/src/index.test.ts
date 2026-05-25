@@ -447,11 +447,11 @@ describe('superdense cli agent commands', () => {
     expect(existsSync(join(claudeSkill, 'agents', 'openai.yaml'))).toBe(true);
     expect(existsSync(join(codexSkill, 'agents', 'openai.yaml'))).toBe(true);
     expect(json(readFileSync(join(claudeSkill, '.superdense-install.json'), 'utf8'))).toMatchObject({
-      version: '0.1.0',
+      version: '0.1.2',
       scope: 'global',
     });
     expect(json(readFileSync(join(codexSkill, '.superdense-install.json'), 'utf8'))).toMatchObject({
-      version: '0.1.0',
+      version: '0.1.2',
       scope: 'global',
     });
     expect(json(out.stdout[0]!)).toEqual({
@@ -502,7 +502,7 @@ describe('superdense cli agent commands', () => {
     expect(existsSync(join(root, 'global-claude', 'superdense'))).toBe(false);
     expect(existsSync(join(root, 'global-codex', 'superdense'))).toBe(false);
     expect(json(readFileSync(join(claudeSkill, '.superdense-install.json'), 'utf8'))).toMatchObject({
-      version: '0.1.0',
+      version: '0.1.2',
       scope: 'local',
     });
     expect(json(out.stdout[0]!)).toEqual({
@@ -567,7 +567,7 @@ describe('superdense cli agent commands', () => {
 
     await runCli(['studio', '--no-open'], out.io);
 
-    expect(out.stdout[0]).toBe('[superdense] hint: skill outdated (0.0.1 -> 0.1.0). Run `superdense skill install` to update.');
+    expect(out.stdout[0]).toBe('[superdense] hint: skill outdated (0.0.1 -> 0.1.2). Run `superdense skill install` to update.');
     expect(existsSync(join(claudeSkill, '.superdense-install.json'))).toBe(false);
     expect(existsSync(join(codexSkill, '.superdense-install.json'))).toBe(false);
     expect(startServer).toHaveBeenCalled();

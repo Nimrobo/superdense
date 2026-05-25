@@ -1,7 +1,7 @@
 ---
 name: superdense
-version: 0.1.0
-description: Find & read context prior AI-agent sessions. Use when the user asks about previous or other agent runs, needs context from earlier work, wants to understand what happened, compare attempts, audit decisions/tools/errors, or access the original session record.
+version: 0.1.2
+description: Find & read context prior AI-agent sessions. Use when the user asks about previous or other agent runs, needs context from earlier work, wants to understand what happened, compare attempts, audit decisions/tools/errors, plan-mode behavior, or access the original session record.
 ---
 
 # Superdense Stored Sessions
@@ -9,13 +9,13 @@ description: Find & read context prior AI-agent sessions. Use when the user asks
 ## Concepts
 
 - **Session** — one stored agent run, identified by `<adapter>:<sessionId>` (e.g. `codex:abc-123`).
-- **Index** — local SQLite catalog of discovered sessions and their enrichments. `superdense index` rescans adapter directories, runs enrichers on new/changed sessions (version-checked, idempotent), and re-evaluates saved queries.
-- **Enrichment** — precomputed metadata attached to a session and stored in the index. Produced during `superdense index`; cheap to read.
+- **Project key** — normalized project identity used to group related workspaces. For Conductor paths, `/Users/x/conductor/workspaces/superdense/casablanca/packages/core` has project key `/Users/x/conductor/workspaces/superdense`; outside Conductor, project key equals `pwd`.
+- **Session filter** — query filter named `session`; use it for agent, project, `pwd`, time, errors, tools, commands, event count, and plan-mode fields.
 - **Compactor** — on-demand view that re-reads the session log and prints to stdout. Only `salience` (gist) and `trace` (timeline).
 
 ## Workflow
 
-Use the CLI as a staged inspection pipeline: candidate discovery → triage with metadata/enrichments → compact only what's relevant.
+Use the CLI as a staged inspection pipeline: candidate discovery → metadata triage → compact only what's relevant.
 
 **Precondition.** Refresh the index only when the user asks about recent/latest work, new sessions may have appeared, or results look stale:
 
@@ -31,9 +31,10 @@ superdense index
      superdense session list --q "search text" --limit 20
      ```
 
-   - `superdense query` — use whenever the search needs a field `--q` doesn't cover: agent, project, time bounds, `hasErrors`, `toolUsed`, `cliUsed`, `eventCount`, transcript filters, or any `and`/`or`/`not` combinator. Ad hoc, not saved:
+   - `superdense query` — use whenever the search needs a field `--q` doesn't cover: agent, project, time bounds, `hasErrors`, `toolUsed`, `cliUsed`, `eventCount`, plan-mode filters, transcript filters, or any `and`/`or`/`not` combinator. Ad hoc, not saved. Inspect the live schema first for plan-mode or project-scoped searches:
 
      ```bash
+     superdense filter show session
      superdense query --query '<query-json>' --limit 20
      superdense query --query @query.json --limit 20
      ```
@@ -47,7 +48,7 @@ superdense index
      superdense saved-query save --name "name" --query @query.json
      ```
 
-2. Triage candidates before compacting. Prefer session metadata and existing enrichments to raw logs:
+2. Triage candidates before compacting. Prefer session metadata to raw logs; inspect session details only when metadata is not enough:
 
    ```bash
    superdense session show <session-id>
@@ -66,11 +67,11 @@ superdense index
 
 ## Metadata Guidance
 
-Use metadata to decide whether a session is worth compacting. Useful signals include the user's prompt, working directory, tools or commands used, errors, touched paths, and any existing enrichments that identify the session's shape.
+Use metadata to decide whether a session is worth compacting. Useful signals include the user's prompt, working directory, project key, tools or commands used, errors, touched paths, and plan-mode fields.
 
 ## Query Guidance
 
-Queries are filter JSON plus optional post-filter enrichers. `--query` accepts inline JSON or `@path/to/query.json`.
+Queries are filter JSON. `--query` accepts inline JSON or `@path/to/query.json`.
 
 Before guessing params, inspect the live filter schema:
 
@@ -78,18 +79,53 @@ Before guessing params, inspect the live filter schema:
 superdense filter show session
 ```
 
-Minimal example:
+Project-wide example across Conductor sibling workspaces:
 
 ```json
 {
   "filters": {
     "filter": {
       "name": "session",
-      "params": { "agent": "codex", "pwdContains": "superdense", "hasErrors": true }
+      "params": { "agent": "codex", "projectContains": "superdense" }
     }
   }
 }
 ```
+
+Specific workspace/path example:
+
+```json
+{
+  "filters": {
+    "filter": {
+      "name": "session",
+      "params": { "pwdContains": "casablanca", "hasErrors": true }
+    }
+  }
+}
+```
+
+Plan-mode fields are exposed through the `session` filter:
+
+```json
+{
+  "filters": {
+    "filter": {
+      "name": "session",
+      "params": {
+        "enteredPlanMode": true,
+        "planUnclosed": false,
+        "planFinalized": true,
+        "planDurationMs": { "op": ">", "value": 300000 },
+        "toolUsedInPlan": { "name": "Edit", "min": 1 },
+        "userPromptsInPlan": { "op": ">", "value": 3 }
+      }
+    }
+  }
+}
+```
+
+Use `pwd` / `pwdContains` for the recorded working directory. Use `project` / `projectContains` for the normalized project key; in Conductor this finds sibling workspaces under the same project, while outside Conductor it is the same value as `pwd`.
 
 See [`QUERY_REFERENCE.md`](./QUERY_REFERENCE.md) for full filter schemas, combinator examples, timestamp formats, and the compactor registry.
 
@@ -97,9 +133,9 @@ See [`QUERY_REFERENCE.md`](./QUERY_REFERENCE.md) for full filter schemas, combin
 
 Run a compactor only after triage narrows the candidate set; compactors re-read the full session each time.
 
-Use `salience` when the user needs the gist of a session: what the user wanted, what happened, what changed, important decisions, outcomes, and failures.
+Use `salience` when the user needs the gist of a session: what the user wanted, what happened, what changed, important decisions, outcomes, failures, plan-mode boundaries, and proposed plans.
 
-Use `trace` when order matters: timelines, workflow analysis, tool or command sequences, comparing attempts, debugging how a run unfolded, or explaining why one path was chosen over another.
+Use `trace` when order matters: timelines, mode transitions, workflow analysis, tool or command sequences, comparing attempts, debugging how a run unfolded, or explaining why one path was chosen over another. Prefer it for plan-mode chronology.
 
 ## Raw Source Policy
 
@@ -109,6 +145,6 @@ Treat `superdense session path <session-id>` and any command using `--include-pa
 superdense session path <session-id>
 ```
 
-Reveal paths or read raw session files only when the user asks for source access. If metadata, enrichments, and compactors are insufficient to answer accurately,then read the raw source.
+Reveal paths or read raw session files only when the user asks for source access. If metadata, session details, and compactors are insufficient to answer accurately, then read the raw source.
 
-Raw session files are large and can bloat context. Prefer metadata, enrichments, and compactors first. When subagent use is available and permitted, prefer a narrow raw-source inspection by another agent before self-reading. Self-read only the minimum raw source needed.
+Raw session files are large and can bloat context. Prefer metadata, session details, and compactors first. When subagent use is available and permitted, prefer a narrow raw-source inspection by another agent before self-reading. Self-read only the minimum raw source needed.
