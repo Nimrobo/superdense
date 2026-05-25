@@ -5,7 +5,7 @@ new_home >/dev/null
 
 # 13. studio boots and serves /api/stats + web HTML
 log="$(mktemp)"
-superdense studio --no-open --no-skill-check >"$log" 2>&1 &
+superdense studio --no-open --no-skill-check --no-update-check >"$log" 2>&1 &
 pid=$!
 
 # Wait up to 20s for the server to log the bound URL.
@@ -41,7 +41,7 @@ sleep 0.5
 
 new_home >/dev/null
 log2="$(mktemp)"
-superdense studio --no-open --no-skill-check >"$log2" 2>&1 &
+superdense studio --no-open --no-skill-check --no-update-check >"$log2" 2>&1 &
 pid2=$!
 url2=""
 for _ in $(seq 1 40); do

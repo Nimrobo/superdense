@@ -28,13 +28,15 @@
     "@fastify/static": "^7.0.4",
     "better-sqlite3": "^11.3.0",
     "fastify": "^4.28.1",
-    "open": "^10.1.0"
+    "open": "^10.1.0",
+    "semver": "^7.8.1"
   },
   "devDependencies": {
     "@nimrobo/superdense-core": "workspace:*",
     "@nimrobo/superdense-server": "workspace:*",
     "@types/better-sqlite3": "^7.6.11",
     "@types/node": "^20.14.0",
+    "@types/semver": "^7.7.1",
     "esbuild": "^0.24.0",
     "tsx": "^4.16.0",
     "typescript": "^5.5.0",
