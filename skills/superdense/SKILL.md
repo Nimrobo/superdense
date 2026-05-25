@@ -137,6 +137,12 @@ Use `salience` when the user needs the gist of a session: what the user wanted, 
 
 Use `trace` when order matters: timelines, mode transitions, workflow analysis, tool or command sequences, comparing attempts, debugging how a run unfolded, or explaining why one path was chosen over another. Prefer it for plan-mode chronology.
 
+## Parallel Comparison
+
+Use subagents for comparison when there are many sessions, attempts, or compacted outputs and pattern-finding would bloat the main context. This is for comparing compact evidence and extracting insights, not for dumping raw source.
+
+Create or select a bounded session list for each cohort, hypothesis, or attempted approach. Give each subagent one list and ask it to compact or summarize only that slice. Bring back the compact findings, then compare them in the main thread for recurring patterns, contradictions, and useful insights.
+
 ## Raw Source Policy
 
 Treat `superdense session path <session-id>` and any command using `--include-path` as raw-source access:
