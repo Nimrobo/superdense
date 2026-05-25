@@ -15,7 +15,6 @@ RUN npm install -g /tmp/superdense.tgz \
  && superdense --version >/dev/null
 
 COPY scenarios /work/scenarios
-COPY fixtures /work/fixtures
 COPY run-all.sh /work/run-all.sh
 RUN chmod +x /work/run-all.sh /work/scenarios/*.sh
 

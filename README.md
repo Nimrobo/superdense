@@ -1,5 +1,10 @@
 # Superdense
 
+[![npm version](https://img.shields.io/npm/v/@nimrobo/superdense)](https://www.npmjs.com/package/@nimrobo/superdense)
+[![npm downloads](https://img.shields.io/npm/dm/@nimrobo/superdense)](https://www.npmjs.com/package/@nimrobo/superdense)
+[![Node.js](https://img.shields.io/node/v/@nimrobo/superdense)](https://www.npmjs.com/package/@nimrobo/superdense)
+[![License](https://img.shields.io/npm/l/@nimrobo/superdense)](./LICENSE)
+
 Uncover patterns, workflows, and failures from your coding agent sessions.
 
 Your coding agents ran a thousand sessions this month. Tool calls, loops, dead ends, the shape of your codebase under pressure — all of it sitting in sessions nobody reads.

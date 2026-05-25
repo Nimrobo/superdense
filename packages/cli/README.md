@@ -1,5 +1,10 @@
 # @nimrobo/superdense
 
+[![npm version](https://img.shields.io/npm/v/@nimrobo/superdense)](https://www.npmjs.com/package/@nimrobo/superdense)
+[![npm downloads](https://img.shields.io/npm/dm/@nimrobo/superdense)](https://www.npmjs.com/package/@nimrobo/superdense)
+[![Node.js](https://img.shields.io/node/v/@nimrobo/superdense)](https://www.npmjs.com/package/@nimrobo/superdense)
+[![License](https://img.shields.io/npm/l/@nimrobo/superdense)](../../LICENSE)
+
 A local studio + CLI that indexes the session logs your coding agents (Claude Code, Codex, ...) leave behind so you can search, filter, summarize, and replay them.
 
 ## Install
