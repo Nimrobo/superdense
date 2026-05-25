@@ -1,7 +1,23 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { EventEmitter } from 'node:events';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const spawnMock = vi.hoisted(() => vi.fn());
+const readlineMocks = vi.hoisted(() => ({
+  createInterface: vi.fn(),
+  question: vi.fn(),
+  close: vi.fn(),
+}));
+
+vi.mock('node:child_process', () => ({
+  spawn: spawnMock,
+}));
+
+vi.mock('node:readline/promises', () => ({
+  createInterface: readlineMocks.createInterface,
+}));
 
 vi.mock('@nimrobo/superdense-server', () => ({
   startServer: vi.fn(),
@@ -73,10 +89,12 @@ const sessionTwo = {
 
 const originalClaudeSkillsDir = process.env.CLAUDE_SKILLS_DIR;
 const originalCodexSkillsDir = process.env.CODEX_SKILLS_DIR;
+const originalSkipUpdateCheck = process.env.SUPERDENSE_SKIP_UPDATE_CHECK;
 const originalCwd = process.cwd();
+const originalStdinIsTty = Object.getOwnPropertyDescriptor(process.stdin, 'isTTY');
 const tempRoots: string[] = [];
 
-function io() {
+function io(opts: { isTty?: boolean } = {}) {
   const stdout: string[] = [];
   const stderr: string[] = [];
   return {
@@ -85,7 +103,7 @@ function io() {
     io: {
       stdout: { log: (value: string) => stdout.push(value) },
       stderr: { error: (value: string) => stderr.push(value) },
-      isTty: false,
+      isTty: opts.isTty ?? false,
     },
   };
 }
@@ -94,10 +112,40 @@ function json(value: string) {
   return JSON.parse(value) as Record<string, unknown>;
 }
 
+function setStdinTty(value: boolean): void {
+  Object.defineProperty(process.stdin, 'isTTY', { configurable: true, value });
+}
+
+function mockSpawnExit(code = 0): void {
+  spawnMock.mockImplementation(() => {
+    const child = new EventEmitter();
+    process.nextTick(() => child.emit('close', code));
+    return child;
+  });
+}
+
+function mockLatestVersion(version: string): void {
+  vi.mocked(fetch).mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => ({ 'dist-tags': { latest: version } }),
+  } as Response);
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.stubGlobal('fetch', vi.fn());
+  mockLatestVersion('0.1.0');
+  mockSpawnExit(0);
+  readlineMocks.createInterface.mockReturnValue({
+    question: readlineMocks.question,
+    close: readlineMocks.close,
+  });
+  readlineMocks.question.mockResolvedValue('');
+  setStdinTty(false);
   delete process.env.CLAUDE_SKILLS_DIR;
   delete process.env.CODEX_SKILLS_DIR;
+  delete process.env.SUPERDENSE_SKIP_UPDATE_CHECK;
   vi.mocked(core.getSession).mockReturnValue(session);
   vi.mocked(core.listSessions).mockReturnValue([sessionTwo, session]);
   vi.mocked(core.countSessions).mockReturnValue(2);
@@ -165,12 +213,17 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   process.chdir(originalCwd);
   for (const root of tempRoots.splice(0)) rmSync(root, { recursive: true, force: true });
   if (originalClaudeSkillsDir == null) delete process.env.CLAUDE_SKILLS_DIR;
   else process.env.CLAUDE_SKILLS_DIR = originalClaudeSkillsDir;
   if (originalCodexSkillsDir == null) delete process.env.CODEX_SKILLS_DIR;
   else process.env.CODEX_SKILLS_DIR = originalCodexSkillsDir;
+  if (originalSkipUpdateCheck == null) delete process.env.SUPERDENSE_SKIP_UPDATE_CHECK;
+  else process.env.SUPERDENSE_SKIP_UPDATE_CHECK = originalSkipUpdateCheck;
+  if (originalStdinIsTty) Object.defineProperty(process.stdin, 'isTTY', originalStdinIsTty);
+  else delete (process.stdin as Partial<typeof process.stdin>).isTTY;
 });
 
 describe('superdense cli agent commands', () => {
@@ -196,6 +249,92 @@ describe('superdense cli agent commands', () => {
     expect(startServer).toHaveBeenCalledWith({ port: 5050, host: '127.0.0.1' });
     expect(open).not.toHaveBeenCalled();
     expect(out.stdout).toContain('[superdense] discovered 2 sessions.');
+  });
+
+  it('checks npm version on studio startup and does nothing when current', async () => {
+    const out = io();
+
+    await runCli(['studio', '--no-open', '--no-skill-check'], out.io);
+
+    expect(fetch).toHaveBeenCalledWith('https://registry.npmjs.org/@nimrobo%2fsuperdense', expect.objectContaining({
+      headers: { accept: 'application/json' },
+    }));
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(out.stdout[0]).toBe('[superdense] discovering sessions...');
+    expect(startServer).toHaveBeenCalled();
+  });
+
+  it('prints a non-tty npm update hint without mutating or blocking studio startup', async () => {
+    mockLatestVersion('0.2.0');
+    const out = io();
+
+    await runCli(['studio', '--no-open', '--no-skill-check'], out.io);
+
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(out.stdout[0]).toBe('[superdense] update available: 0.1.0 -> 0.2.0. Run `npm install -g @nimrobo/superdense@latest` to update.');
+    expect(out.stdout).toContain('[superdense] discovering sessions...');
+    expect(startServer).toHaveBeenCalled();
+  });
+
+  it('updates global npm and restarts studio when a tty user confirms', async () => {
+    mockLatestVersion('0.2.0');
+    setStdinTty(true);
+    readlineMocks.question.mockResolvedValue('y');
+    const out = io({ isTty: true });
+
+    const code = await runCli(['studio', '--no-open', '--no-skill-check'], out.io);
+
+    expect(code).toBe(0);
+    expect(readlineMocks.question).toHaveBeenCalledWith('Update Superdense 0.1.0 -> 0.2.0 with npm? [Y/n] ');
+    expect(spawnMock).toHaveBeenNthCalledWith(1, 'npm', ['install', '-g', '@nimrobo/superdense@latest'], expect.objectContaining({
+      stdio: 'inherit',
+    }));
+    expect(spawnMock).toHaveBeenNthCalledWith(2, 'superdense', ['studio', '--no-open', '--no-skill-check'], expect.objectContaining({
+      stdio: 'inherit',
+      env: expect.objectContaining({ SUPERDENSE_SKIP_UPDATE_CHECK: '1' }),
+    }));
+    expect(startServer).not.toHaveBeenCalled();
+    expect(out.stdout).toEqual([
+      '[superdense] updating with `npm install -g @nimrobo/superdense@latest`...',
+      '[superdense] update installed; restarting studio...',
+    ]);
+  });
+
+  it('continues launching current studio when a tty user declines npm update', async () => {
+    mockLatestVersion('0.2.0');
+    setStdinTty(true);
+    readlineMocks.question.mockResolvedValue('n');
+    const out = io({ isTty: true });
+
+    await runCli(['studio', '--no-open', '--no-skill-check'], out.io);
+
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(startServer).toHaveBeenCalled();
+    expect(out.stdout).toContain('[superdense] discovering sessions...');
+  });
+
+  it('does not fail studio startup when the npm registry check fails', async () => {
+    vi.mocked(fetch).mockRejectedValue(new Error('offline'));
+    const out = io();
+
+    await runCli(['studio', '--no-open', '--no-skill-check'], out.io);
+
+    expect(out.stderr).toEqual(['[superdense] update check skipped: offline']);
+    expect(startServer).toHaveBeenCalled();
+  });
+
+  it('skips npm update checks with the flag and restart guard env', async () => {
+    const flagged = io();
+    await runCli(['studio', '--no-open', '--no-skill-check', '--no-update-check'], flagged.io);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(startServer).toHaveBeenCalledTimes(1);
+
+    process.env.SUPERDENSE_SKIP_UPDATE_CHECK = '1';
+    const guarded = io();
+    await runCli(['studio', '--no-open', '--no-skill-check'], guarded.io);
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(startServer).toHaveBeenCalledTimes(2);
   });
 
   it('lists sessions with filters and paging without exposing logPath by default', async () => {

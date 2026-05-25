@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 import { readFile } from 'node:fs/promises';
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline/promises';
+import semver from 'semver';
 import {
   assembleInsightPrompt,
   CLAUDE_SKILLS_DIR,
@@ -46,6 +48,10 @@ import {
 import { startServer } from '@nimrobo/superdense-server';
 import open from 'open';
 
+const CLI_PACKAGE_NAME = '@nimrobo/superdense';
+const NPM_REGISTRY_PACKAGE_URL = `https://registry.npmjs.org/${CLI_PACKAGE_NAME.replace('/', '%2f')}`;
+const SKIP_UPDATE_CHECK_ENV = 'SUPERDENSE_SKIP_UPDATE_CHECK';
+
 interface CliIo {
   stdout: Pick<typeof console, 'log'>;
   stderr: Pick<typeof console, 'error'>;
@@ -65,6 +71,11 @@ interface SkillInstallTarget {
   scope: SkillScope;
   claudeRoot: string;
   codexRoot: string;
+}
+
+interface CliPackageJson {
+  name?: string;
+  version?: string;
 }
 
 function parseArgs(argv: string[]): { cmd: string; args: string[]; flags: Record<string, string | boolean> } {
@@ -692,6 +703,89 @@ async function confirm(prompt: string): Promise<boolean> {
   }
 }
 
+function cliPackageVersion(): string {
+  const moduleDir = dirname(fileURLToPath(import.meta.url));
+  const packageJsonPath = [
+    join(moduleDir, '..', 'package.json'),
+    join(moduleDir, 'package.json'),
+  ].find((candidate) => existsSync(candidate));
+  if (!packageJsonPath) throw new Error('CLI package.json not found');
+
+  const parsed = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as CliPackageJson;
+  if (parsed.name !== CLI_PACKAGE_NAME) throw new Error(`unexpected CLI package name: ${parsed.name ?? '(missing)'}`);
+  if (typeof parsed.version !== 'string' || !semver.valid(parsed.version)) {
+    throw new Error(`invalid CLI package version: ${parsed.version ?? '(missing)'}`);
+  }
+  return parsed.version;
+}
+
+async function fetchLatestCliVersion(): Promise<string> {
+  const response = await fetch(NPM_REGISTRY_PACKAGE_URL, {
+    headers: { accept: 'application/json' },
+    signal: AbortSignal.timeout(2500),
+  });
+  if (!response.ok) throw new Error(`npm registry returned ${response.status}`);
+
+  const body = await response.json() as { 'dist-tags'?: { latest?: unknown } };
+  const latest = body['dist-tags']?.latest;
+  if (typeof latest !== 'string' || !semver.valid(latest)) {
+    throw new Error('npm registry response did not include a valid latest version');
+  }
+  return latest;
+}
+
+function spawnAndWait(command: string, args: string[], env: NodeJS.ProcessEnv = process.env): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { stdio: 'inherit', env });
+    child.once('error', reject);
+    child.once('close', (code) => resolve(code ?? 1));
+  });
+}
+
+async function checkNpmUpdateForStudio(
+  argv: string[],
+  io: CliIo,
+): Promise<{ restarted: boolean; exitCode: number }> {
+  let current: string;
+  let latest: string;
+  try {
+    current = cliPackageVersion();
+    latest = await fetchLatestCliVersion();
+  } catch (err) {
+    io.stderr.error(`[superdense] update check skipped: ${err instanceof Error ? err.message : String(err)}`);
+    return { restarted: false, exitCode: 0 };
+  }
+
+  if (!semver.gt(latest, current)) return { restarted: false, exitCode: 0 };
+
+  const installCommand = `npm install -g ${CLI_PACKAGE_NAME}@latest`;
+  if (!io.isTty || !process.stdin.isTTY) {
+    io.stdout.log(`[superdense] update available: ${current} -> ${latest}. Run \`${installCommand}\` to update.`);
+    return { restarted: false, exitCode: 0 };
+  }
+
+  if (!(await confirm(`Update Superdense ${current} -> ${latest} with npm? [Y/n] `))) {
+    return { restarted: false, exitCode: 0 };
+  }
+
+  io.stdout.log(`[superdense] updating with \`${installCommand}\`...`);
+  try {
+    const updateCode = await spawnAndWait('npm', ['install', '-g', `${CLI_PACKAGE_NAME}@latest`]);
+    if (updateCode !== 0) {
+      io.stderr.error(`[superdense] npm update failed with exit code ${updateCode}; continuing with ${current}.`);
+      return { restarted: false, exitCode: 0 };
+    }
+  } catch (err) {
+    io.stderr.error(`[superdense] npm update failed: ${err instanceof Error ? err.message : String(err)}; continuing with ${current}.`);
+    return { restarted: false, exitCode: 0 };
+  }
+
+  io.stdout.log('[superdense] update installed; restarting studio...');
+  const restartEnv = { ...process.env, [SKIP_UPDATE_CHECK_ENV]: '1' };
+  const exitCode = await spawnAndWait('superdense', argv, restartEnv);
+  return { restarted: true, exitCode };
+}
+
 async function checkSkillsForStudio(io: CliIo, opts: { cwd: string }): Promise<void> {
   const name = 'superdense';
   const summary = studioSkillSummary(name, opts.cwd);
@@ -820,6 +914,7 @@ export async function runCli(argv: string[], io: CliIo = {
       '  discover            Discover sessions from adapters',
       '',
       'Studio options:',
+      '  --no-update-check   Skip the startup npm version check',
       '  --no-skill-check    Skip the startup skill freshness check',
     ].join('\n'));
     return 0;
@@ -831,6 +926,11 @@ export async function runCli(argv: string[], io: CliIo = {
 
   const explicitPort = flags.port != null;
   const port = explicitPort ? parseInt(String(flags.port), 10) : 4242;
+
+  if (!flags['no-update-check'] && process.env[SKIP_UPDATE_CHECK_ENV] !== '1') {
+    const update = await checkNpmUpdateForStudio(argv, io);
+    if (update.restarted) return update.exitCode;
+  }
 
   if (!flags['no-skill-check']) {
     await checkSkillsForStudio(io, { cwd: process.cwd() });
