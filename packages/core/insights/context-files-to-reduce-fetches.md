@@ -6,11 +6,11 @@ Every recommendation must be specific to this repo and backed by repeated eviden
 
 ## Before you start
 
-Load and follow the Superdense skill before running any `superdense` commands. If the agent environment cannot load skills, use the `superdense` CLI as a staged inspection pipeline: list candidates, inspect cheap enrichments first, then run compactors only on reduced candidates.
+Load and follow the Superdense skill for session discovery, enrichment triage, and compactor usage. This prompt only adds the insight-specific scope, rejection criteria, and output requirements below.
+
+If the Superdense skill is unavailable, use the Superdense CLI as a staged pipeline: metadata first, compactors only after triage. Do not duplicate CLI help in the final answer.
 
 Use Superdense only as the analysis tool for finding evidence in past sessions. Do not recommend changes to the Superdense tool itself in the final answer; only propose context files for the target repo.
-
-Do not start by running `superdense compactor run salience` across many sessions. Use cheap metadata, filters, and small candidate batches first.
 
 ## Scope and discovery rules
 
@@ -41,40 +41,15 @@ Prefer locations that future agents are likely to auto-load or discover through 
 - If the repo is clearly Gemini-only, allow `GEMINI.md`, or recommend configuring Gemini to read `AGENTS.md` if the repo is trying to share instructions across agents.
 - For longer deep-concept notes, use tracked docs such as `docs/agent-context/<topic>.md` only when the relevant `AGENTS.md` includes a short pointer explaining when agents should read that doc.
 
-## How to gather the data
-
-Run these `superdense` CLI commands. Prefer compacted views so you keep your own context manageable.
-
-```bash
-# Inspect the live filter schema first so repo scoping uses supported params.
-superdense filter show session
-
-# Conductor/repo-wide discovery. Replace the value with the shared project key
-# or stable repo substring you discover from session metadata for this repo.
-superdense query --query '{"filters":{"filter":{"name":"session","params":{"projectContains":"REPLACE_WITH_TARGET_REPO_KEY"}}}}' --limit 200
-
-# Fallback only when project scoping is unavailable.
-superdense session list --q "$(pwd)" --limit 200
-
-# Useful precomputed signals already on every session; use these before compactors.
-superdense session enrichments <session-id>
-
-# For reduced candidate sessions, use trace to inspect reads/searches.
-superdense compactor run trace <session-id>
-
-# For sessions that still look important after trace/enrichment triage.
-superdense compactor run salience <session-id>
-```
-
 ## Funnel strategy
 
 Use a cheap-to-expensive funnel so unnecessary sessions are removed before compaction:
 
-1. Start with repo-scoped, all-agent session discovery and cheap enrichments: `event_count`, `tool_counts`, `bash_cli_counts`, `has_errors`, and `fingerprint`.
+1. Start with repo-scoped, all-agent session discovery and cheap metadata/enrichments.
 2. Remove sessions that are too short, unrelated to this repo's recurring workflows, or have no evidence of file reads/searches.
 3. Group surviving sessions by the underlying fact the agent had to reconstruct. Do not count multiple sessions on the same feature/debug thread as independent proof of future reuse.
-4. Use `trace` on the reduced candidate set to identify repeated file reads, greps, and reconstruction patterns.
-5. Run `salience` only for sessions where the trace or enrichments suggest a real repeated context need across distinct workflows.
+4. Use compacted views only on the reduced candidate set to identify repeated file reads, greps, and reconstruction patterns.
+5. Compact only sessions where metadata or structural traces suggest a real repeated context need across distinct workflows.
 6. Pull raw transcripts only as a last resort when compactors cannot answer a specific evidence question.
 
 For broad scans, split candidate session IDs into batches and use sub-agents to inspect different batches for repeated fetch/re-derivation patterns. The main agent owns the final synthesis, de-duplicates overlapping findings, and enforces the output format. If sub-agents are unavailable, process the same batches sequentially and state that fallback.
