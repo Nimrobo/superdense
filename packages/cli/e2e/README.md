@@ -28,9 +28,12 @@ bash packages/cli/e2e/run-e2e.sh
 
 What it does:
 
-1. Builds `@nimrobo/superdense-core`, `@nimrobo/superdense-server`, `@nimrobo/superdense-web`.
-2. Runs `packages/cli/scripts/build.mjs` to produce the publishable bundle.
-3. `npm pack`s the CLI into a tarball.
+1. Runs `npm pack --workspace packages/cli`, which invokes the package `prepack`
+   lifecycle used for the npm release artifact.
+2. Verifies the tarball contains `dist/**`, `README.md`, `LICENSE`, and
+   `package.json`, and fails if `src/**`, tests, e2e files, scripts, or TypeScript
+   configs leak into the package.
+3. Copies that packed tarball into the Docker build context.
 4. Builds the `superdense-e2e` Docker image (Node 20 slim + jq + curl + sqlite3),
    `npm install -g`s the tarball inside.
 5. Runs every scenario in a fresh `$HOME` and reports `PASS` / `FAIL` per
