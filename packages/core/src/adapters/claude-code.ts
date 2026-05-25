@@ -203,6 +203,12 @@ async function* iterJsonlEvents(logPath: string): AsyncIterable<TranscriptEvent>
   // observed timestamp so the exit is not lost.
   let pendingMode: string | undefined;
   let lastTs: number | undefined;
+  // Supplemental detector: Claude Code SDK-entrypoint sessions never flip
+  // permissionMode even when the user approves an ExitPlanMode call. The
+  // authoritative signal is the row's top-level `toolUseResult` field: an
+  // object `{ plan: string, ... }` on approval, a string on rejection.
+  const exitPlanModeIds = new Set<string>();
+  let currentMode: 'plan' | 'default' = 'default';
   try {
     for await (const line of rl) {
       if (!line.trim()) continue;
@@ -217,10 +223,50 @@ async function* iterJsonlEvents(logPath: string): AsyncIterable<TranscriptEvent>
       }
       if (pendingMode != null && ts != null) {
         yield { ts, kind: 'mode_change', mode: pendingMode, prevMode: lastMode };
+        currentMode = pendingMode === 'plan' ? 'plan' : 'default';
         lastMode = pendingMode;
         pendingMode = undefined;
       }
-      yield* extractEvents(obj);
+
+      const tur = obj?.toolUseResult;
+      const isApproval =
+        tur != null &&
+        typeof tur === 'object' &&
+        !Array.isArray(tur) &&
+        typeof (tur as any).plan === 'string';
+      let resultIsExitPlanMode = false;
+      const content = obj?.message?.content;
+      if (Array.isArray(content)) {
+        for (const part of content) {
+          if (!part || typeof part !== 'object') continue;
+          if (part.type === 'tool_result' && typeof part.tool_use_id === 'string' && exitPlanModeIds.has(part.tool_use_id)) {
+            resultIsExitPlanMode = true;
+            break;
+          }
+        }
+      }
+
+      for (const ev of extractEvents(obj)) {
+        if (
+          ev.kind === 'tool_call' &&
+          ev.toolName === 'ExitPlanMode' &&
+          typeof ev.toolCallId === 'string'
+        ) {
+          exitPlanModeIds.add(ev.toolCallId);
+          if (currentMode === 'default') {
+            yield { ts: ev.ts, kind: 'mode_change', mode: 'plan', prevMode: 'default' };
+            currentMode = 'plan';
+            lastMode = 'plan';
+          }
+        }
+        yield ev;
+      }
+
+      if (resultIsExitPlanMode && isApproval && currentMode === 'plan') {
+        yield { ts, kind: 'mode_change', mode: 'default', prevMode: 'plan' };
+        currentMode = 'default';
+        lastMode = 'default';
+      }
     }
     if (pendingMode != null && lastTs != null) {
       yield { ts: lastTs, kind: 'mode_change', mode: pendingMode, prevMode: lastMode };

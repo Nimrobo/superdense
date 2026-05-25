@@ -242,4 +242,135 @@ describe('claudeCodeAdapter.iterEvents', () => {
       { kind: 'text', role: 'system', text: 'Actual system turn' },
     ]);
   });
+
+  it('emits mode_change to default after an approved ExitPlanMode tool_result (toolUseResult.plan object)', async () => {
+    const events = await collectEvents([
+      {
+        type: 'assistant',
+        timestamp: '2026-05-21T04:00:00.000Z',
+        permissionMode: 'plan',
+        message: {
+          role: 'assistant',
+          content: [
+            {
+              type: 'tool_use',
+              id: 'toolu_epm_approve_1',
+              name: 'ExitPlanMode',
+              input: { plan: '# Plan body' },
+            },
+          ],
+        },
+      },
+      {
+        type: 'user',
+        timestamp: '2026-05-21T04:00:01.000Z',
+        message: {
+          role: 'user',
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 'toolu_epm_approve_1',
+              content: 'User has approved your plan. You can now start coding.',
+            },
+          ],
+        },
+        toolUseResult: { plan: '# Plan body', isAgent: false, filePath: '/tmp/plan.md' },
+      },
+    ]);
+
+    const kinds = events.map((e) => e.kind);
+    expect(kinds).toContain('mode_change');
+    const lastModeChange = events.filter((e) => e.kind === 'mode_change').pop();
+    expect(lastModeChange).toMatchObject({ kind: 'mode_change', mode: 'default', prevMode: 'plan' });
+
+    const toolResultIdx = events.findIndex((e) => e.kind === 'tool_result' && e.toolCallId === 'toolu_epm_approve_1');
+    const modeChangeIdx = events.findIndex((e) => e.kind === 'mode_change' && e.mode === 'default');
+    expect(toolResultIdx).toBeGreaterThanOrEqual(0);
+    expect(modeChangeIdx).toBeGreaterThan(toolResultIdx);
+  });
+
+  it('does not emit mode_change for a rejected ExitPlanMode tool_result (toolUseResult string)', async () => {
+    const events = await collectEvents([
+      {
+        type: 'assistant',
+        timestamp: '2026-05-21T04:00:00.000Z',
+        permissionMode: 'plan',
+        message: {
+          role: 'assistant',
+          content: [
+            {
+              type: 'tool_use',
+              id: 'toolu_epm_reject_1',
+              name: 'ExitPlanMode',
+              input: { plan: '# Plan body' },
+            },
+          ],
+        },
+      },
+      {
+        type: 'user',
+        timestamp: '2026-05-21T04:00:01.000Z',
+        message: {
+          role: 'user',
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 'toolu_epm_reject_1',
+              content: "The user doesn't want to proceed with this tool use.",
+              is_error: true,
+            },
+          ],
+        },
+        toolUseResult: 'User rejected tool use',
+      },
+    ]);
+
+    const modeChanges = events.filter((e) => e.kind === 'mode_change');
+    expect(modeChanges).toHaveLength(1);
+    expect(modeChanges[0]).toMatchObject({ mode: 'plan' });
+  });
+
+  it('emits mode_change to plan before a subsequent ExitPlanMode tool_use after a prior approval', async () => {
+    const events = await collectEvents([
+      {
+        type: 'assistant',
+        timestamp: '2026-05-21T04:00:00.000Z',
+        permissionMode: 'plan',
+        message: {
+          role: 'assistant',
+          content: [
+            { type: 'tool_use', id: 'toolu_a', name: 'ExitPlanMode', input: { plan: '# A' } },
+          ],
+        },
+      },
+      {
+        type: 'user',
+        timestamp: '2026-05-21T04:00:01.000Z',
+        message: {
+          role: 'user',
+          content: [{ type: 'tool_result', tool_use_id: 'toolu_a', content: 'User has approved your plan.' }],
+        },
+        toolUseResult: { plan: '# A' },
+      },
+      {
+        type: 'assistant',
+        timestamp: '2026-05-21T04:00:02.000Z',
+        message: {
+          role: 'assistant',
+          content: [
+            { type: 'tool_use', id: 'toolu_b', name: 'ExitPlanMode', input: { plan: '# B' } },
+          ],
+        },
+      },
+    ]);
+
+    const modes = events.filter((e) => e.kind === 'mode_change').map((e: any) => e.mode);
+    expect(modes).toEqual(['plan', 'default', 'plan']);
+
+    const toolBIdx = events.findIndex((e) => e.kind === 'tool_call' && e.toolCallId === 'toolu_b');
+    const planEnterBeforeB = events
+      .slice(0, toolBIdx)
+      .filter((e) => e.kind === 'mode_change' && (e as any).mode === 'plan').length;
+    expect(planEnterBeforeB).toBe(2);
+  });
 });
