@@ -4,7 +4,7 @@
   "description": "Superdense — index, inspect, and summarize sessions from your coding agents.",
   "type": "module",
   "bin": {
-    "superdense": "./dist/index.js"
+    "superdense": "dist/index.js"
   },
   "files": [
     "dist",
@@ -22,7 +22,7 @@
     "dev": "tsx src/index.ts studio --no-open",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "prepublishOnly": "pnpm --filter=@nimrobo/superdense-core --filter=@nimrobo/superdense-server --filter=@nimrobo/superdense-web run build && node scripts/build.mjs"
+    "prepack": "pnpm --filter=@nimrobo/superdense-core --filter=@nimrobo/superdense-server --filter=@nimrobo/superdense-web run build && node scripts/build.mjs"
   },
   "dependencies": {
     "@fastify/static": "^7.0.4",
@@ -42,7 +42,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/nimrobo/superdense.git"
+    "url": "git+https://github.com/nimrobo/superdense.git"
   },
   "keywords": [
     "claude",
