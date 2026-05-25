@@ -1,4 +1,4 @@
 interface:
   display_name: "Superdense Stored Sessions"
-  short_description: "Recover context from saved agent sessions"
-  default_prompt: "Use $superdense to find relevant prior agent sessions and explain what happened without exposing raw records unless asked."
+  short_description: "Find and read prior AI-agent sessions"
+  default_prompt: "Use $superdense to find and read relevant prior AI-agent sessions, explain what happened, compare attempts, audit errors or plan-mode behavior, and avoid exposing raw records unless asked."

@@ -69,7 +69,7 @@ describe('salienceCompactor', () => {
     )) as {
       v: 2;
       timeline: Array<{ type: string; t: number; kind?: string; text?: string }>;
-      mutations: Array<{ tool: string; path?: string; arg?: string }>;
+      mutations: Array<{ tool: string; path?: string; arg?: string; count: number }>;
       errors: Array<{ tool?: string; sig: string }>;
     };
 
@@ -81,8 +81,8 @@ describe('salienceCompactor', () => {
       { type: 'assistant', t: 3, kind: 'final', text: 'Done — tests pass.' },
     ]);
     expect(out.mutations).toEqual([
-      { tool: 'Edit', path: '/repo/auth.ts' },
-      { tool: 'Bash', arg: "git commit -m 'fix auth'" },
+      { tool: 'Edit', path: '/repo/auth.ts', count: 1 },
+      { tool: 'Bash', arg: "git commit -m 'fix auth'", count: 1 },
     ]);
     expect(out.errors).toHaveLength(1);
     expect(out.errors[0]!.tool).toBe('Bash');
@@ -116,7 +116,7 @@ describe('salienceCompactor', () => {
       ]),
     )) as {
       timeline: Array<{ type: string; t: number; kind?: string; text?: string }>;
-      mutations: Array<{ tool: string; path?: string }>;
+      mutations: Array<{ tool: string; path?: string; count: number }>;
     };
 
     expect(out.timeline).toEqual([
@@ -128,7 +128,7 @@ describe('salienceCompactor', () => {
       { type: 'plan_exit', t: 5 },
       { type: 'assistant', t: 6, kind: 'final', text: 'Done — implemented.' },
     ]);
-    expect(out.mutations).toEqual([{ tool: 'Edit', path: '/repo/salience.ts' }]);
+    expect(out.mutations).toEqual([{ tool: 'Edit', path: '/repo/salience.ts', count: 1 }]);
   });
 
   it('captures Claude ExitPlanMode plans and skips synthetic interruption rows', async () => {
@@ -178,6 +178,54 @@ describe('salienceCompactor', () => {
       { type: 'plan_exit', t: 5 },
       { type: 'assistant', t: 6, kind: 'final', text: 'Done.' },
     ]);
+  });
+
+  it('replaces "PLEASE IMPLEMENT THIS PLAN" user echo with a placeholder so plan body is not duplicated', async () => {
+    const planBody = '# Plan\n\nFull plan body that should not appear twice in the timeline.';
+    const out = (await salienceCompactor.run(
+      makeCtx([
+        { kind: 'text', role: 'user', text: 'design the feature' },
+        { kind: 'mode_change', mode: 'plan' },
+        { kind: 'text', role: 'assistant', text: `<proposed_plan>\n${planBody}\n</proposed_plan>` },
+        { kind: 'mode_change', mode: 'default', prevMode: 'plan' },
+        { kind: 'text', role: 'user', text: `PLEASE IMPLEMENT THIS PLAN:\n${planBody}` },
+        { kind: 'text', role: 'assistant', text: 'Done.' },
+      ]),
+    )) as {
+      timeline: Array<{ type: string; t: number; kind?: string; text?: string }>;
+    };
+
+    const proposed = out.timeline.filter((i) => i.kind === 'proposed_plan');
+    expect(proposed).toHaveLength(1);
+
+    const echo = out.timeline.find(
+      (i) => i.type === 'user' && i.text?.startsWith('PLEASE IMPLEMENT THIS PLAN'),
+    );
+    expect(echo).toBeDefined();
+    expect(echo?.text).toBe(
+      'PLEASE IMPLEMENT THIS PLAN: [plan details were sent again — skipped for compaction]',
+    );
+    expect(echo?.text).not.toContain('Full plan body');
+
+    expect(out.timeline.some((i) => i.type === 'plan_enter')).toBe(true);
+    expect(out.timeline.some((i) => i.type === 'plan_exit')).toBe(true);
+    expect(out.timeline.some((i) => i.kind === 'final' && i.text === 'Done.')).toBe(true);
+  });
+
+  it('preserves single-line user feedback that starts with "PLEASE IMPLEMENT THIS PLAN:" verbatim', async () => {
+    const feedback = 'PLEASE IMPLEMENT THIS PLAN: this line should be there too';
+    const out = (await salienceCompactor.run(
+      makeCtx([
+        { kind: 'text', role: 'user', text: feedback },
+        { kind: 'text', role: 'assistant', text: 'Acknowledged.' },
+      ]),
+    )) as {
+      timeline: Array<{ type: string; t: number; kind?: string; text?: string }>;
+    };
+
+    const userItem = out.timeline.find((i) => i.type === 'user');
+    expect(userItem).toBeDefined();
+    expect(userItem?.text).toBe(feedback);
   });
 
   it('preserves full user and assistant narrative text while filtering standalone harness noise', async () => {
@@ -298,9 +346,60 @@ describe('salienceCompactor', () => {
           inputText: JSON.stringify({ file_path: '/repo/src/file.ts' }),
         },
       ]),
-    )) as { mutations: Array<{ tool: string; path?: string }> };
+    )) as { mutations: Array<{ tool: string; path?: string; count: number }> };
 
-    expect(out.mutations).toEqual([{ tool: 'Edit', path: '/repo/src/file.ts' }]);
+    expect(out.mutations).toEqual([{ tool: 'Edit', path: '/repo/src/file.ts', count: 1 }]);
+  });
+
+  it('deduplicates repeated mutations against the same target', async () => {
+    const out = (await salienceCompactor.run(
+      makeCtx([
+        {
+          kind: 'tool_call',
+          role: 'assistant',
+          toolName: 'Edit',
+          inputText: JSON.stringify({ file_path: '/repo/src/file.ts' }),
+        },
+        {
+          kind: 'tool_call',
+          role: 'assistant',
+          toolName: 'Edit',
+          inputText: JSON.stringify({ file_path: '/repo/src/file.ts' }),
+        },
+        {
+          kind: 'tool_call',
+          role: 'assistant',
+          toolName: 'Edit',
+          inputText: JSON.stringify({ file_path: '/repo/src/file.ts' }),
+        },
+      ]),
+    )) as { mutations: Array<{ tool: string; path?: string; count: number }> };
+
+    expect(out.mutations).toEqual([{ tool: 'Edit', path: '/repo/src/file.ts', count: 3 }]);
+  });
+
+  it('reports omitted mutations while still counting repeats after the cap', async () => {
+    const events: Partial<TranscriptEvent>[] = Array.from({ length: 51 }, (_, idx) => ({
+      kind: 'tool_call',
+      role: 'assistant',
+      toolName: 'Edit',
+      inputText: JSON.stringify({ file_path: `/repo/src/file-${idx}.ts` }),
+    }));
+    events.push({
+      kind: 'tool_call',
+      role: 'assistant',
+      toolName: 'Edit',
+      inputText: JSON.stringify({ file_path: '/repo/src/file-0.ts' }),
+    });
+
+    const out = (await salienceCompactor.run(makeCtx(events))) as {
+      mutations: Array<{ tool: string; path?: string; count: number }>;
+      omitted?: Record<string, number>;
+    };
+
+    expect(out.mutations).toHaveLength(50);
+    expect(out.mutations[0]).toEqual({ tool: 'Edit', path: '/repo/src/file-0.ts', count: 2 });
+    expect(out.omitted?.mutations).toBe(1);
   });
 
   it('drops non-mutating tools from mutations', async () => {

@@ -7,6 +7,9 @@ const PROPOSED_PLAN_RE = /^<proposed_plan>[\s\S]*<\/proposed_plan>$/;
 const INTERRUPTED_USER_RE = /^\[Request interrupted by user for tool use\]$/i;
 const ENVIRONMENT_CONTEXT_RE = /^<environment_context>[\s\S]*<\/environment_context>$/;
 const TURN_ABORTED_RE = /^<turn_aborted>[\s\S]*<\/turn_aborted>$/;
+const PLEASE_IMPLEMENT_PLAN_RE = /^PLEASE IMPLEMENT THIS PLAN:[ \t]*\n/i;
+const PLAN_RESEND_PLACEHOLDER =
+  'PLEASE IMPLEMENT THIS PLAN: [plan details were sent again — skipped for compaction]';
 const SYNTHETIC_ASSISTANT_RE = /^No response requested\.$/i;
 const MUTATION_TOOLS = new Set(['Edit', 'Write', 'NotebookEdit', 'MultiEdit']);
 const COMMIT_RE = /^(git\s+(commit|push|rebase|merge|reset|tag)|gh\s+(pr|release))/;
@@ -47,6 +50,7 @@ interface Mutation {
   tool: string;
   path?: string;
   arg?: string;
+  count: number;
 }
 
 interface ErrorEntry {
@@ -160,6 +164,25 @@ export const salienceCompactor: Compactor<SalienceOutput> = {
       out.timeline.push({ ...item, t: timelineIdx } as TimelineItem);
     };
 
+    const recordMutation = (mutation: Omit<Mutation, 'count'>) => {
+      const key = mutation.path ?? mutation.arg ?? '';
+      const existing = out.mutations.find(
+        (item) => item.tool === mutation.tool && (item.path ?? item.arg ?? '') === key,
+      );
+      if (existing) {
+        existing.count++;
+        return;
+      }
+      if (out.mutations.length >= MAX_MUTATIONS) {
+        out.omitted = {
+          ...out.omitted,
+          mutations: (out.omitted?.mutations ?? 0) + 1,
+        };
+        return;
+      }
+      out.mutations.push({ ...mutation, count: 1 });
+    };
+
     const flushPendingAssistant = (kind?: 'final') => {
       if (!pendingAssistant) return;
       if (SYNTHETIC_ASSISTANT_RE.test(pendingAssistant.text)) {
@@ -198,7 +221,8 @@ export const salienceCompactor: Compactor<SalienceOutput> = {
         const text = timelineText(ev.text);
         if (!text) continue;
         if (isSyntheticUserText(text)) continue;
-        pushTimeline({ type: 'user', text });
+        const userText = PLEASE_IMPLEMENT_PLAN_RE.test(text) ? PLAN_RESEND_PLACEHOLDER : text;
+        pushTimeline({ type: 'user', text: userText });
         if (pendingInitialPlanEnter) {
           pushTimeline({ type: 'plan_enter' });
           pendingInitialPlanEnter = false;
@@ -233,14 +257,14 @@ export const salienceCompactor: Compactor<SalienceOutput> = {
           continue;
         }
         if (pendingAssistant?.kind === 'handoff') pendingAssistant = undefined;
-        if (currentMode !== 'plan' && out.mutations.length < MAX_MUTATIONS) {
+        if (currentMode !== 'plan') {
           if (MUTATION_TOOLS.has(ev.toolName)) {
             const path = extractPath(ev.inputText);
-            if (!isPlanFilePath(path)) out.mutations.push(path ? { tool: ev.toolName, path } : { tool: ev.toolName });
+            if (!isPlanFilePath(path)) recordMutation(path ? { tool: ev.toolName, path } : { tool: ev.toolName });
           } else if (ev.toolName === 'Bash') {
             const cmd = extractCommand(ev.inputText);
             if (cmd && COMMIT_RE.test(cmd.trim())) {
-              out.mutations.push({ tool: 'Bash', arg: clean(cmd, 120) });
+              recordMutation({ tool: 'Bash', arg: clean(cmd, 120) });
             }
           }
         }
