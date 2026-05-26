@@ -1,11 +1,18 @@
 {
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
   "release-type": "node",
+  "always-update": true,
+  "changelog-sections": [
+    { "type": "feat", "section": "Features" },
+    { "type": "fix", "section": "Bug Fixes" },
+    { "type": "docs", "section": "Documentation" }
+  ],
   "plugins": ["node-workspace"],
   "packages": {
-    "packages/cli": {
+    ".": {
       "package-name": "@nimrobo/superdense",
-      "component": "@nimrobo/superdense"
+      "component": "@nimrobo/superdense",
+      "extra-files": ["packages/cli/package.json"]
     },
     "packages/core": {
       "package-name": "@nimrobo/superdense-core",

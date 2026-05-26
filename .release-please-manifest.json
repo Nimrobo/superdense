@@ -1,5 +1,5 @@
 {
-  "packages/cli": "0.1.1",
+  ".": "0.1.1",
   "packages/core": "0.1.1",
   "packages/server": "0.1.1",
   "packages/web": "0.1.1"
