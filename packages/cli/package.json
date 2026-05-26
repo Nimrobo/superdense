@@ -45,7 +45,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nimrobo/superdense.git"
+    "url": "https://github.com/Nimrobo/superdense"
   },
   "keywords": [
     "claude",
