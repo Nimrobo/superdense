@@ -67,6 +67,20 @@ import { startServer } from '@nimrobo/superdense-server';
 import open from 'open';
 import { runCli } from './index.js';
 
+const cliPackageJson = JSON.parse(
+  readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+) as {
+  version: string;
+};
+const currentCliVersion = cliPackageJson.version;
+const newerCliVersion = (() => {
+  const parts = currentCliVersion.split('.').map(Number);
+  if (parts.length !== 3 || parts.some((part) => !Number.isInteger(part))) {
+    throw new Error(`unsupported test package version: ${currentCliVersion}`);
+  }
+  return `${parts[0]}.${parts[1]}.${parts[2] + 1}`;
+})();
+
 const session = {
   id: 'codex:abc123',
   agent: 'codex',
@@ -276,21 +290,21 @@ describe('superdense cli agent commands', () => {
   });
 
   it('prints a non-tty npm update hint without mutating or blocking studio startup', async () => {
-    mockLatestVersion('0.2.0');
+    mockLatestVersion(newerCliVersion);
     const out = io();
 
     await runCli(['studio', '--no-open', '--no-skill-check'], out.io);
 
     expect(spawnMock).not.toHaveBeenCalled();
     expect(out.stdout[0]).toBe(
-      '[superdense] update available: 0.1.1 -> 0.2.0. Run `npm install -g @nimrobo/superdense@latest` to update.',
+      `[superdense] update available: ${currentCliVersion} -> ${newerCliVersion}. Run \`npm install -g @nimrobo/superdense@latest\` to update.`,
     );
     expect(out.stdout).toContain('[superdense] discovering sessions...');
     expect(startServer).toHaveBeenCalled();
   });
 
   it('updates global npm and restarts studio when a tty user confirms', async () => {
-    mockLatestVersion('0.2.0');
+    mockLatestVersion(newerCliVersion);
     setStdinTty(true);
     readlineMocks.question.mockResolvedValue('y');
     const out = io({ isTty: true });
@@ -299,7 +313,7 @@ describe('superdense cli agent commands', () => {
 
     expect(code).toBe(0);
     expect(readlineMocks.question).toHaveBeenCalledWith(
-      'Update Superdense 0.1.1 -> 0.2.0 with npm? [Y/n] ',
+      `Update Superdense ${currentCliVersion} -> ${newerCliVersion} with npm? [Y/n] `,
     );
     expect(spawnMock).toHaveBeenNthCalledWith(
       1,
@@ -326,7 +340,7 @@ describe('superdense cli agent commands', () => {
   });
 
   it('continues launching current studio when a tty user declines npm update', async () => {
-    mockLatestVersion('0.2.0');
+    mockLatestVersion(newerCliVersion);
     setStdinTty(true);
     readlineMocks.question.mockResolvedValue('n');
     const out = io({ isTty: true });
