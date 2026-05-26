@@ -5,11 +5,25 @@
 [![Node.js](https://img.shields.io/node/v/@nimrobo/superdense)](https://www.npmjs.com/package/@nimrobo/superdense)
 [![License](https://img.shields.io/npm/l/@nimrobo/superdense)](./LICENSE)
 
-Uncover patterns, workflows, and failures from your coding agent sessions.
+Superdense helps coding agents learn from your past sessions.
 
-Your coding agents ran a thousand sessions this month. Tool calls, loops, dead ends, the shape of your codebase under pressure — all of it sitting in sessions nobody reads.
+Your agents have already explored your repos, debugged failures, retried commands, found workflows, and shipped code. Those sessions contain useful evidence: what broke, what worked, which files mattered, which commands repeated, and where the agent got stuck.
 
-Superdense indexes every session from Claude Code, Codex, and friends, and hands your agent the tool to query. Local CLI. No cloud.
+Raw logs are too long and scattered to reuse directly. Superdense indexes local sessions from Claude Code, Codex, OpenCode, and friends, lets agents search and filter them, then compacts the useful sessions so they can extract patterns, workflows, failures, and proof of work. Local CLI. No cloud.
+
+## Why use this?
+
+- **Find repo-specific skills to build** — scan prior sessions for repeated workflows that should become coding-agent skills.
+- **Reduce repeated context fetching** — find files, commands, and explanations agents keep rediscovering, then turn them into durable repo context.
+- **Find standout coding sessions** — rank sessions that best show technical depth, iteration, shipped outcomes, or founder grit.
+- **Mine recurring failures and workflows** — compact similar sessions to see where agents get stuck and which patterns keep coming back.
+
+## How Superdense works
+
+1. **Index** sessions from Claude Code, Codex, OpenCode, and similar tools.
+2. **Search and filter** by project, prompt, agent, branch, errors, tools, commands, plan mode, and other metadata.
+3. **Compact** selected sessions into structural or semantic summaries such as `trace` and `salience`.
+4. **Run insights** as reusable prompts that ask an agent to analyze compacted session evidence.
 
 ## Install
 
@@ -22,20 +36,23 @@ Requires Node 20+. The single `superdense` binary ships everything — the index
 
 ## What you get
 
-- **Studio** — a local web UI at `http://127.0.0.1:4242` that lists every session your agents have produced, with filters, queries, and compactor views.
-- **CLI** — agent-friendly JSON output for every operation, so your *other* agents can read your *previous* agents' work.
-- **Skill** — a packaged Claude/Codex skill that teaches agents how to use Superdense to inspect prior sessions.
+- **Studio** — a local web UI at `http://127.0.0.1:4242` for sessions, filters, saved queries, compactor views, and insight runs.
+- **CLI** — JSON-first commands so agents can retrieve candidate sessions, inspect metadata, and run compactors.
+- **Compactors** — small evidence views over huge logs: `salience` for what happened, `trace` for the sequence the agent followed.
+- **Insight recipes** — packaged prompts for higher-level analysis, including skill recommendations, durable context proposals, and session rankings.
+- **Skill** — a packaged Claude/Codex skill that teaches agents how to use Superdense during future work.
 
 ## Quickstart
 
 ```bash
 superdense studio              # boot the local UI (and discover sessions)
 superdense index               # incremental re-index
-superdense session list --q "billing"
+superdense session list --q "billing"       # retrieve candidate sessions
 superdense query --query '{"filters":{"filter":{"name":"session","params":{"agent":"codex"}}}}'
 superdense saved-query list
 superdense saved-query run <id>
-superdense compactor run salience <session-id>
+superdense compactor run salience <session-id>   # what happened?
+superdense compactor run trace <session-id>      # what sequence did the agent follow?
 superdense skill install       # install the superdense skill into Claude + Codex
 superdense help                # full command list
 ```
@@ -50,6 +67,7 @@ All non-`studio` commands emit JSON. See `superdense help` for the full surface.
 - **Saved queries** — named saved filters (+ optional enrichers) you can replay.
 - **Enrichers** — cheap per-session metadata producers (tool counts, fingerprints, error signals).
 - **Compactors** — heavier summarizers that read the raw log (e.g. `salience`, `trace`).
+- **Insight recipes** — reusable prompts that guide an agent through a compacted-session analysis, such as finding skills, context files, or standout sessions.
 
 ## Development
 
