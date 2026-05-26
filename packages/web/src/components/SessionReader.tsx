@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react';
-import { api, type CompactorName, type Session, type SessionCompactorResponse, type TranscriptEvent } from '../api.js';
+import {
+  api,
+  type CompactorName,
+  type Session,
+  type SessionCompactorResponse,
+  type TranscriptEvent,
+} from '../api.js';
 import {
   formatDuration,
   formatFullTime,
@@ -40,20 +46,36 @@ export function SessionReader({ id, onBack }: Props) {
   useEffect(() => {
     if (tab !== 'conversation' || events !== null) return;
     setLoadingEvents(true);
-    api.getTranscript(id, { limit: 2000 })
+    api
+      .getTranscript(id, { limit: 2000 })
       .then((r) => setEvents(r.items))
       .finally(() => setLoadingEvents(false));
   }, [tab, id, events]);
 
-  if (!session) return <div className="work-body"><div className="empty">Loading…</div></div>;
+  if (!session)
+    return (
+      <div className="work-body">
+        <div className="empty">Loading…</div>
+      </div>
+    );
 
   return (
     <>
       <SessionHeader session={session} onBack={onBack} />
       <div className="work-body">
         <div className="tabs">
-          <button className={`tab ${tab === 'conversation' ? 'active' : ''}`} onClick={() => setTab('conversation')}>Conversation</button>
-          <button className={`tab ${tab === 'summary' ? 'active' : ''}`} onClick={() => setTab('summary')}>Summary</button>
+          <button
+            className={`tab ${tab === 'conversation' ? 'active' : ''}`}
+            onClick={() => setTab('conversation')}
+          >
+            Conversation
+          </button>
+          <button
+            className={`tab ${tab === 'summary' ? 'active' : ''}`}
+            onClick={() => setTab('summary')}
+          >
+            Summary
+          </button>
         </div>
 
         {tab === 'conversation' && (
@@ -76,20 +98,30 @@ function SessionHeader({ session, onBack }: { session: Session; onBack: () => vo
 
   return (
     <div className="work-header session-reader-header">
-      <button className="back-btn" onClick={onBack}>← Back</button>
+      <button className="back-btn" onClick={onBack}>
+        ← Back
+      </button>
       <div className="work-heading">
         <div className="work-title">{title}</div>
         <div className="session-heading-meta">
-          <span className="session-project" title={session.pwd}>{project}</span>
-          <span className="session-id-chip mono" title={session.id}>ID {session.id}</span>
+          <span className="session-project" title={session.pwd}>
+            {project}
+          </span>
+          <span className="session-id-chip mono" title={session.id}>
+            ID {session.id}
+          </span>
           {session.gitBranch && <span>{session.gitBranch}</span>}
           <span>{session.agent}</span>
           {duration && <span>{duration}</span>}
           {messageCount && <span>{messageCount}</span>}
           {started && <span title={formatFullTime(session.createdAt)}>started {started}</span>}
-          {lastActive && <span title={formatFullTime(session.modifiedAt)}>last active {lastActive}</span>}
+          {lastActive && (
+            <span title={formatFullTime(session.modifiedAt)}>last active {lastActive}</span>
+          )}
         </div>
-        <div className="work-sub mono" title={session.pwd}>{session.pwd || '(no pwd)'}</div>
+        <div className="work-sub mono" title={session.pwd}>
+          {session.pwd || '(no pwd)'}
+        </div>
       </div>
     </div>
   );
@@ -119,12 +151,28 @@ function SummaryTab({ session }: { session: Session }) {
         <div className="session-detail-row">
           <span className="session-detail-label">Session ID</span>
           <span className="mono session-detail-value">{session.id}</span>
-          <button className="text-btn" aria-label="Copy session ID" onClick={() => { void copyText(session.id); }}>Copy</button>
+          <button
+            className="text-btn"
+            aria-label="Copy session ID"
+            onClick={() => {
+              void copyText(session.id);
+            }}
+          >
+            Copy
+          </button>
         </div>
         <div className="session-detail-row">
           <span className="session-detail-label">Log path</span>
           <span className="mono session-detail-value">{session.logPath}</span>
-          <button className="text-btn" aria-label="Copy log path" onClick={() => { void copyText(session.logPath); }}>Copy</button>
+          <button
+            className="text-btn"
+            aria-label="Copy log path"
+            onClick={() => {
+              void copyText(session.logPath);
+            }}
+          >
+            Copy
+          </button>
         </div>
       </details>
     </div>
@@ -144,7 +192,9 @@ function ConversationTab({
   const [showTools, setShowTools] = useState(true);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [activeCompactor, setActiveCompactor] = useState<CompactorName | null>(null);
-  const [compactorCache, setCompactorCache] = useState<Partial<Record<CompactorName, SessionCompactorResponse>>>({});
+  const [compactorCache, setCompactorCache] = useState<
+    Partial<Record<CompactorName, SessionCompactorResponse>>
+  >({});
   const [loadingCompactor, setLoadingCompactor] = useState<CompactorName | null>(null);
   const [compactorError, setCompactorError] = useState<string | null>(null);
 
@@ -154,7 +204,9 @@ function ConversationTab({
     return true;
   });
   const visibleRows = systemFiltered
-    ? (showTools ? systemFiltered : collapseAssistantRuns(systemFiltered))
+    ? showTools
+      ? systemFiltered
+      : collapseAssistantRuns(systemFiltered)
     : undefined;
 
   const toggleExpanded = (key: string) => {
@@ -175,7 +227,9 @@ function ConversationTab({
       const result = await api.runSessionCompactor(sessionId, name);
       setCompactorCache((current) => ({ ...current, [name]: result }));
     } catch (err) {
-      setCompactorError(`Failed to load ${name}: ${err instanceof Error ? err.message : String(err)}`);
+      setCompactorError(
+        `Failed to load ${name}: ${err instanceof Error ? err.message : String(err)}`,
+      );
     } finally {
       setLoadingCompactor((current) => (current === name ? null : current));
     }
@@ -189,11 +243,19 @@ function ConversationTab({
       <div className="conversation-filters" aria-label="Conversation filters">
         <div className="conversation-filter-group">
           <label>
-            <input type="checkbox" checked={showSystem} onChange={(e) => setShowSystem(e.target.checked)} />
+            <input
+              type="checkbox"
+              checked={showSystem}
+              onChange={(e) => setShowSystem(e.target.checked)}
+            />
             Show system events
           </label>
           <label>
-            <input type="checkbox" checked={showTools} onChange={(e) => setShowTools(e.target.checked)} />
+            <input
+              type="checkbox"
+              checked={showTools}
+              onChange={(e) => setShowTools(e.target.checked)}
+            />
             Show tool calls
           </label>
         </div>
@@ -202,19 +264,28 @@ function ConversationTab({
           <button
             className={`text-btn compactor-btn ${activeCompactor === 'trace' ? 'active' : ''}`}
             disabled={loadingCompactor !== null}
-            onClick={() => { void runCompactor('trace'); }}
+            onClick={() => {
+              void runCompactor('trace');
+            }}
           >
             {loadingCompactor === 'trace' ? 'Loading...' : 'Trace'}
           </button>
           <button
             className={`text-btn compactor-btn ${activeCompactor === 'salience' ? 'active' : ''}`}
             disabled={loadingCompactor !== null}
-            onClick={() => { void runCompactor('salience'); }}
+            onClick={() => {
+              void runCompactor('salience');
+            }}
           >
             {loadingCompactor === 'salience' ? 'Loading...' : 'Salience'}
           </button>
           {activeJson && (
-            <button className="text-btn compactor-btn" onClick={() => { void copyText(activeJson); }}>
+            <button
+              className="text-btn compactor-btn"
+              onClick={() => {
+                void copyText(activeJson);
+              }}
+            >
               Copy JSON
             </button>
           )}
@@ -225,45 +296,57 @@ function ConversationTab({
           <div className="compactor-drawer-head">
             <span>{activeCompactor} compactor output</span>
           </div>
-          {loadingCompactor === activeCompactor && <div className="compactor-status">Loading {activeCompactor} compactor...</div>}
+          {loadingCompactor === activeCompactor && (
+            <div className="compactor-status">Loading {activeCompactor} compactor...</div>
+          )}
           {compactorError && <div className="error compactor-error">{compactorError}</div>}
-          {activeJson && <pre className="compactor-json" data-testid="compactor-json">{activeJson}</pre>}
+          {activeJson && (
+            <pre className="compactor-json" data-testid="compactor-json">
+              {activeJson}
+            </pre>
+          )}
         </div>
       )}
       {loading && <div className="empty">Loading conversation...</div>}
-      {!loading && visibleRows?.map((row) => {
-        if (row.type === 'tool') {
+      {!loading &&
+        visibleRows?.map((row) => {
+          if (row.type === 'tool') {
+            return (
+              <ToolRow
+                key={row.key}
+                row={row}
+                expanded={expanded.has(row.key)}
+                onToggleExpanded={() => toggleExpanded(row.key)}
+              />
+            );
+          }
+          if (row.type === 'mode') {
+            return <ModeChangeRow key={row.key} ev={row.ev} />;
+          }
+          if (row.type === 'collapsed') {
+            return <CollapsedToolsRow key={row.key} count={row.toolCount} />;
+          }
           return (
-            <ToolRow
+            <EventRow
               key={row.key}
-              row={row}
+              ev={row.ev}
               expanded={expanded.has(row.key)}
               onToggleExpanded={() => toggleExpanded(row.key)}
             />
           );
-        }
-        if (row.type === 'mode') {
-          return <ModeChangeRow key={row.key} ev={row.ev} />;
-        }
-        if (row.type === 'collapsed') {
-          return <CollapsedToolsRow key={row.key} count={row.toolCount} />;
-        }
-        return (
-          <EventRow
-            key={row.key}
-            ev={row.ev}
-            expanded={expanded.has(row.key)}
-            onToggleExpanded={() => toggleExpanded(row.key)}
-          />
-        );
-      })}
+        })}
       {!loading && events && events.length === 0 && <div className="empty">No events.</div>}
       {!loading && events && events.length > 0 && rows?.length === 0 && (
         <div className="empty">No displayable events.</div>
       )}
-      {!loading && events && events.length > 0 && rows && rows.length > 0 && visibleRows?.length === 0 && (
-        <div className="empty">No events match the current filters.</div>
-      )}
+      {!loading &&
+        events &&
+        events.length > 0 &&
+        rows &&
+        rows.length > 0 &&
+        visibleRows?.length === 0 && (
+          <div className="empty">No events match the current filters.</div>
+        )}
     </div>
   );
 }
@@ -291,22 +374,26 @@ function buildTranscriptRows(events: TranscriptEvent[]): TranscriptDisplayRow[] 
     const kind = eventKind(ev);
     if (kind === 'tool_call') {
       const paired = ev.toolCallId ? firstResultById.get(ev.toolCallId) : undefined;
-      return [{
-        type: 'tool',
-        key: `tool:${ev.toolCallId ?? index}`,
-        index,
-        call: ev,
-        result: paired?.ev,
-      }];
+      return [
+        {
+          type: 'tool',
+          key: `tool:${ev.toolCallId ?? index}`,
+          index,
+          call: ev,
+          result: paired?.ev,
+        },
+      ];
     }
     if (kind === 'tool_result') {
       if (pairedResultIndexes.has(index)) return [];
-      return [{
-        type: 'tool',
-        key: `tool-result:${ev.toolCallId ?? index}:${index}`,
-        index,
-        result: ev,
-      }];
+      return [
+        {
+          type: 'tool',
+          key: `tool-result:${ev.toolCallId ?? index}:${index}`,
+          index,
+          result: ev,
+        },
+      ];
     }
     if (!hasDisplayableText(ev)) return [];
     return [{ type: 'event', key: `event:${index}`, index, ev }];
@@ -366,7 +453,8 @@ function ToolRow({
   const inputText = row.call?.inputText ?? '';
   const resultText = row.result?.text ?? '';
   const toolName = row.call?.toolName ?? 'tool result';
-  const previewText = inputText.length > TOOL_INPUT_LIMIT ? `${inputText.slice(0, TOOL_INPUT_LIMIT)}...` : inputText;
+  const previewText =
+    inputText.length > TOOL_INPUT_LIMIT ? `${inputText.slice(0, TOOL_INPUT_LIMIT)}...` : inputText;
   const canExpand = Boolean(inputText || resultText);
 
   return (
@@ -375,7 +463,10 @@ function ToolRow({
         <div className="event-role">{row.call ? `tool · ${toolName}` : 'tool result'}</div>
         <EventTime ts={row.call?.ts ?? row.result?.ts} />
       </div>
-      <div className="event-tool" data-testid={row.call?.toolName ? `tool-event-${row.call.toolName}` : 'tool-result-event'}>
+      <div
+        className="event-tool"
+        data-testid={row.call?.toolName ? `tool-event-${row.call.toolName}` : 'tool-result-event'}
+      >
         <span className="event-tool-name">{toolName}</span>
         {row.call && previewText && <span> {previewText}</span>}
         {!row.call && <span className="muted"> result hidden</span>}
@@ -423,7 +514,9 @@ function EventRow({
         <div className="event-role">{role}</div>
         <EventTime ts={ev.ts} />
       </div>
-      <div className="event-text">{displayText || <span className="muted">(empty event)</span>}</div>
+      <div className="event-text">
+        {displayText || <span className="muted">(empty event)</span>}
+      </div>
       {isLong && <ExpandButton expanded={expanded} onClick={onToggleExpanded} />}
     </div>
   );
@@ -454,7 +547,9 @@ function modeChangeLabel(mode: string | undefined, prevMode: string | undefined)
 function CollapsedToolsRow({ count }: { count: number }) {
   return (
     <div className="event event-row collapsed-tools" data-testid="collapsed-tools-row">
-      <span className="muted">{count} tool call{count === 1 ? '' : 's'} collapsed</span>
+      <span className="muted">
+        {count} tool call{count === 1 ? '' : 's'} collapsed
+      </span>
     </div>
   );
 }
@@ -463,7 +558,11 @@ function EventTime({ ts }: { ts?: number }) {
   if (!ts) return null;
   const date = new Date(ts);
   if (!Number.isFinite(date.getTime())) return null;
-  return <time className="event-time" dateTime={date.toISOString()} title={formatFullTime(ts)}>{formatRelativeTime(ts)}</time>;
+  return (
+    <time className="event-time" dateTime={date.toISOString()} title={formatFullTime(ts)}>
+      {formatRelativeTime(ts)}
+    </time>
+  );
 }
 
 function ExpandButton({ expanded, onClick }: { expanded: boolean; onClick: () => void }) {

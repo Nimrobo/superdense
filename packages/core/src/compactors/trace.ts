@@ -60,11 +60,7 @@ function previewArg(ev: TranscriptEvent): string | undefined {
   try {
     const parsed = JSON.parse(s) as Record<string, unknown>;
     const candidate =
-      parsed.file_path ??
-      parsed.path ??
-      parsed.command ??
-      parsed.pattern ??
-      parsed.query;
+      parsed.file_path ?? parsed.path ?? parsed.command ?? parsed.pattern ?? parsed.query;
     if (typeof candidate === 'string') s = candidate;
   } catch {
     // raw string, fall through
@@ -131,7 +127,8 @@ function collapseTurns(turns: LiveTurn[], maxTurns: number): Turn[] {
     if (!pendingOmitted) pendingOmitted = { count: 0, tools: {} };
     pendingOmitted.count += 1;
     if ('calls' in turn && turn.calls) {
-      for (const c of turn.calls) pendingOmitted.tools[c.tool] = (pendingOmitted.tools[c.tool] ?? 0) + 1;
+      for (const c of turn.calls)
+        pendingOmitted.tools[c.tool] = (pendingOmitted.tools[c.tool] ?? 0) + 1;
     }
   }
   flushOmitted();
@@ -154,7 +151,9 @@ function capCalls(turns: Turn[]): Turn[] {
           arg: `${omitted.length} calls`,
           ok: undefined,
           outBytes: undefined,
-          errSig: Object.entries(tools).map(([tool, n]) => `${tool}:${n}`).join(', '),
+          errSig: Object.entries(tools)
+            .map(([tool, n]) => `${tool}:${n}`)
+            .join(', '),
         },
       ],
     };
@@ -177,7 +176,8 @@ export const traceCompactor: Compactor<TraceOutput> = {
   name: 'trace',
   kind: 'structural',
   targetBytes: 10_000,
-  description: 'Ordered turn sequence: user prompts + assistant headers + tool-call sequence with brief args and success/failure. Drops assistant prose bodies and tool result content. Designed for workflow / retry / sequence pattern mining.',
+  description:
+    'Ordered turn sequence: user prompts + assistant headers + tool-call sequence with brief args and success/failure. Drops assistant prose bodies and tool result content. Designed for workflow / retry / sequence pattern mining.',
   async run(ctx) {
     const turns: LiveTurn[] = [];
     let current: AssistantTurn | null = null;

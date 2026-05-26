@@ -1,13 +1,7 @@
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { adapters } from './adapters/index.js';
-import {
-  getQuery,
-  getSession,
-  listQueryMatches,
-  markIndexed,
-  upsertSession,
-} from './db.js';
+import { getQuery, getSession, listQueryMatches, markIndexed, upsertSession } from './db.js';
 import {
   loadUserEnrichers,
   refreshActiveEnricherNames,

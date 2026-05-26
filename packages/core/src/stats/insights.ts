@@ -3,8 +3,8 @@ import { getDb } from '../db.js';
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export interface HeatmapCell {
-  dow: number;   // 0=Sunday … 6=Saturday (local time)
-  hour: number;  // 0..23 (local time)
+  dow: number; // 0=Sunday … 6=Saturday (local time)
+  hour: number; // 0..23 (local time)
   count: number;
 }
 
@@ -56,11 +56,13 @@ export function getHourDowHeatmap(now: number = Date.now()): HeatmapCell[] {
 export function getWorkRhythm(now: number = Date.now()): WorkRhythm {
   const since = now - 180 * DAY_MS;
   const rows = getDb()
-    .prepare(`
+    .prepare(
+      `
       SELECT created_at
         FROM sessions
        WHERE created_at IS NOT NULL AND created_at >= ?
-    `)
+    `,
+    )
     .all(since) as Array<{ created_at: number }>;
 
   if (rows.length === 0) return { peakHour: null, mostConsistentWeekday: null };
@@ -92,7 +94,10 @@ export function getWorkRhythm(now: number = Date.now()): WorkRhythm {
   let mostConsistentWeekday: WorkRhythm['mostConsistentWeekday'] = null;
   for (let dow = 0; dow < 7; dow++) {
     const activeWeeks = weekdayWeeks[dow]!.size;
-    if (activeWeeks > 0 && (!mostConsistentWeekday || activeWeeks > mostConsistentWeekday.activeWeeks)) {
+    if (
+      activeWeeks > 0 &&
+      (!mostConsistentWeekday || activeWeeks > mostConsistentWeekday.activeWeeks)
+    ) {
       mostConsistentWeekday = { dow, activeWeeks };
     }
   }
@@ -105,7 +110,8 @@ export function getComebackProjects(now: number = Date.now()): ComebackProject[]
   const recentStart = now - 7 * DAY_MS;
   const dormancyThreshold = 14 * DAY_MS;
   const rows = getDb()
-    .prepare(`
+    .prepare(
+      `
       SELECT COALESCE(NULLIF(project_key, ''), pwd) AS pwd,
              MAX(CASE WHEN modified_at >= ? THEN modified_at END) AS recent_max,
              MIN(CASE WHEN modified_at >= ? THEN modified_at END) AS recent_min,
@@ -115,14 +121,15 @@ export function getComebackProjects(now: number = Date.now()): ComebackProject[]
        WHERE modified_at IS NOT NULL
        GROUP BY COALESCE(NULLIF(project_key, ''), pwd)
       HAVING recent_count > 0 AND prior_max IS NOT NULL
-    `)
+    `,
+    )
     .all(recentStart, recentStart, recentStart, recentStart) as Array<{
-      pwd: string;
-      recent_max: number;
-      recent_min: number;
-      prior_max: number;
-      recent_count: number;
-    }>;
+    pwd: string;
+    recent_max: number;
+    recent_min: number;
+    prior_max: number;
+    recent_count: number;
+  }>;
   const out: ComebackProject[] = [];
   for (const r of rows) {
     const gap = r.recent_min - r.prior_max;
@@ -142,7 +149,8 @@ export function getComebackProjects(now: number = Date.now()): ComebackProject[]
 export function getDayKinds(now: number = Date.now(), days = 30): DayKind[] {
   const since = now - days * DAY_MS;
   const rows = getDb()
-    .prepare(`
+    .prepare(
+      `
       SELECT date(modified_at / 1000, 'unixepoch', 'localtime') AS d,
              COUNT(*) AS sessions,
              COUNT(DISTINCT COALESCE(NULLIF(project_key, ''), pwd)) AS pwds
@@ -150,7 +158,8 @@ export function getDayKinds(now: number = Date.now(), days = 30): DayKind[] {
        WHERE modified_at IS NOT NULL AND modified_at >= ?
        GROUP BY d
        ORDER BY d ASC
-    `)
+    `,
+    )
     .all(since) as Array<{ d: string; sessions: number; pwds: number }>;
   return rows.map((r) => {
     let kind: DayKind['kind'] = 'normal';
@@ -163,18 +172,21 @@ export function getDayKinds(now: number = Date.now(), days = 30): DayKind[] {
 export function getPersonalRecords(): PersonalRecords {
   const db = getDb();
   const bestDay = db
-    .prepare(`
+    .prepare(
+      `
       SELECT date(modified_at / 1000, 'unixepoch', 'localtime') AS d, COUNT(*) AS c
         FROM sessions
        WHERE modified_at IS NOT NULL
        GROUP BY d
        ORDER BY c DESC
        LIMIT 1
-    `)
+    `,
+    )
     .get() as { d: string; c: number } | undefined;
 
   const mostCli = db
-    .prepare(`
+    .prepare(
+      `
       SELECT qe.session_id AS sid, (
         SELECT SUM(CAST(je.value AS INTEGER)) FROM json_each(qe.value) je
       ) AS total
@@ -182,13 +194,15 @@ export function getPersonalRecords(): PersonalRecords {
        WHERE qe.name = 'bash_cli_counts'
        ORDER BY total DESC
        LIMIT 1
-    `)
+    `,
+    )
     .get() as { sid: string; total: number } | undefined;
 
   // Longest agent runtime: cumulative active conversation time from the
   // active_duration enricher, which excludes idle gaps > 5 min.
   const longest = db
-    .prepare(`
+    .prepare(
+      `
       SELECT qe.session_id AS id,
              CAST(json_extract(qe.value, '$.activeMs') AS INTEGER) AS dur
         FROM query_enrich qe
@@ -197,7 +211,8 @@ export function getPersonalRecords(): PersonalRecords {
          AND dur > 0
        ORDER BY dur DESC
        LIMIT 1
-    `)
+    `,
+    )
     .get() as { id: string; dur: number } | undefined;
 
   return {

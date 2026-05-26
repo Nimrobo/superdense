@@ -23,7 +23,10 @@ export function Sidebar({ view, setView, queries, search, setSearch, progress, o
           className="search-input"
           placeholder="Search sessions…"
           value={search}
-          onChange={(e) => { setSearch(e.target.value); setView({ type: 'sessions' }); }}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setView({ type: 'sessions' });
+          }}
         />
       </div>
 
@@ -75,13 +78,11 @@ export function Sidebar({ view, setView, queries, search, setSearch, progress, o
       <div className="sidebar-footer">
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <span className={`progress-dot ${busy ? 'active' : ''}`} />
-          <span>
-            {busy
-              ? `${progress!.phase} ${progress!.done}/${progress!.total}`
-              : 'idle'}
-          </span>
+          <span>{busy ? `${progress!.phase} ${progress!.done}/${progress!.total}` : 'idle'}</span>
         </div>
-        <button className="reindex-btn" onClick={onReindex} disabled={!!busy}>Reindex</button>
+        <button className="reindex-btn" onClick={onReindex} disabled={!!busy}>
+          Reindex
+        </button>
       </div>
     </aside>
   );

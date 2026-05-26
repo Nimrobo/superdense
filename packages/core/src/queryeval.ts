@@ -73,7 +73,10 @@ export async function evaluateQuery(query: Query): Promise<EvaluateResult> {
   const filters = await loadFilters();
   const enrichers = listEnrichers();
   const systemEnrichers = new Set(enrichers.filter((e) => e.alwaysRun).map((e) => e.name));
-  validateQueryDefinition({ filters: query.filters, enrichers: query.enrichers }, { filters, enrichers });
+  validateQueryDefinition(
+    { filters: query.filters, enrichers: query.enrichers },
+    { filters, enrichers },
+  );
 
   const now = Date.now();
   clearQueryMatches(query.id);
@@ -94,7 +97,10 @@ export async function evaluateQuery(query: Query): Promise<EvaluateResult> {
     }
   }
 
-  await runPostFilterEnrichers(query.enrichers, matchedSessions.map((m) => m.session));
+  await runPostFilterEnrichers(
+    query.enrichers,
+    matchedSessions.map((m) => m.session),
+  );
 
   markQueryRun(query.id, now);
   refreshActiveEnricherNames();
@@ -118,7 +124,9 @@ export async function runSavedQuery(queryId: string): Promise<EvaluateResult | n
   return backfillQuery(queryId);
 }
 
-export async function runQueryEvaluation(_opts: { full?: boolean } = {}): Promise<{ evaluated: number }> {
+export async function runQueryEvaluation(
+  _opts: { full?: boolean } = {},
+): Promise<{ evaluated: number }> {
   const queries = listQueries();
   for (const q of queries) {
     await evaluateQuery(q);
@@ -163,7 +171,10 @@ export async function runAdHocQuery(
 
   const names = definition.enrichers ?? [];
   const page = matchedSessions.slice(offset, offset + limit);
-  await runPostFilterEnrichers(names, page.map((m) => m.session));
+  await runPostFilterEnrichers(
+    names,
+    page.map((m) => m.session),
+  );
   const items = page.map(({ session, evidence }) => ({
     sessionId: session.id,
     evidence: evidence ?? null,
@@ -210,12 +221,16 @@ async function evalQueryFilter(
     const filter = filterByName.get(p.filter.name);
     if (!filter) return { match: false };
     try {
-      const result = await filter.run({
-        session,
-        logPath: session.logPath,
-        iterEvents: () => iterSessionEvents(session),
-        getSystemEnrichment: (name) => systemEnrichers.has(name) ? getEnrichment(session.id, name) : null,
-      }, p.filter.params);
+      const result = await filter.run(
+        {
+          session,
+          logPath: session.logPath,
+          iterEvents: () => iterSessionEvents(session),
+          getSystemEnrichment: (name) =>
+            systemEnrichers.has(name) ? getEnrichment(session.id, name) : null,
+        },
+        p.filter.params,
+      );
       return normalizeFilterResult(result);
     } catch {
       return { match: false };

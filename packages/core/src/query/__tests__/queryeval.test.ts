@@ -13,7 +13,14 @@ vi.mock('../../paths.js', () => ({
   ensureSuperdenseDirs: vi.fn(),
 }));
 
-import { _resetDbForTests, countQueryMatches, createQuery, getEnrichment, getQuery, upsertSession } from '../../db.js';
+import {
+  _resetDbForTests,
+  countQueryMatches,
+  createQuery,
+  getEnrichment,
+  getQuery,
+  upsertSession,
+} from '../../db.js';
 import { clearEnricherCache, registerEnricher } from '../../enrichers/index.js';
 import { clearFilterCache } from '../../filters/index.js';
 import { previewQuery, runAdHocQuery } from '../../queryeval.js';
@@ -37,10 +44,30 @@ afterEach(async () => {
 
 async function writeCodexLog(name: string, userText: string): Promise<string> {
   const path = join(tempDir!, name);
-  await writeFile(path, [
-    JSON.stringify({ timestamp: '2026-05-21T04:00:02.000Z', type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: userText }] } }),
-    JSON.stringify({ timestamp: '2026-05-21T04:00:03.000Z', type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'ok' }] } }),
-  ].join('\n'), 'utf8');
+  await writeFile(
+    path,
+    [
+      JSON.stringify({
+        timestamp: '2026-05-21T04:00:02.000Z',
+        type: 'response_item',
+        payload: {
+          type: 'message',
+          role: 'user',
+          content: [{ type: 'input_text', text: userText }],
+        },
+      }),
+      JSON.stringify({
+        timestamp: '2026-05-21T04:00:03.000Z',
+        type: 'response_item',
+        payload: {
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'output_text', text: 'ok' }],
+        },
+      }),
+    ].join('\n'),
+    'utf8',
+  );
   return path;
 }
 
@@ -73,11 +100,13 @@ describe('runAdHocQuery', () => {
     });
 
     expect(result).toMatchObject({ matched: 1, total: 1, limit: 500, offset: 0 });
-    expect(result.items).toEqual([expect.objectContaining({
-      sessionId: 'codex:matched',
-      evidence: 'Fix billing tests',
-      enrichments: { post_marker: 'post-filter-data' },
-    })]);
+    expect(result.items).toEqual([
+      expect.objectContaining({
+        sessionId: 'codex:matched',
+        evidence: 'Fix billing tests',
+        enrichments: { post_marker: 'post-filter-data' },
+      }),
+    ]);
     expect(run).toHaveBeenCalledTimes(1);
     expect(getEnrichment('codex:skipped', 'post_marker')).toBeNull();
   });
@@ -87,11 +116,19 @@ describe('runAdHocQuery', () => {
     upsertSession(session('matched', log));
 
     const run = vi.fn(async () => 'always-data');
-    registerEnricher({ name: 'always_marker', version: 1, returns: 'string', alwaysRun: true, run });
+    registerEnricher({
+      name: 'always_marker',
+      version: 1,
+      returns: 'string',
+      alwaysRun: true,
+      run,
+    });
 
-    await expect(runAdHocQuery({
-      filters: { filter: { name: 'session', params: { agentt: 'codex' } } },
-    })).rejects.toThrow('filter "session": unknown param "agentt"');
+    await expect(
+      runAdHocQuery({
+        filters: { filter: { name: 'session', params: { agentt: 'codex' } } },
+      }),
+    ).rejects.toThrow('filter "session": unknown param "agentt"');
     expect(run).not.toHaveBeenCalled();
   });
 
@@ -108,9 +145,12 @@ describe('runAdHocQuery', () => {
       createdAt: 1,
     });
 
-    const result = await runAdHocQuery({
-      filters: { filter: { name: 'user_prompt_contains', params: { keyword: 'billing' } } },
-    }, { limit: 1, offset: 1 });
+    const result = await runAdHocQuery(
+      {
+        filters: { filter: { name: 'user_prompt_contains', params: { keyword: 'billing' } } },
+      },
+      { limit: 1, offset: 1 },
+    );
 
     expect(result).toMatchObject({ matched: 2, total: 2, limit: 1, offset: 1 });
     expect(result.items).toHaveLength(1);
@@ -122,9 +162,12 @@ describe('runAdHocQuery', () => {
     const log = await writeCodexLog('matched.jsonl', 'Fix billing tests');
     upsertSession(session('matched', log));
 
-    const result = await previewQuery({
-      filters: { filter: { name: 'user_prompt_contains', params: { keyword: 'billing' } } },
-    }, { limit: 1 });
+    const result = await previewQuery(
+      {
+        filters: { filter: { name: 'user_prompt_contains', params: { keyword: 'billing' } } },
+      },
+      { limit: 1 },
+    );
 
     expect(result.items).toEqual([expect.objectContaining({ sessionId: 'codex:matched' })]);
     expect(result.enrichers).toEqual([]);

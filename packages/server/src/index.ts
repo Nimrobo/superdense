@@ -1,6 +1,6 @@
 import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
-import { join, dirname, resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
 import { registerSessionsRoutes } from './routes/sessions.js';
@@ -18,10 +18,12 @@ export interface ServerOptions {
 }
 
 function isAddressInUseError(err: unknown): boolean {
-  return typeof err === 'object'
-    && err !== null
-    && 'code' in err
-    && (err as { code?: unknown }).code === 'EADDRINUSE';
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'code' in err &&
+    (err as { code?: unknown }).code === 'EADDRINUSE'
+  );
 }
 
 async function buildApp(opts: ServerOptions) {
@@ -65,11 +67,12 @@ async function closeQuietly(app: Awaited<ReturnType<typeof buildApp>>['app']): P
   }
 }
 
-export async function startServer(opts: ServerOptions = {}): Promise<{ url: string; close: () => Promise<void> }> {
+export async function startServer(
+  opts: ServerOptions = {},
+): Promise<{ url: string; close: () => Promise<void> }> {
   const startPort = opts.port ?? 0;
-  const fallbackAttempts = startPort > 0
-    ? Math.max(0, Math.floor(opts.portFallbackAttempts ?? 0))
-    : 0;
+  const fallbackAttempts =
+    startPort > 0 ? Math.max(0, Math.floor(opts.portFallbackAttempts ?? 0)) : 0;
 
   for (let offset = 0; offset <= fallbackAttempts; offset++) {
     const { app, host } = await buildApp(opts);
@@ -78,7 +81,9 @@ export async function startServer(opts: ServerOptions = {}): Promise<{ url: stri
       const address = await app.listen({ host, port });
       return {
         url: address,
-        close: async () => { await app.close(); },
+        close: async () => {
+          await app.close();
+        },
       };
     } catch (err) {
       await closeQuietly(app);

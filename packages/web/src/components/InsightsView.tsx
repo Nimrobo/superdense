@@ -33,7 +33,10 @@ export function InsightsView({ onOpenSession }: Props) {
 
   const refresh = () => {
     Promise.all([api.insightsRecipes(), api.insightsRuns()])
-      .then(([r, runsRes]) => { setRecipes(r.items); setRuns(runsRes.items); })
+      .then(([r, runsRes]) => {
+        setRecipes(r.items);
+        setRuns(runsRes.items);
+      })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
   };
 
@@ -56,16 +59,27 @@ export function InsightsView({ onOpenSession }: Props) {
     }
   };
 
-  if (error) return <div className="insights"><div className="error">Failed to load: {error}</div></div>;
-  if (!recipes) return <div className="insights"><div className="muted">Loading…</div></div>;
+  if (error)
+    return (
+      <div className="insights">
+        <div className="error">Failed to load: {error}</div>
+      </div>
+    );
+  if (!recipes)
+    return (
+      <div className="insights">
+        <div className="muted">Loading…</div>
+      </div>
+    );
 
   return (
     <div className="insights">
       <header className="insights-header">
         <h1>Insights</h1>
         <p className="muted">
-          Each insight is a prompt that runs <strong>in your own coding agent</strong>. Click Copy, paste into
-          Claude Code, Codex, or OpenCode, and the run will show up below automatically once it's indexed.
+          Each insight is a prompt that runs <strong>in your own coding agent</strong>. Click Copy,
+          paste into Claude Code, Codex, or OpenCode, and the run will show up below automatically
+          once it's indexed.
         </p>
       </header>
 
@@ -81,7 +95,9 @@ export function InsightsView({ onOpenSession }: Props) {
           <tbody>
             {recipes.map((r) => (
               <tr key={r.name}>
-                <td><strong>{r.title}</strong></td>
+                <td>
+                  <strong>{r.title}</strong>
+                </td>
                 <td className="muted">{r.description}</td>
                 <td>
                   <button
@@ -102,8 +118,8 @@ export function InsightsView({ onOpenSession }: Props) {
         <h2>Past runs</h2>
         {runs && runs.length === 0 && (
           <div className="muted">
-            No insight runs yet. Copy a prompt above, paste it into your coding agent, and refresh to see
-            it here once it's indexed.
+            No insight runs yet. Copy a prompt above, paste it into your coding agent, and refresh
+            to see it here once it's indexed.
           </div>
         )}
         {runs && runs.length > 0 && (
@@ -123,7 +139,10 @@ export function InsightsView({ onOpenSession }: Props) {
                   {!run.hasAnswer && <span className="pill"> in progress</span>}
                 </div>
                 {run.answerExcerpt && (
-                  <div className="run-row-excerpt">{run.answerExcerpt}{run.answerExcerpt.length >= 280 ? '…' : ''}</div>
+                  <div className="run-row-excerpt">
+                    {run.answerExcerpt}
+                    {run.answerExcerpt.length >= 280 ? '…' : ''}
+                  </div>
                 )}
               </li>
             ))}

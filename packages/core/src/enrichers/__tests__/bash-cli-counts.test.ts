@@ -58,19 +58,21 @@ describe('bashCliCountsEnricher', () => {
     const result = await bashCliCountsEnricher.run({
       session: {} as never,
       logPath: '/tmp/x',
-      iterEvents: async function* () { for (const e of events) yield e; },
+      iterEvents: async function* () {
+        for (const e of events) yield e;
+      },
     });
     expect(result).toEqual({ git: 2, gh: 1 });
   });
 
   it('handles raw command strings (non-JSON inputText)', async () => {
-    const events: TranscriptEvent[] = [
-      { toolName: 'Bash', inputText: 'npm install' },
-    ];
+    const events: TranscriptEvent[] = [{ toolName: 'Bash', inputText: 'npm install' }];
     const result = await bashCliCountsEnricher.run({
       session: {} as never,
       logPath: '/tmp/x',
-      iterEvents: async function* () { for (const e of events) yield e; },
+      iterEvents: async function* () {
+        for (const e of events) yield e;
+      },
     });
     expect(result).toEqual({ npm: 1 });
   });

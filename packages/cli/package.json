@@ -1,7 +1,7 @@
 {
   "name": "@nimrobo/superdense",
   "version": "0.1.1",
-  "description": "Superdense — index, inspect, and summarize sessions from your coding agents.",
+  "description": "Superdense — search, filter, compact, and draw insights from coding-agent sessions.",
   "type": "module",
   "bin": {
     "superdense": "dist/index.js"
@@ -22,7 +22,8 @@
     "dev": "tsx src/index.ts studio --no-open",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "prepack": "pnpm --filter=@nimrobo/superdense-core --filter=@nimrobo/superdense-server --filter=@nimrobo/superdense-web run build && node scripts/build.mjs"
+    "prepare:package": "node scripts/prepare-package.mjs",
+    "prepack": "pnpm run prepare:package && pnpm --filter=@nimrobo/superdense-core --filter=@nimrobo/superdense-server --filter=@nimrobo/superdense-web run build && node scripts/build.mjs"
   },
   "dependencies": {
     "@fastify/static": "^7.0.4",

@@ -65,7 +65,8 @@ export function assembleInsightPrompt(name: string, runId: string): string {
   return `${marker}\n\n${body}`;
 }
 
-const MARKER_RE = /<!--\s*superdense:insight\s+name="([\w-]+)"\s+run="([0-9a-fA-F-]+)"\s+v=(\d+)\s*-->/;
+const MARKER_RE =
+  /<!--\s*superdense:insight\s+name="([\w-]+)"\s+run="([0-9a-fA-F-]+)"\s+v=(\d+)\s*-->/;
 
 export interface InsightMarker {
   name: string;

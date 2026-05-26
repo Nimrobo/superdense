@@ -57,7 +57,9 @@ function buildFilters(state: FilterState): QueryFilter | null {
     leaves.push({ filter: { name: 'session', params: sessionParams } });
   }
   if (state.userPromptKeyword.trim()) {
-    leaves.push({ filter: { name: 'user_prompt_contains', params: { keyword: state.userPromptKeyword.trim() } } });
+    leaves.push({
+      filter: { name: 'user_prompt_contains', params: { keyword: state.userPromptKeyword.trim() } },
+    });
   }
 
   if (leaves.length === 0) return null;
@@ -72,22 +74,28 @@ export function QueryBuilder({ onSaved }: Props) {
   const [projectOptions, setProjectOptions] = useState<string[]>([]);
   const [agentOptions, setAgentOptions] = useState<string[]>([]);
   const [showJson, setShowJson] = useState(false);
-  const [results, setResults] = useState<{ sessionId: string; evidence?: string | null }[] | null>(null);
+  const [results, setResults] = useState<{ sessionId: string; evidence?: string | null }[] | null>(
+    null,
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.listFacets()
-      .then((r) => { setPwdOptions(r.pwd); setAgentOptions(r.agent); setProjectOptions(r.project); })
+    api
+      .listFacets()
+      .then((r) => {
+        setPwdOptions(r.pwd);
+        setAgentOptions(r.agent);
+        setProjectOptions(r.project);
+      })
       .catch(console.error);
   }, []);
 
   const filtersExpression = useMemo(() => buildFilters(state), [state]);
-  const definition = useMemo<QueryDefinition | null>(() => (
-    filtersExpression
-      ? { filters: filtersExpression, enrichers: [] }
-      : null
-  ), [filtersExpression]);
+  const definition = useMemo<QueryDefinition | null>(
+    () => (filtersExpression ? { filters: filtersExpression, enrichers: [] } : null),
+    [filtersExpression],
+  );
   const set = (patch: Partial<FilterState>) => setState((s) => ({ ...s, ...patch }));
 
   const runQuery = async () => {
@@ -122,7 +130,9 @@ export function QueryBuilder({ onSaved }: Props) {
   };
 
   const activeCount = filtersExpression
-    ? ('and' in filtersExpression ? (filtersExpression as { and: QueryFilter[] }).and.length : 1)
+    ? 'and' in filtersExpression
+      ? (filtersExpression as { and: QueryFilter[] }).and.length
+      : 1
     : 0;
 
   const pwdActive = state.pwd.trim() !== '';
@@ -133,7 +143,9 @@ export function QueryBuilder({ onSaved }: Props) {
       <div className="work-header">
         <div>
           <div className="work-title">New query</div>
-          <div className="work-sub">{activeCount} filter{activeCount === 1 ? '' : 's'} active</div>
+          <div className="work-sub">
+            {activeCount} filter{activeCount === 1 ? '' : 's'} active
+          </div>
         </div>
       </div>
       <div className="work-body">
@@ -141,7 +153,11 @@ export function QueryBuilder({ onSaved }: Props) {
           <Row2>
             <Card
               label="Working directory"
-              hint={projectActive ? 'Clear Project to use Working Directory' : 'Sessions whose pwd contains this string.'}
+              hint={
+                projectActive
+                  ? 'Clear Project to use Working Directory'
+                  : 'Sessions whose pwd contains this string.'
+              }
             >
               <input
                 list="facet-pwd"
@@ -151,13 +167,19 @@ export function QueryBuilder({ onSaved }: Props) {
                 placeholder="/Users/me/projects/…"
               />
               <datalist id="facet-pwd">
-                {pwdOptions.map((p) => <option key={p} value={p} />)}
+                {pwdOptions.map((p) => (
+                  <option key={p} value={p} />
+                ))}
               </datalist>
             </Card>
 
             <Card
               label="Project"
-              hint={pwdActive ? 'Clear Working Directory to use Project' : 'Sessions whose project key contains this string.'}
+              hint={
+                pwdActive
+                  ? 'Clear Working Directory to use Project'
+                  : 'Sessions whose project key contains this string.'
+              }
             >
               <input
                 list="facet-project"
@@ -167,7 +189,9 @@ export function QueryBuilder({ onSaved }: Props) {
                 placeholder="project-key"
               />
               <datalist id="facet-project">
-                {projectOptions.map((p) => <option key={p} value={p} />)}
+                {projectOptions.map((p) => (
+                  <option key={p} value={p} />
+                ))}
               </datalist>
             </Card>
           </Row2>
@@ -176,11 +200,18 @@ export function QueryBuilder({ onSaved }: Props) {
             <Card label="Agent" hint="Restrict to one agent.">
               <select value={state.agent} onChange={(e) => set({ agent: e.target.value })}>
                 <option value="">Any</option>
-                {agentOptions.map((a) => <option key={a} value={a}>{a}</option>)}
+                {agentOptions.map((a) => (
+                  <option key={a} value={a}>
+                    {a}
+                  </option>
+                ))}
               </select>
             </Card>
 
-            <Card label="User prompt contains" hint="Matches if any user message in the session contains this text.">
+            <Card
+              label="User prompt contains"
+              hint="Matches if any user message in the session contains this text."
+            >
               <input
                 value={state.userPromptKeyword}
                 onChange={(e) => set({ userPromptKeyword: e.target.value })}
@@ -190,7 +221,10 @@ export function QueryBuilder({ onSaved }: Props) {
           </Row2>
 
           <Row2>
-            <Card label="Tool used" hint="Tool name (e.g. Bash, Read) with a minimum invocation count.">
+            <Card
+              label="Tool used"
+              hint="Tool name (e.g. Bash, Read) with a minimum invocation count."
+            >
               <div style={{ display: 'flex', gap: 8 }}>
                 <input
                   value={state.toolName}
@@ -198,7 +232,15 @@ export function QueryBuilder({ onSaved }: Props) {
                   placeholder="Bash"
                   style={{ flex: 1 }}
                 />
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-muted)' }}>
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    fontSize: 12,
+                    color: 'var(--text-muted)',
+                  }}
+                >
                   ≥
                   <input
                     type="number"
@@ -219,7 +261,15 @@ export function QueryBuilder({ onSaved }: Props) {
                   placeholder="git"
                   style={{ flex: 1 }}
                 />
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-muted)' }}>
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    fontSize: 12,
+                    color: 'var(--text-muted)',
+                  }}
+                >
                   ≥
                   <input
                     type="number"
@@ -234,34 +284,86 @@ export function QueryBuilder({ onSaved }: Props) {
           </Row2>
         </div>
 
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center', maxWidth: 720, marginTop: 22 }}>
+        <div
+          style={{ display: 'flex', gap: 10, alignItems: 'center', maxWidth: 720, marginTop: 22 }}
+        >
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Query name"
-            style={{ flex: 1, padding: '7px 9px', border: '1px solid var(--border-strong)', borderRadius: 6 }}
+            style={{
+              flex: 1,
+              padding: '7px 9px',
+              border: '1px solid var(--border-strong)',
+              borderRadius: 6,
+            }}
           />
-          <button className="btn" onClick={runQuery} disabled={busy || !definition}>{busy ? 'Running...' : 'Run'}</button>
-          <button className="btn" onClick={save} disabled={!name.trim() || !definition || busy}>Save</button>
-          <button className="btn secondary" onClick={() => setShowJson((v) => !v)}>{showJson ? 'Hide JSON' : 'Show JSON'}</button>
+          <button className="btn" onClick={runQuery} disabled={busy || !definition}>
+            {busy ? 'Running...' : 'Run'}
+          </button>
+          <button className="btn" onClick={save} disabled={!name.trim() || !definition || busy}>
+            Save
+          </button>
+          <button className="btn secondary" onClick={() => setShowJson((v) => !v)}>
+            {showJson ? 'Hide JSON' : 'Show JSON'}
+          </button>
         </div>
 
         {showJson && (
-          <pre className="mono" style={{ fontSize: 12, background: 'var(--bg-soft)', padding: 10, borderRadius: 6, border: '1px solid var(--border)', overflowX: 'auto', marginTop: 12, maxWidth: 720 }}>
-{definition ? JSON.stringify(definition, null, 2) : '// no filters'}
+          <pre
+            className="mono"
+            style={{
+              fontSize: 12,
+              background: 'var(--bg-soft)',
+              padding: 10,
+              borderRadius: 6,
+              border: '1px solid var(--border)',
+              overflowX: 'auto',
+              marginTop: 12,
+              maxWidth: 720,
+            }}
+          >
+            {definition ? JSON.stringify(definition, null, 2) : '// no filters'}
           </pre>
         )}
 
-        {error && <div className="error" style={{ marginTop: 12 }}>{error}</div>}
+        {error && (
+          <div className="error" style={{ marginTop: 12 }}>
+            {error}
+          </div>
+        )}
 
         {results && (
           <div style={{ marginTop: 20 }}>
-            <h3 style={{ fontSize: 12, color: 'var(--text-muted)', margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Results ({results.length})</h3>
+            <h3
+              style={{
+                fontSize: 12,
+                color: 'var(--text-muted)',
+                margin: '0 0 10px',
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+              }}
+            >
+              Results ({results.length})
+            </h3>
             {results.length === 0 && <div className="muted">No sessions matched.</div>}
             {results.map((r) => (
-              <a key={r.sessionId} className="session-card" href={sessionHref(r.sessionId)} target="_blank" rel="noopener noreferrer" style={{ padding: '8px 12px' }}>
-                <div className="mono" style={{ fontSize: 12 }}>{r.sessionId}</div>
-                {r.evidence && <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>{r.evidence}</div>}
+              <a
+                key={r.sessionId}
+                className="session-card"
+                href={sessionHref(r.sessionId)}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ padding: '8px 12px' }}
+              >
+                <div className="mono" style={{ fontSize: 12 }}>
+                  {r.sessionId}
+                </div>
+                {r.evidence && (
+                  <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>
+                    {r.evidence}
+                  </div>
+                )}
               </a>
             ))}
           </div>
@@ -272,19 +374,43 @@ export function QueryBuilder({ onSaved }: Props) {
 }
 
 function Row2({ children }: { children: React.ReactNode }) {
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-      {children}
-    </div>
-  );
+  return <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>{children}</div>;
 }
 
-function Card({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+function Card({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <div style={{ display: 'grid', gap: 6, padding: '12px 14px', border: '1px solid var(--border)', borderRadius: 8, background: 'var(--bg-soft)' }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
+    <div
+      style={{
+        display: 'grid',
+        gap: 6,
+        padding: '12px 14px',
+        border: '1px solid var(--border)',
+        borderRadius: 8,
+        background: 'var(--bg-soft)',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'baseline',
+          justifyContent: 'space-between',
+          gap: 12,
+        }}
+      >
         <label style={{ fontSize: 13, fontWeight: 500 }}>{label}</label>
-        {hint && <span className="muted" style={{ fontSize: 11 }}>{hint}</span>}
+        {hint && (
+          <span className="muted" style={{ fontSize: 11 }}>
+            {hint}
+          </span>
+        )}
       </div>
       {children}
     </div>

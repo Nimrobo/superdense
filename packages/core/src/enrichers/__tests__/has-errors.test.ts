@@ -45,7 +45,9 @@ describe('hasErrorsEnricher', () => {
   });
 
   it('detects "traceback" in inputText', async () => {
-    expect(await hasErrorsEnricher.run(makeCtx([{ inputText: 'traceback (most recent call last)' }]))).toBe(true);
+    expect(
+      await hasErrorsEnricher.run(makeCtx([{ inputText: 'traceback (most recent call last)' }])),
+    ).toBe(true);
   });
 
   it('detects "failed"', async () => {
@@ -53,7 +55,9 @@ describe('hasErrorsEnricher', () => {
   });
 
   it('detects named error classes', async () => {
-    expect(await hasErrorsEnricher.run(makeCtx([{ text: 'AssertionError: expected 200' }]))).toBe(true);
+    expect(await hasErrorsEnricher.run(makeCtx([{ text: 'AssertionError: expected 200' }]))).toBe(
+      true,
+    );
   });
 
   it('detects "fatal"', async () => {
@@ -66,6 +70,8 @@ describe('hasErrorsEnricher', () => {
   });
 
   it('skips events without text or inputText', async () => {
-    expect(await hasErrorsEnricher.run(makeCtx([{ toolName: 'bash' }, { role: 'user' }]))).toBe(false);
+    expect(await hasErrorsEnricher.run(makeCtx([{ toolName: 'bash' }, { role: 'user' }]))).toBe(
+      false,
+    );
   });
 });

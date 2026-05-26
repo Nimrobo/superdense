@@ -27,13 +27,21 @@ function codexDbPath(): string {
 }
 
 function safeJsonParse(value: string): unknown {
-  try { return JSON.parse(value); } catch { return undefined; }
+  try {
+    return JSON.parse(value);
+  } catch {
+    return undefined;
+  }
 }
 
 function stringifyValue(value: unknown): string {
   if (value == null) return '';
   if (typeof value === 'string') return value;
-  try { return JSON.stringify(value); } catch { return String(value); }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
 }
 
 function timestampMs(obj: unknown): number | undefined {
@@ -54,14 +62,21 @@ function textParts(content: unknown): string[] {
   for (const part of content) {
     if (!part || typeof part !== 'object') continue;
     const p = part as { type?: unknown; text?: unknown };
-    if ((p.type === 'input_text' || p.type === 'output_text' || p.type === 'text') && typeof p.text === 'string' && p.text.trim()) {
+    if (
+      (p.type === 'input_text' || p.type === 'output_text' || p.type === 'text') &&
+      typeof p.text === 'string' &&
+      p.text.trim()
+    ) {
       out.push(p.text);
     }
   }
   return out;
 }
 
-async function firstPromptFromRollout(logPath: string, fallback?: string | null): Promise<string | undefined> {
+async function firstPromptFromRollout(
+  logPath: string,
+  fallback?: string | null,
+): Promise<string | undefined> {
   let stream;
   try {
     stream = createReadStream(logPath, { encoding: 'utf8' });
@@ -84,7 +99,12 @@ async function firstPromptFromRollout(logPath: string, fallback?: string | null)
       }
     }
   } finally {
-    try { rl.close(); stream.destroy(); } catch { /* ignore */ }
+    try {
+      rl.close();
+      stream.destroy();
+    } catch {
+      /* ignore */
+    }
   }
   return extractMeaningfulPrompt(fallback);
 }
@@ -105,13 +125,17 @@ export const codexAdapter: Adapter = {
     const db = openReadonlyDb(codexDbPath());
     if (!db) return [];
     try {
-      const rows = db.prepare(`
+      const rows = db
+        .prepare(
+          `
         SELECT id, rollout_path, cwd, first_user_message, git_branch,
                created_at, updated_at, created_at_ms, updated_at_ms
         FROM threads
         WHERE rollout_path IS NOT NULL AND rollout_path != ''
           AND cwd IS NOT NULL AND cwd != ''
-      `).all() as ThreadRow[];
+      `,
+        )
+        .all() as ThreadRow[];
 
       const out: DiscoveredSession[] = [];
       for (const row of rows) {
@@ -123,8 +147,10 @@ export const codexAdapter: Adapter = {
           pwd: row.cwd,
           firstPrompt,
           gitBranch: row.git_branch ?? undefined,
-          createdAt: row.created_at_ms ?? (row.created_at != null ? row.created_at * 1000 : undefined),
-          modifiedAt: row.updated_at_ms ?? (row.updated_at != null ? row.updated_at * 1000 : undefined),
+          createdAt:
+            row.created_at_ms ?? (row.created_at != null ? row.created_at * 1000 : undefined),
+          modifiedAt:
+            row.updated_at_ms ?? (row.updated_at != null ? row.updated_at * 1000 : undefined),
           raw: row,
         });
       }
@@ -177,7 +203,12 @@ async function* iterCodexEvents(logPath: string): AsyncIterable<TranscriptEvent>
       yield* extractCodexEvents(obj, toolResultErrors);
     }
   } finally {
-    try { rl.close(); stream.destroy(); } catch { /* ignore */ }
+    try {
+      rl.close();
+      stream.destroy();
+    } catch {
+      /* ignore */
+    }
   }
 }
 

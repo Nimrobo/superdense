@@ -114,7 +114,7 @@ End your reply with a single `## Answer` heading. Under it, list each proposed c
 
 Order proposals by expected impact, highest first. Cap the list at 3-5 unless the evidence is unusually strong; do not fill the cap with weak candidates.
 
-```
+````
 ## Answer
 
 ### 1. AGENTS.md -- durable domain data flow
@@ -122,8 +122,12 @@ Order proposals by expected impact, highest first. Cap the list at 3-5 unless th
 **Proposed content:**
 ```markdown
 ...the actual content here...
-```
+````
+
 **Distinct-workflow evidence:** sessions `<id1>` (API work re-derived how request data reaches the domain service), `<id2>` (UI work re-derived the same state source), `<id3>` (migration work re-derived schema ownership).
 **Why this is not already documented:** `README.md` names the packages but does not explain the cross-layer source-of-truth relationship.
 **Expected impact:** saves repeated reads across entrypoint, domain, and storage/schema files.
+
+```
+
 ```

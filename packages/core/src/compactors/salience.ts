@@ -127,7 +127,10 @@ function shouldRecordError(ev: TranscriptEvent, tool: string | undefined): boole
 }
 
 function errorSignature(text: string): string {
-  const lines = text.split('\n').map((line) => line.trim()).filter(Boolean);
+  const lines = text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
   const matching = lines.find((line) => ERROR_RE.test(line));
   if (matching) return clean(matching, ERR_SIG_CHARS);
   const commandNotFound = lines.find((line) => /\bcommand not found\b/i.test(line));
@@ -144,7 +147,8 @@ function errorSignature(text: string): string {
 export const salienceCompactor: Compactor<SalienceOutput> = {
   name: 'salience',
   kind: 'semantic',
-  description: 'Rule-based sparse timeline extraction: user messages, plan-mode boundaries, salient assistant handoffs/proposed plans, mutating tool calls, and errored tool results. No LLM. Designed for "what was the user trying to do, did it work?" pattern mining.',
+  description:
+    'Rule-based sparse timeline extraction: user messages, plan-mode boundaries, salient assistant handoffs/proposed plans, mutating tool calls, and errored tool results. No LLM. Designed for "what was the user trying to do, did it work?" pattern mining.',
   async run(ctx) {
     const out: SalienceOutput = {
       v: 2,
@@ -239,7 +243,11 @@ export const salienceCompactor: Compactor<SalienceOutput> = {
           continue;
         }
 
-        const firstLine = text.split('\n').map((l) => l.trim()).find(Boolean) ?? '';
+        const firstLine =
+          text
+            .split('\n')
+            .map((l) => l.trim())
+            .find(Boolean) ?? '';
         if (firstLine && DECISION_RE.test(firstLine)) {
           pendingAssistant = { kind: 'decision', text: firstLine };
         } else {
@@ -253,14 +261,16 @@ export const salienceCompactor: Compactor<SalienceOutput> = {
         if (ev.toolName === 'ExitPlanMode') {
           pendingAssistant = undefined;
           const plan = extractPlan(ev.inputText);
-          if (plan) pushTimeline({ type: 'assistant', kind: 'proposed_plan', text: timelineText(plan) });
+          if (plan)
+            pushTimeline({ type: 'assistant', kind: 'proposed_plan', text: timelineText(plan) });
           continue;
         }
         if (pendingAssistant?.kind === 'handoff') pendingAssistant = undefined;
         if (currentMode !== 'plan') {
           if (MUTATION_TOOLS.has(ev.toolName)) {
             const path = extractPath(ev.inputText);
-            if (!isPlanFilePath(path)) recordMutation(path ? { tool: ev.toolName, path } : { tool: ev.toolName });
+            if (!isPlanFilePath(path))
+              recordMutation(path ? { tool: ev.toolName, path } : { tool: ev.toolName });
           } else if (ev.toolName === 'Bash') {
             const cmd = extractCommand(ev.inputText);
             if (cmd && COMMIT_RE.test(cmd.trim())) {

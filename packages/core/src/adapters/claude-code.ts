@@ -61,9 +61,20 @@ export async function scanJsonlHead(logPath: string, maxLines = 50): Promise<Jso
       return;
     }
     const rl = createInterface({ input: stream, crlfDelay: Infinity });
-    const done = (): void => { try { rl.close(); stream.destroy(); } catch { /* ignore */ } resolve(result); };
+    const done = (): void => {
+      try {
+        rl.close();
+        stream.destroy();
+      } catch {
+        /* ignore */
+      }
+      resolve(result);
+    };
     rl.on('line', (line) => {
-      if (++lines > maxLines) { done(); return; }
+      if (++lines > maxLines) {
+        done();
+        return;
+      }
       if (!line.trim()) return;
       try {
         const obj = JSON.parse(line);
@@ -72,19 +83,23 @@ export async function scanJsonlHead(logPath: string, maxLines = 50): Promise<Jso
         }
         if (!result.firstPrompt) {
           const m = obj?.message;
-          if ((obj?.type === 'user' || m?.role === 'user')) {
+          if (obj?.type === 'user' || m?.role === 'user') {
             const content = m?.content;
             if (typeof content === 'string') {
               result.firstPrompt = extractMeaningfulPrompt(content);
             } else if (Array.isArray(content)) {
               result.firstPrompt = extractFirstMeaningfulPrompt(
-                content.map((part) => part?.type === 'text' && typeof part.text === 'string' ? part.text : undefined),
+                content.map((part) =>
+                  part?.type === 'text' && typeof part.text === 'string' ? part.text : undefined,
+                ),
               );
             }
           }
         }
         if (result.cwd && result.firstPrompt) done();
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     });
     rl.on('close', () => resolve(result));
     rl.on('error', () => resolve(result));
@@ -141,18 +156,28 @@ export const claudeCodeAdapter: Adapter = {
             raw: e,
           });
         }
-      } catch { /* no index file — fall through */ }
+      } catch {
+        /* no index file — fall through */
+      }
 
       // 2) Any top-level *.jsonl files in the project dir that weren't covered.
       let files: string[];
-      try { files = await readdir(projectPath); } catch { continue; }
+      try {
+        files = await readdir(projectPath);
+      } catch {
+        continue;
+      }
       for (const f of files) {
         if (!f.endsWith('.jsonl')) continue;
         const sessionId = f.slice(0, -'.jsonl'.length);
         if (seen.has(sessionId)) continue;
         const logPath = join(projectPath, f);
         let mtime: number | undefined;
-        try { mtime = (await stat(logPath)).mtimeMs; } catch { continue; }
+        try {
+          mtime = (await stat(logPath)).mtimeMs;
+        } catch {
+          continue;
+        }
         const head = await scanJsonlHead(logPath);
         if (!projectCwd && head.cwd) projectCwd = head.cwd;
         out.push({
@@ -213,7 +238,11 @@ async function* iterJsonlEvents(logPath: string): AsyncIterable<TranscriptEvent>
     for await (const line of rl) {
       if (!line.trim()) continue;
       let obj: any;
-      try { obj = JSON.parse(line); } catch { continue; }
+      try {
+        obj = JSON.parse(line);
+      } catch {
+        continue;
+      }
       const mode = typeof obj?.permissionMode === 'string' ? obj.permissionMode : undefined;
       const ts = obj?.timestamp ? Date.parse(obj.timestamp) : undefined;
       if (ts != null) lastTs = ts;
@@ -239,7 +268,11 @@ async function* iterJsonlEvents(logPath: string): AsyncIterable<TranscriptEvent>
       if (Array.isArray(content)) {
         for (const part of content) {
           if (!part || typeof part !== 'object') continue;
-          if (part.type === 'tool_result' && typeof part.tool_use_id === 'string' && exitPlanModeIds.has(part.tool_use_id)) {
+          if (
+            part.type === 'tool_result' &&
+            typeof part.tool_use_id === 'string' &&
+            exitPlanModeIds.has(part.tool_use_id)
+          ) {
             resultIsExitPlanMode = true;
             break;
           }
@@ -279,9 +312,13 @@ async function* iterJsonlEvents(logPath: string): AsyncIterable<TranscriptEvent>
 function* extractEvents(obj: any): Generator<TranscriptEvent> {
   const ts = obj?.timestamp ? Date.parse(obj.timestamp) : undefined;
   const role: TranscriptEvent['role'] | undefined =
-    obj?.type === 'user' ? 'user' :
-    obj?.type === 'assistant' ? 'assistant' :
-    obj?.type === 'system' ? 'system' : undefined;
+    obj?.type === 'user'
+      ? 'user'
+      : obj?.type === 'assistant'
+        ? 'assistant'
+        : obj?.type === 'system'
+          ? 'system'
+          : undefined;
   const message = obj?.message;
   const content = message?.content;
   // Text content
@@ -296,7 +333,11 @@ function* extractEvents(obj: any): Generator<TranscriptEvent> {
         yield { ts, kind: 'text', role, text: part.text };
       } else if (part.type === 'tool_use') {
         let inputText = '';
-        try { inputText = JSON.stringify(part.input ?? {}); } catch { inputText = ''; }
+        try {
+          inputText = JSON.stringify(part.input ?? {});
+        } catch {
+          inputText = '';
+        }
         yield {
           ts,
           kind: 'tool_call',
@@ -309,7 +350,9 @@ function* extractEvents(obj: any): Generator<TranscriptEvent> {
         let text = '';
         if (typeof part.content === 'string') text = part.content;
         else if (Array.isArray(part.content)) {
-          text = part.content.map((c: any) => typeof c?.text === 'string' ? c.text : '').join('\n');
+          text = part.content
+            .map((c: any) => (typeof c?.text === 'string' ? c.text : ''))
+            .join('\n');
         }
         yield {
           ts,

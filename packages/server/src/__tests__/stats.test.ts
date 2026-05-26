@@ -29,8 +29,17 @@ const mockTotals = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(core.getHeaderTotals).mockReturnValue({ sessions: 10, distinctPwds: 4, activeDays: 6, distinctAgents: 2 });
-  vi.mocked(core.getStreaks).mockReturnValue({ current: 3, longest: 5, longestRange: { start: '2026-01-01', end: '2026-01-05' } });
+  vi.mocked(core.getHeaderTotals).mockReturnValue({
+    sessions: 10,
+    distinctPwds: 4,
+    activeDays: 6,
+    distinctAgents: 2,
+  });
+  vi.mocked(core.getStreaks).mockReturnValue({
+    current: 3,
+    longest: 5,
+    longestRange: { start: '2026-01-01', end: '2026-01-05' },
+  });
   vi.mocked(core.getContributions).mockReturnValue([{ date: '2026-05-21', count: 2 }]);
   vi.mocked(core.getWindowMetrics).mockReturnValue({
     days: 7,

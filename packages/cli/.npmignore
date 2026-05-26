@@ -1,0 +1,2 @@
+# Keep npm from falling back to the repo .gitignore. README.md and LICENSE are
+# generated from the repo root during prepare:package and must remain packable.

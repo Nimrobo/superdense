@@ -37,22 +37,39 @@ const mockHeader: apiModule.HeaderStats = {
 const mockWindow: apiModule.WindowBundle = {
   days: 7,
   window: {
-    sessions: 12, projects: 3, activeDays: 5, avgPerActiveDay: 2.4,
-    adapterMix: [{ agent: 'claude-code', count: 8 }, { agent: 'codex', count: 4 }],
-    topClis: [{ cli: 'git', count: 30 }, { cli: 'gh', count: 12 }],
+    sessions: 12,
+    projects: 3,
+    activeDays: 5,
+    avgPerActiveDay: 2.4,
+    adapterMix: [
+      { agent: 'claude-code', count: 8 },
+      { agent: 'codex', count: 4 },
+    ],
+    topClis: [
+      { cli: 'git', count: 30 },
+      { cli: 'gh', count: 12 },
+    ],
     activeProjects: [{ pwd: '/home/u/project', count: 6, activeDays: 3, lastActiveAt: Date.now() }],
-    repeatedReturnProjects: [{ pwd: '/home/u/project', activeDays: 3, sessions: 6, lastActiveAt: Date.now() }],
+    repeatedReturnProjects: [
+      { pwd: '/home/u/project', activeDays: 3, sessions: 6, lastActiveAt: Date.now() },
+    ],
   },
 };
 
 const mockInsights: apiModule.Insights = {
   hourDowHeatmap: Array.from({ length: 7 * 24 }).map((_, i) => ({
-    dow: Math.floor(i / 24), hour: i % 24, count: 0,
+    dow: Math.floor(i / 24),
+    hour: i % 24,
+    count: 0,
   })),
   workRhythm: { peakHour: null, mostConsistentWeekday: null },
   comebackProjects: [],
   dayKinds: [{ date: '2026-05-21', sessions: 3, pwds: 1, kind: 'focus' }],
-  personalRecords: { bestDay: { date: '2026-05-21', sessions: 8 }, mostCliInSession: null, longestSession: null },
+  personalRecords: {
+    bestDay: { date: '2026-05-21', sessions: 8 },
+    mostCliInSession: null,
+    longestSession: null,
+  },
 };
 
 const defaultProps = {

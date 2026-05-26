@@ -28,7 +28,12 @@ export interface WindowMetrics {
   adapterMix: Array<{ agent: string; count: number }>;
   topClis: Array<{ cli: string; count: number }>;
   activeProjects: Array<{ pwd: string; count: number; activeDays: number; lastActiveAt: number }>;
-  repeatedReturnProjects: Array<{ pwd: string; activeDays: number; sessions: number; lastActiveAt: number }>;
+  repeatedReturnProjects: Array<{
+    pwd: string;
+    activeDays: number;
+    sessions: number;
+    lastActiveAt: number;
+  }>;
 }
 
 export interface WindowBundle {
@@ -58,15 +63,25 @@ function addDays(ms: number, n: number): number {
 export function getHeaderTotals(): HeaderTotals {
   const db = getDb();
   const sessions = (db.prepare('SELECT COUNT(*) AS c FROM sessions').get() as { c: number }).c;
-  const distinctPwds = (db
-    .prepare("SELECT COUNT(DISTINCT COALESCE(NULLIF(project_key, ''), pwd)) AS c FROM sessions")
-    .get() as { c: number }).c;
-  const activeDays = (db.prepare(`
+  const distinctPwds = (
+    db
+      .prepare("SELECT COUNT(DISTINCT COALESCE(NULLIF(project_key, ''), pwd)) AS c FROM sessions")
+      .get() as { c: number }
+  ).c;
+  const activeDays = (
+    db
+      .prepare(
+        `
     SELECT COUNT(DISTINCT date(modified_at / 1000, 'unixepoch', 'localtime')) AS c
       FROM sessions
      WHERE modified_at IS NOT NULL
-  `).get() as { c: number }).c;
-  const distinctAgents = (db.prepare('SELECT COUNT(DISTINCT agent) AS c FROM sessions').get() as { c: number }).c;
+  `,
+      )
+      .get() as { c: number }
+  ).c;
+  const distinctAgents = (
+    db.prepare('SELECT COUNT(DISTINCT agent) AS c FROM sessions').get() as { c: number }
+  ).c;
   return { sessions, distinctPwds, activeDays, distinctAgents };
 }
 
@@ -78,12 +93,14 @@ export function getHeaderTotals(): HeaderTotals {
  */
 export function getStreaks(now: number = Date.now()): Streaks {
   const rows = getDb()
-    .prepare(`
+    .prepare(
+      `
       SELECT DISTINCT date(modified_at / 1000, 'unixepoch', 'localtime') AS d
         FROM sessions
        WHERE modified_at IS NOT NULL
        ORDER BY d ASC
-    `)
+    `,
+    )
     .all() as Array<{ d: string }>;
   if (rows.length === 0) return { current: 0, longest: 0, longestRange: null };
 
@@ -143,13 +160,15 @@ export function getContributions(now: number = Date.now(), days = 366): Contribu
   const clampedDays = Math.max(1, Math.min(366, Math.floor(days)));
   const start = localDayStart(now) - (clampedDays - 1) * DAY_MS;
   const rows = getDb()
-    .prepare(`
+    .prepare(
+      `
       SELECT date(modified_at / 1000, 'unixepoch', 'localtime') AS d, COUNT(*) AS c
         FROM sessions
        WHERE modified_at IS NOT NULL
          AND modified_at >= ?
        GROUP BY d
-    `)
+    `,
+    )
     .all(start - DAY_MS) as Array<{ d: string; c: number }>;
   const map = new Map<string, number>();
   for (const r of rows) map.set(r.d, r.c);
@@ -165,40 +184,59 @@ export function getContributions(now: number = Date.now(), days = 366): Contribu
   return out;
 }
 
-function computeWindowMetrics(db: ReturnType<typeof getDb>, startMs: number, endMs: number): WindowMetrics {
-  const sessions = (db
-    .prepare(`SELECT COUNT(*) AS c FROM sessions WHERE modified_at IS NOT NULL AND modified_at >= ? AND modified_at < ?`)
-    .get(startMs, endMs) as { c: number }).c;
+function computeWindowMetrics(
+  db: ReturnType<typeof getDb>,
+  startMs: number,
+  endMs: number,
+): WindowMetrics {
+  const sessions = (
+    db
+      .prepare(
+        `SELECT COUNT(*) AS c FROM sessions WHERE modified_at IS NOT NULL AND modified_at >= ? AND modified_at < ?`,
+      )
+      .get(startMs, endMs) as { c: number }
+  ).c;
 
-  const projects = (db
-    .prepare(`
+  const projects = (
+    db
+      .prepare(
+        `
       SELECT COUNT(DISTINCT COALESCE(NULLIF(project_key, ''), pwd)) AS c
         FROM sessions
        WHERE modified_at IS NOT NULL AND modified_at >= ? AND modified_at < ?
-    `)
-    .get(startMs, endMs) as { c: number }).c;
+    `,
+      )
+      .get(startMs, endMs) as { c: number }
+  ).c;
 
-  const activeDays = (db
-    .prepare(`
+  const activeDays = (
+    db
+      .prepare(
+        `
       SELECT COUNT(DISTINCT date(modified_at / 1000, 'unixepoch', 'localtime')) AS c
         FROM sessions
        WHERE modified_at IS NOT NULL AND modified_at >= ? AND modified_at < ?
-    `)
-    .get(startMs, endMs) as { c: number }).c;
+    `,
+      )
+      .get(startMs, endMs) as { c: number }
+  ).c;
 
   const adapterMixRows = db
-    .prepare(`
+    .prepare(
+      `
       SELECT agent, COUNT(*) AS c
         FROM sessions
        WHERE modified_at IS NOT NULL AND modified_at >= ? AND modified_at < ?
        GROUP BY agent
        ORDER BY c DESC
-    `)
+    `,
+    )
     .all(startMs, endMs) as Array<{ agent: string; c: number }>;
   const adapterMix = adapterMixRows.map((r) => ({ agent: r.agent, count: r.c }));
 
   const topCliRows = db
-    .prepare(`
+    .prepare(
+      `
       SELECT je.key AS cli, SUM(CAST(je.value AS INTEGER)) AS c
         FROM sessions s
         INNER JOIN query_enrich qe
@@ -208,12 +246,14 @@ function computeWindowMetrics(db: ReturnType<typeof getDb>, startMs: number, end
        GROUP BY je.key
        ORDER BY c DESC, je.key ASC
        LIMIT 10
-    `)
+    `,
+    )
     .all(startMs, endMs) as Array<{ cli: string; c: number }>;
   const topClis = topCliRows.map((r) => ({ cli: r.cli, count: r.c }));
 
   const activeProjectRows = db
-    .prepare(`
+    .prepare(
+      `
       SELECT COALESCE(NULLIF(project_key, ''), pwd) AS pwd,
              COUNT(*) AS c,
              COUNT(DISTINCT date(modified_at / 1000, 'unixepoch', 'localtime')) AS active_days,
@@ -223,8 +263,14 @@ function computeWindowMetrics(db: ReturnType<typeof getDb>, startMs: number, end
        GROUP BY COALESCE(NULLIF(project_key, ''), pwd)
        ORDER BY c DESC, last_active_at DESC
        LIMIT 6
-    `)
-    .all(startMs, endMs) as Array<{ pwd: string; c: number; active_days: number; last_active_at: number }>;
+    `,
+    )
+    .all(startMs, endMs) as Array<{
+    pwd: string;
+    c: number;
+    active_days: number;
+    last_active_at: number;
+  }>;
   const activeProjects = activeProjectRows.map((r) => ({
     pwd: r.pwd,
     count: r.c,
@@ -233,7 +279,8 @@ function computeWindowMetrics(db: ReturnType<typeof getDb>, startMs: number, end
   }));
 
   const repeatedRows = db
-    .prepare(`
+    .prepare(
+      `
       SELECT COALESCE(NULLIF(project_key, ''), pwd) AS pwd,
              COUNT(DISTINCT date(modified_at / 1000, 'unixepoch', 'localtime')) AS active_days,
              COUNT(*) AS sessions,
@@ -244,8 +291,14 @@ function computeWindowMetrics(db: ReturnType<typeof getDb>, startMs: number, end
       HAVING active_days >= 3
        ORDER BY active_days DESC, sessions DESC, last_active_at DESC
        LIMIT 6
-    `)
-    .all(startMs, endMs) as Array<{ pwd: string; active_days: number; sessions: number; last_active_at: number }>;
+    `,
+    )
+    .all(startMs, endMs) as Array<{
+    pwd: string;
+    active_days: number;
+    sessions: number;
+    last_active_at: number;
+  }>;
   const repeatedReturnProjects = repeatedRows.map((r) => ({
     pwd: r.pwd,
     activeDays: r.active_days,

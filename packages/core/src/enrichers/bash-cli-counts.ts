@@ -1,14 +1,54 @@
 import type { Enricher } from './types.js';
 
 const BUILTINS = new Set([
-  'cd', 'echo', 'export', 'unset', 'set', 'source', '.',
-  'if', 'then', 'else', 'elif', 'fi',
-  'for', 'while', 'do', 'done', 'case', 'esac', 'select', 'until',
-  'function', 'return', 'break', 'continue',
-  'true', 'false', ':',
-  'read', 'eval', 'exec', 'shift', 'test', '[', '[[',
-  'alias', 'unalias', 'local', 'declare', 'typeset', 'readonly',
-  'pwd', 'time', 'trap', 'wait', 'jobs', 'bg', 'fg', 'kill',
+  'cd',
+  'echo',
+  'export',
+  'unset',
+  'set',
+  'source',
+  '.',
+  'if',
+  'then',
+  'else',
+  'elif',
+  'fi',
+  'for',
+  'while',
+  'do',
+  'done',
+  'case',
+  'esac',
+  'select',
+  'until',
+  'function',
+  'return',
+  'break',
+  'continue',
+  'true',
+  'false',
+  ':',
+  'read',
+  'eval',
+  'exec',
+  'shift',
+  'test',
+  '[',
+  '[[',
+  'alias',
+  'unalias',
+  'local',
+  'declare',
+  'typeset',
+  'readonly',
+  'pwd',
+  'time',
+  'trap',
+  'wait',
+  'jobs',
+  'bg',
+  'fg',
+  'kill',
 ]);
 
 function extractCli(command: string): string | null {
@@ -56,14 +96,48 @@ function splitSegments(command: string): string[] {
   while (i < command.length) {
     const c = command[i]!;
     const n = command[i + 1];
-    if (!inDouble && c === "'") { inSingle = !inSingle; buf += c; i++; continue; }
-    if (!inSingle && c === '"') { inDouble = !inDouble; buf += c; i++; continue; }
+    if (!inDouble && c === "'") {
+      inSingle = !inSingle;
+      buf += c;
+      i++;
+      continue;
+    }
+    if (!inSingle && c === '"') {
+      inDouble = !inDouble;
+      buf += c;
+      i++;
+      continue;
+    }
     if (!inSingle && !inDouble) {
-      if (c === '\\' && n) { buf += c + n; i += 2; continue; }
-      if (c === ';') { out.push(buf); buf = ''; i++; continue; }
-      if (c === '&' && n === '&') { out.push(buf); buf = ''; i += 2; continue; }
-      if (c === '|' && n === '|') { out.push(buf); buf = ''; i += 2; continue; }
-      if (c === '|') { out.push(buf); buf = ''; i++; continue; }
+      if (c === '\\' && n) {
+        buf += c + n;
+        i += 2;
+        continue;
+      }
+      if (c === ';') {
+        out.push(buf);
+        buf = '';
+        i++;
+        continue;
+      }
+      if (c === '&' && n === '&') {
+        out.push(buf);
+        buf = '';
+        i += 2;
+        continue;
+      }
+      if (c === '|' && n === '|') {
+        out.push(buf);
+        buf = '';
+        i += 2;
+        continue;
+      }
+      if (c === '|') {
+        out.push(buf);
+        buf = '';
+        i++;
+        continue;
+      }
     }
     buf += c;
     i++;
@@ -86,7 +160,8 @@ export const bashCliCountsEnricher: Enricher = {
   version: 1,
   returns: 'json',
   alwaysRun: true,
-  description: 'Map from CLI program (e.g. "git", "gh", "npm") to invocation count across Bash tool calls in the session.',
+  description:
+    'Map from CLI program (e.g. "git", "gh", "npm") to invocation count across Bash tool calls in the session.',
   async run(ctx) {
     const counts: Record<string, number> = {};
     for await (const ev of ctx.iterEvents(ctx.logPath)) {

@@ -1,5 +1,7 @@
 node_modules/
 dist/
+packages/cli/README.md
+packages/cli/LICENSE
 *.tsbuildinfo
 .DS_Store
 .env

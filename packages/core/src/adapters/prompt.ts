@@ -1,8 +1,4 @@
-const WRAPPER_TAGS = [
-  'system_instruction',
-  'environment_context',
-  'local-command-caveat',
-];
+const WRAPPER_TAGS = ['system_instruction', 'environment_context', 'local-command-caveat'];
 
 const EMPTY_SLASH_COMMANDS = new Set(['/model', '/exit', '/config']);
 
@@ -78,11 +74,16 @@ export function extractMeaningfulPrompt(value?: string | null, limit = 500): str
 
   if (isEmptySlashCommand(text)) return undefined;
 
-  const stripped = removeInternalLines(removeSimpleCommandTags(removeTagBlocks(text, WRAPPER_TAGS)));
+  const stripped = removeInternalLines(
+    removeSimpleCommandTags(removeTagBlocks(text, WRAPPER_TAGS)),
+  );
   return compact(stripped, limit);
 }
 
-export function extractFirstMeaningfulPrompt(values: Iterable<string | null | undefined>, limit = 500): string | undefined {
+export function extractFirstMeaningfulPrompt(
+  values: Iterable<string | null | undefined>,
+  limit = 500,
+): string | undefined {
   for (const value of values) {
     const prompt = extractMeaningfulPrompt(value, limit);
     if (prompt) return prompt;

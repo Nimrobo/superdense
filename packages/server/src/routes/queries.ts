@@ -67,10 +67,16 @@ async function saveQueryRequest(req: { body: unknown }, reply: { status: (code: 
   }
 }
 
-async function runSavedQueryRequest(req: { params: unknown }, reply: { status: (code: number) => void }) {
+async function runSavedQueryRequest(
+  req: { params: unknown },
+  reply: { status: (code: number) => void },
+) {
   const { id } = req.params as { id: string };
   const result = await runSavedQuery(id);
-  if (!result) { reply.status(404); return { error: 'not found' }; }
+  if (!result) {
+    reply.status(404);
+    return { error: 'not found' };
+  }
   return result;
 }
 
@@ -83,7 +89,10 @@ export async function registerQueriesRoutes(app: FastifyInstance): Promise<void>
   app.get('/api/queries/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
     const q = getQuery(id);
-    if (!q) { reply.status(404); return { error: 'not found' }; }
+    if (!q) {
+      reply.status(404);
+      return { error: 'not found' };
+    }
     const members = listQueryMatches(id);
     return { ...q, members };
   });
@@ -91,7 +100,10 @@ export async function registerQueriesRoutes(app: FastifyInstance): Promise<void>
   app.get('/api/saved-queries/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
     const q = getQuery(id);
-    if (!q) { reply.status(404); return { error: 'not found' }; }
+    if (!q) {
+      reply.status(404);
+      return { error: 'not found' };
+    }
     const members = listQueryMatches(id);
     return { ...q, members };
   });

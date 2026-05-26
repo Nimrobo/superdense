@@ -3,7 +3,8 @@ import type { Filter } from './types.js';
 export const userPromptContainsFilter: Filter = {
   name: 'user_prompt_contains',
   title: 'User Prompt Contains',
-  description: 'Matches sessions where any user-role transcript message contains the given keyword.',
+  description:
+    'Matches sessions where any user-role transcript message contains the given keyword.',
   readsLog: true,
   paramsSchema: {
     type: 'object',
@@ -13,9 +14,7 @@ export const userPromptContainsFilter: Filter = {
     },
     additionalProperties: false,
   },
-  examples: [
-    { filter: { name: 'user_prompt_contains', params: { keyword: 'billing' } } },
-  ],
+  examples: [{ filter: { name: 'user_prompt_contains', params: { keyword: 'billing' } } }],
   async run(ctx, params) {
     const keyword = String(params.keyword ?? '');
     if (!keyword) return false;

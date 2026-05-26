@@ -75,7 +75,11 @@ function walkValidate(p: QueryFilter, filters: Map<string, Filter>): void {
     if (!p.filter || typeof p.filter.name !== 'string') {
       throw new ValidationError('filter leaf: name required');
     }
-    if (p.filter.params == null || typeof p.filter.params !== 'object' || Array.isArray(p.filter.params)) {
+    if (
+      p.filter.params == null ||
+      typeof p.filter.params !== 'object' ||
+      Array.isArray(p.filter.params)
+    ) {
       throw new ValidationError(`filter "${p.filter.name}": params must be an object`);
     }
     const filter = filters.get(p.filter.name);
@@ -94,7 +98,11 @@ type ParamsSchema = {
   type?: string | string[];
 };
 
-function validateParamsAgainstSchema(name: string, params: Record<string, unknown>, schema: object): void {
+function validateParamsAgainstSchema(
+  name: string,
+  params: Record<string, unknown>,
+  schema: object,
+): void {
   validateObjectParams(name, undefined, params, schema as ParamsSchema);
 }
 
@@ -127,10 +135,10 @@ function validateObjectParams(
       throw new ValidationError(`filter "${filterName}": param "${paramName}" must be ${expected}`);
     }
     if (
-      typeof value === 'object'
-      && value !== null
-      && !Array.isArray(value)
-      && (prop.properties || prop.required || prop.additionalProperties === false)
+      typeof value === 'object' &&
+      value !== null &&
+      !Array.isArray(value) &&
+      (prop.properties || prop.required || prop.additionalProperties === false)
     ) {
       validateObjectParams(filterName, paramName, value as Record<string, unknown>, prop);
     }
@@ -141,7 +149,8 @@ function matchesType(value: unknown, type: string | string[]): boolean {
   const types = Array.isArray(type) ? type : [type];
   return types.some((t) => {
     if (t === 'string') return typeof value === 'string';
-    if (t === 'number' || t === 'integer') return typeof value === 'number' && Number.isFinite(value);
+    if (t === 'number' || t === 'integer')
+      return typeof value === 'number' && Number.isFinite(value);
     if (t === 'boolean') return typeof value === 'boolean';
     if (t === 'object') return typeof value === 'object' && value !== null && !Array.isArray(value);
     if (t === 'array') return Array.isArray(value);

@@ -92,11 +92,13 @@ describe('query routes', () => {
     });
 
     expect(res.statusCode).toBe(200);
-    expect(core.createQuery).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'Saved',
-      filters: definition.filters,
-      enrichers: [],
-    }));
+    expect(core.createQuery).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Saved',
+        filters: definition.filters,
+        enrichers: [],
+      }),
+    );
     expect(core.runSavedQuery).not.toHaveBeenCalled();
     expect(res.json()).toMatchObject({ id: 'q1', name: 'Saved' });
   });

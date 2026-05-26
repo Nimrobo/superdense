@@ -19,9 +19,20 @@ beforeEach(() => mockFetch.mockClear());
 
 describe('api.stats', () => {
   it('calls /api/stats', async () => {
-    mockOk({ totals: {}, lastIndexedAt: null, perDay: [], topPwds: [], topQueries: [], topTools: [], recentSessions: [] });
+    mockOk({
+      totals: {},
+      lastIndexedAt: null,
+      perDay: [],
+      topPwds: [],
+      topQueries: [],
+      topTools: [],
+      recentSessions: [],
+    });
     const result = await api.stats();
-    expect(mockFetch).toHaveBeenCalledWith('/api/stats', expect.objectContaining({ headers: expect.anything() }));
+    expect(mockFetch).toHaveBeenCalledWith(
+      '/api/stats',
+      expect.objectContaining({ headers: expect.anything() }),
+    );
     expect(result).toMatchObject({ totals: {}, perDay: [] });
   });
 });
@@ -62,7 +73,10 @@ describe('api.getSession', () => {
   it('encodes special characters in id', async () => {
     mockOk({});
     await api.getSession('some/id with spaces');
-    expect(mockFetch).toHaveBeenCalledWith('/api/sessions/some%2Fid%20with%20spaces', expect.anything());
+    expect(mockFetch).toHaveBeenCalledWith(
+      '/api/sessions/some%2Fid%20with%20spaces',
+      expect.anything(),
+    );
   });
 });
 
@@ -76,7 +90,10 @@ describe('api.getTranscript', () => {
   it('includes offset and limit params', async () => {
     mockOk({ items: [], offset: 50, limit: 25 });
     await api.getTranscript('abc', { offset: 50, limit: 25 });
-    expect(mockFetch).toHaveBeenCalledWith('/api/sessions/abc/transcript?offset=50&limit=25', expect.anything());
+    expect(mockFetch).toHaveBeenCalledWith(
+      '/api/sessions/abc/transcript?offset=50&limit=25',
+      expect.anything(),
+    );
   });
 });
 
@@ -84,7 +101,10 @@ describe('api.runSessionCompactor', () => {
   it('calls the session compactor endpoint', async () => {
     mockOk({ session: { id: 'agent:abc' }, compactor: { name: 'trace' }, result: { v: 1 } });
     await api.runSessionCompactor('agent:abc', 'trace');
-    expect(mockFetch).toHaveBeenCalledWith('/api/sessions/agent%3Aabc/compactors/trace', expect.anything());
+    expect(mockFetch).toHaveBeenCalledWith(
+      '/api/sessions/agent%3Aabc/compactors/trace',
+      expect.anything(),
+    );
   });
 });
 
@@ -92,19 +112,28 @@ describe('api.reindex', () => {
   it('sends POST to /api/reindex', async () => {
     mockOk({ ok: true });
     await api.reindex();
-    expect(mockFetch).toHaveBeenCalledWith('/api/reindex', expect.objectContaining({ method: 'POST' }));
+    expect(mockFetch).toHaveBeenCalledWith(
+      '/api/reindex',
+      expect.objectContaining({ method: 'POST' }),
+    );
   });
 
   it('appends ?full=1 when full=true', async () => {
     mockOk({ ok: true });
     await api.reindex(true);
-    expect(mockFetch).toHaveBeenCalledWith('/api/reindex?full=1', expect.objectContaining({ method: 'POST' }));
+    expect(mockFetch).toHaveBeenCalledWith(
+      '/api/reindex?full=1',
+      expect.objectContaining({ method: 'POST' }),
+    );
   });
 });
 
 describe('api.createQuery', () => {
   it('sends POST with JSON body', async () => {
-    const query = { filters: { filter: { name: 'session', params: { agent: 'codex' } } }, enrichers: [] };
+    const query = {
+      filters: { filter: { name: 'session', params: { agent: 'codex' } } },
+      enrichers: [],
+    };
     mockOk({ id: 'q1' });
     await api.createQuery({ name: 'Q', ...query });
     expect(mockFetch).toHaveBeenCalledWith(
@@ -121,7 +150,10 @@ describe('api.deleteQuery', () => {
   it('sends DELETE request', async () => {
     mockOk({ ok: true });
     await api.deleteQuery('q1');
-    expect(mockFetch).toHaveBeenCalledWith('/api/saved-queries/q1', expect.objectContaining({ method: 'DELETE' }));
+    expect(mockFetch).toHaveBeenCalledWith(
+      '/api/saved-queries/q1',
+      expect.objectContaining({ method: 'DELETE' }),
+    );
   });
 });
 

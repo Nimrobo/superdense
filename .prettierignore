@@ -1,0 +1,9 @@
+dist
+node_modules
+pnpm-lock.yaml
+packages/cli/README.md
+packages/cli/LICENSE
+.context
+CHANGELOG.md
+**/CHANGELOG.md
+**/*.html

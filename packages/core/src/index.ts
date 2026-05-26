@@ -2,8 +2,21 @@ export * from './types.js';
 export * from './db.js';
 export * from './paths.js';
 export * from './indexer.js';
-export { adapters, getAdapter, iterSessionEvents, claudeCodeAdapter, codexAdapter, openCodeAdapter } from './adapters/index.js';
-export { loadFilters, getFilter, listFilters, listFilterCatalog, clearFilterCache } from './filters/index.js';
+export {
+  adapters,
+  getAdapter,
+  iterSessionEvents,
+  claudeCodeAdapter,
+  codexAdapter,
+  openCodeAdapter,
+} from './adapters/index.js';
+export {
+  loadFilters,
+  getFilter,
+  listFilters,
+  listFilterCatalog,
+  clearFilterCache,
+} from './filters/index.js';
 export type { Filter, FilterCatalogItem, FilterContext, FilterResult } from './filters/types.js';
 export {
   listEnrichers,
@@ -32,7 +45,14 @@ export type {
   IntOp,
   EnrichReturn,
 } from './query/types.js';
-export { runQueryEvaluation, backfillQuery, runSavedQuery, runAdHocQuery, previewQuery, evaluateQuery } from './queryeval.js';
+export {
+  runQueryEvaluation,
+  backfillQuery,
+  runSavedQuery,
+  runAdHocQuery,
+  previewQuery,
+  evaluateQuery,
+} from './queryeval.js';
 export type { AdHocQueryResult, EvaluateResult, QueryResultItem } from './queryeval.js';
 export {
   getHeaderTotals,

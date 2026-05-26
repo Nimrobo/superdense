@@ -30,7 +30,8 @@ interface OpenCodePartRow {
 function candidateDbPaths(): string[] {
   if (process.env.OPENCODE_DB) return [process.env.OPENCODE_DB];
   const paths: string[] = [];
-  if (process.env.XDG_DATA_HOME) paths.push(join(process.env.XDG_DATA_HOME, 'opencode', 'opencode.db'));
+  if (process.env.XDG_DATA_HOME)
+    paths.push(join(process.env.XDG_DATA_HOME, 'opencode', 'opencode.db'));
   paths.push(join(homedir(), '.local', 'share', 'opencode', 'opencode.db'));
   paths.push(join(homedir(), 'Library', 'Application Support', 'opencode', 'opencode.db'));
   return Array.from(new Set(paths));
@@ -74,7 +75,11 @@ function parseLocator(value: string): { dbPath: string; sessionId: string } | nu
 }
 
 function safeJsonParse(value: string): any {
-  try { return JSON.parse(value); } catch { return undefined; }
+  try {
+    return JSON.parse(value);
+  } catch {
+    return undefined;
+  }
 }
 
 function isTranscriptRole(role: unknown): role is TranscriptEvent['role'] {
@@ -84,7 +89,11 @@ function isTranscriptRole(role: unknown): role is TranscriptEvent['role'] {
 function stringifyValue(value: unknown): string {
   if (value == null) return '';
   if (typeof value === 'string') return value;
-  try { return JSON.stringify(value); } catch { return String(value); }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
 }
 
 function compactText(value: unknown): string | undefined {
@@ -98,13 +107,22 @@ function resultText(state: any): string | undefined {
 
 function shouldEmitToolResult(state: any): boolean {
   if (!state || typeof state !== 'object') return false;
-  return state.output != null || state.error != null || state.status === 'completed' || state.status === 'error' || state.status === 'failed';
+  return (
+    state.output != null ||
+    state.error != null ||
+    state.status === 'completed' ||
+    state.status === 'error' ||
+    state.status === 'failed'
+  );
 }
 
 function openCodeSelect(db: Database.Database): string {
   const hasProject = tableExists(db, 'project');
   const hasWorkspace = tableExists(db, 'workspace');
-  const workspaceHasBranch = hasWorkspace && columnExists(db, 'workspace', 'branch') && columnExists(db, 'session', 'workspace_id');
+  const workspaceHasBranch =
+    hasWorkspace &&
+    columnExists(db, 'workspace', 'branch') &&
+    columnExists(db, 'session', 'workspace_id');
 
   return `
     SELECT
@@ -128,7 +146,9 @@ function openCodeSelect(db: Database.Database): string {
 
 function firstPrompt(db: Database.Database, sessionId: string): string | undefined {
   if (!tableExists(db, 'message') || !tableExists(db, 'part')) return undefined;
-  const rows = db.prepare(`
+  const rows = db
+    .prepare(
+      `
     SELECT p.data AS part_data
     FROM message m
     JOIN part p ON p.message_id = m.id
@@ -137,7 +157,9 @@ function firstPrompt(db: Database.Database, sessionId: string): string | undefin
       AND json_extract(p.data, '$.type') = 'text'
     ORDER BY m.time_created ASC, p.time_created ASC, p.id ASC
     LIMIT 10
-  `).all(sessionId) as Array<{ part_data: string }>;
+  `,
+    )
+    .all(sessionId) as Array<{ part_data: string }>;
 
   return extractFirstMeaningfulPrompt(rows.map((row) => safeJsonParse(row.part_data)?.text));
 }
@@ -195,7 +217,9 @@ async function* iterOpenCodeEvents(logPath: string): AsyncIterable<TranscriptEve
   if (!db) return;
   try {
     if (!tableExists(db, 'message') || !tableExists(db, 'part')) return;
-    const rows = db.prepare(`
+    const rows = db
+      .prepare(
+        `
       SELECT
         m.id AS message_id,
         json_extract(m.data, '$.role') AS message_role,
@@ -208,14 +232,19 @@ async function* iterOpenCodeEvents(logPath: string): AsyncIterable<TranscriptEve
       JOIN part p ON p.message_id = m.id
       WHERE m.session_id = ?
       ORDER BY m.time_created ASC, p.time_created ASC, p.id ASC
-    `).all(parsed.sessionId) as OpenCodePartRow[];
+    `,
+      )
+      .all(parsed.sessionId) as OpenCodePartRow[];
 
     let lastMode: string | undefined;
     let lastMessageId: string | undefined;
     for (const row of rows) {
       if (row.message_id !== lastMessageId) {
         lastMessageId = row.message_id;
-        const mode = typeof row.message_agent === 'string' && row.message_agent ? row.message_agent : undefined;
+        const mode =
+          typeof row.message_agent === 'string' && row.message_agent
+            ? row.message_agent
+            : undefined;
         if (mode && mode !== lastMode) {
           yield { ts: row.message_time, kind: 'mode_change', mode, prevMode: lastMode };
           lastMode = mode;

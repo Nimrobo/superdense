@@ -41,10 +41,19 @@ describe('iterSessionEvents', () => {
   it('dispatches Codex sessions through the Codex adapter', async () => {
     const dir = await makeTempDir();
     const rolloutPath = join(dir, 'rollout.jsonl');
-    await writeFile(rolloutPath, JSON.stringify({
-      type: 'response_item',
-      payload: { type: 'function_call', call_id: 'call_1', name: 'exec_command', arguments: { cmd: 'ls' } },
-    }), 'utf8');
+    await writeFile(
+      rolloutPath,
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'function_call',
+          call_id: 'call_1',
+          name: 'exec_command',
+          arguments: { cmd: 'ls' },
+        },
+      }),
+      'utf8',
+    );
     const session = baseSession({ agent: 'codex', sessionId: 'thread-1', logPath: rolloutPath });
 
     const events = await collect(session);
@@ -52,11 +61,13 @@ describe('iterSessionEvents', () => {
     expect(events).toMatchObject([
       { kind: 'tool_call', toolCallId: 'call_1', toolName: 'exec_command' },
     ]);
-    await expect(toolCountsEnricher.run({
-      session,
-      logPath: session.logPath,
-      iterEvents: () => iterSessionEvents(session),
-    })).resolves.toEqual({ exec_command: 1 });
+    await expect(
+      toolCountsEnricher.run({
+        session,
+        logPath: session.logPath,
+        iterEvents: () => iterSessionEvents(session),
+      }),
+    ).resolves.toEqual({ exec_command: 1 });
   });
 
   it('dispatches OpenCode sessions through the OpenCode adapter', async () => {
@@ -80,23 +91,29 @@ describe('iterSessionEvents', () => {
         data TEXT NOT NULL
       );
     `);
-    db.prepare('INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?)').run(
-      'msg_1',
-      'ses_1',
-      1,
-      1,
-      JSON.stringify({ role: 'assistant' }),
-    );
-    db.prepare('INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)').run(
+    db.prepare(
+      'INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?)',
+    ).run('msg_1', 'ses_1', 1, 1, JSON.stringify({ role: 'assistant' }));
+    db.prepare(
+      'INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run(
       'part_1',
       'msg_1',
       'ses_1',
       2,
       2,
-      JSON.stringify({ type: 'tool', tool: 'bash', state: { status: 'completed', input: { command: 'pwd' }, output: '/repo' } }),
+      JSON.stringify({
+        type: 'tool',
+        tool: 'bash',
+        state: { status: 'completed', input: { command: 'pwd' }, output: '/repo' },
+      }),
     );
     db.close();
-    const session = baseSession({ agent: 'opencode', sessionId: 'ses_1', logPath: `opencode:${dbPath}#ses_1` });
+    const session = baseSession({
+      agent: 'opencode',
+      sessionId: 'ses_1',
+      logPath: `opencode:${dbPath}#ses_1`,
+    });
 
     const events = await collect(session);
 
@@ -104,11 +121,13 @@ describe('iterSessionEvents', () => {
       { kind: 'tool_call', toolName: 'bash', inputText: '{"command":"pwd"}' },
       { kind: 'tool_result', text: '/repo' },
     ]);
-    await expect(toolCountsEnricher.run({
-      session,
-      logPath: session.logPath,
-      iterEvents: () => iterSessionEvents(session),
-    })).resolves.toEqual({ bash: 1 });
+    await expect(
+      toolCountsEnricher.run({
+        session,
+        logPath: session.logPath,
+        iterEvents: () => iterSessionEvents(session),
+      }),
+    ).resolves.toEqual({ bash: 1 });
   });
 
   it('returns an empty stream for unknown adapters', async () => {

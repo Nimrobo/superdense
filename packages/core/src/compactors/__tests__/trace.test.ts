@@ -48,7 +48,12 @@ describe('traceCompactor', () => {
           toolCallId: 'c2',
           inputText: JSON.stringify({ command: 'npm test' }),
         },
-        { kind: 'tool_result', role: 'user', toolCallId: 'c2', text: 'AssertionError: expected 200' },
+        {
+          kind: 'tool_result',
+          role: 'user',
+          toolCallId: 'c2',
+          text: 'AssertionError: expected 200',
+        },
       ]),
     );
     expect(out).toEqual({
@@ -60,7 +65,13 @@ describe('traceCompactor', () => {
           asst: "I'll investigate the failure.",
           calls: [
             { tool: 'Read', arg: '/repo/auth.spec.ts', ok: true, outBytes: 18 },
-            { tool: 'Bash', arg: 'npm test', ok: false, outBytes: 28, errSig: 'AssertionError: expected 200' },
+            {
+              tool: 'Bash',
+              arg: 'npm test',
+              ok: false,
+              outBytes: 28,
+              errSig: 'AssertionError: expected 200',
+            },
           ],
         },
       ],
@@ -71,7 +82,12 @@ describe('traceCompactor', () => {
     const events: Partial<TranscriptEvent>[] = [];
     for (let i = 0; i < 60; i++) {
       events.push({ kind: 'text', role: 'user', text: `ask ${i}` });
-      events.push({ kind: 'tool_call', role: 'assistant', toolName: 'Bash', inputText: '{"command":"ls"}' });
+      events.push({
+        kind: 'tool_call',
+        role: 'assistant',
+        toolName: 'Bash',
+        inputText: '{"command":"ls"}',
+      });
     }
     const out = (await traceCompactor.run(makeCtx(events))) as unknown as {
       turns: Array<Record<string, unknown>>;
@@ -90,10 +106,20 @@ describe('traceCompactor', () => {
         { kind: 'text', role: 'user', text: 'plan this' },
         { kind: 'mode_change', mode: 'plan' },
         { kind: 'text', role: 'assistant', text: 'proposing approach' },
-        { kind: 'tool_call', role: 'assistant', toolName: 'Read', inputText: '{"file_path":"a.ts"}' },
+        {
+          kind: 'tool_call',
+          role: 'assistant',
+          toolName: 'Read',
+          inputText: '{"file_path":"a.ts"}',
+        },
         { kind: 'mode_change', mode: 'default' },
         { kind: 'text', role: 'assistant', text: 'executing now' },
-        { kind: 'tool_call', role: 'assistant', toolName: 'Write', inputText: '{"file_path":"a.ts"}' },
+        {
+          kind: 'tool_call',
+          role: 'assistant',
+          toolName: 'Write',
+          inputText: '{"file_path":"a.ts"}',
+        },
       ]),
     )) as unknown as { turns: Array<Record<string, unknown>> };
 
@@ -111,7 +137,12 @@ describe('traceCompactor', () => {
     const events: Partial<TranscriptEvent>[] = [];
     for (let i = 0; i < 100; i++) {
       events.push({ kind: 'text', role: 'user', text: `ask ${i}` });
-      events.push({ kind: 'tool_call', role: 'assistant', toolName: 'Bash', inputText: '{"command":"ls"}' });
+      events.push({
+        kind: 'tool_call',
+        role: 'assistant',
+        toolName: 'Bash',
+        inputText: '{"command":"ls"}',
+      });
       // Insert plan mode toggle around the midpoint user/asst pair (turn indices ~60, ~64).
       if (i === 30) events.push({ kind: 'mode_change', mode: 'plan' });
       if (i === 32) events.push({ kind: 'mode_change', mode: 'default' });

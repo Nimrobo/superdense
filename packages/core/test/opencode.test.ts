@@ -62,40 +62,78 @@ function writeOpenCodeDb(path: string): void {
     );
   `);
   db.prepare('INSERT INTO project (id, worktree) VALUES (?, ?)').run('project-1', '/project-root');
-  db.prepare('INSERT INTO workspace (id, branch, project_id) VALUES (?, ?, ?)').run('workspace-1', 'feature/opencode', 'project-1');
-  db.prepare(`
+  db.prepare('INSERT INTO workspace (id, branch, project_id) VALUES (?, ?, ?)').run(
+    'workspace-1',
+    'feature/opencode',
+    'project-1',
+  );
+  db.prepare(
+    `
     INSERT INTO session (
       id, project_id, parent_id, slug, directory, title, version,
       time_created, time_updated, workspace_id
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run('ses_1', 'project-1', null, 'slug', '/repo', 'OpenCode session', '1', 1000, 2000, 'workspace-1');
-  db.prepare('INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?)').run(
-    'msg_user',
+  `,
+  ).run(
     'ses_1',
-    1100,
-    1100,
-    JSON.stringify({ role: 'user' }),
+    'project-1',
+    null,
+    'slug',
+    '/repo',
+    'OpenCode session',
+    '1',
+    1000,
+    2000,
+    'workspace-1',
   );
-  db.prepare('INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?)').run(
+  db.prepare(
+    'INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?)',
+  ).run('msg_user', 'ses_1', 1100, 1100, JSON.stringify({ role: 'user' }));
+  db.prepare(
+    'INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?)',
+  ).run(
     'msg_assistant',
     'ses_1',
     1200,
     1200,
     JSON.stringify({ role: 'assistant', path: { cwd: '/repo' } }),
   );
-  const insertPart = db.prepare('INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)');
-  insertPart.run('part_user_text', 'msg_user', 'ses_1', 1101, 1101, JSON.stringify({ type: 'text', text: 'Create a file' }));
-  insertPart.run('part_assistant_text', 'msg_assistant', 'ses_1', 1201, 1201, JSON.stringify({ type: 'text', text: 'I will edit it.' }));
-  insertPart.run('part_tool', 'msg_assistant', 'ses_1', 1202, 1202, JSON.stringify({
-    type: 'tool',
-    tool: 'bash',
-    callID: 'tool_1',
-    state: {
-      status: 'completed',
-      input: { command: 'printf ok' },
-      output: 'ok',
-    },
-  }));
+  const insertPart = db.prepare(
+    'INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)',
+  );
+  insertPart.run(
+    'part_user_text',
+    'msg_user',
+    'ses_1',
+    1101,
+    1101,
+    JSON.stringify({ type: 'text', text: 'Create a file' }),
+  );
+  insertPart.run(
+    'part_assistant_text',
+    'msg_assistant',
+    'ses_1',
+    1201,
+    1201,
+    JSON.stringify({ type: 'text', text: 'I will edit it.' }),
+  );
+  insertPart.run(
+    'part_tool',
+    'msg_assistant',
+    'ses_1',
+    1202,
+    1202,
+    JSON.stringify({
+      type: 'tool',
+      tool: 'bash',
+      callID: 'tool_1',
+      state: {
+        status: 'completed',
+        input: { command: 'printf ok' },
+        output: 'ok',
+      },
+    }),
+  );
   db.close();
 }
 
@@ -127,13 +165,18 @@ describe('openCodeAdapter', () => {
     const dbPath = join(dir, 'opencode.db');
     writeOpenCodeDb(dbPath);
     const db = new Database(dbPath);
-    db.prepare('INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)').run(
+    db.prepare(
+      'INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run(
       'part_setup_text',
       'msg_user',
       'ses_1',
       1001,
       1001,
-      JSON.stringify({ type: 'text', text: '<system_instruction>internal setup</system_instruction>' }),
+      JSON.stringify({
+        type: 'text',
+        text: '<system_instruction>internal setup</system_instruction>',
+      }),
     );
     db.close();
     process.env.OPENCODE_DB = dbPath;
@@ -149,7 +192,8 @@ describe('openCodeAdapter', () => {
     writeOpenCodeDb(dbPath);
 
     const events = [];
-    for await (const event of openCodeAdapter.iterEvents(`opencode:${dbPath}#ses_1`)) events.push(event);
+    for await (const event of openCodeAdapter.iterEvents(`opencode:${dbPath}#ses_1`))
+      events.push(event);
 
     expect(events).toMatchObject([
       { kind: 'text', role: 'user', text: 'Create a file' },
@@ -170,14 +214,12 @@ describe('openCodeAdapter', () => {
     const dbPath = join(dir, 'opencode.db');
     writeOpenCodeDb(dbPath);
     const db = new Database(dbPath);
-    db.prepare('INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?)').run(
-      'msg_plan_user',
-      'ses_1',
-      1300,
-      1300,
-      JSON.stringify({ role: 'user', agent: 'plan' }),
-    );
-    db.prepare('INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)').run(
+    db.prepare(
+      'INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?)',
+    ).run('msg_plan_user', 'ses_1', 1300, 1300, JSON.stringify({ role: 'user', agent: 'plan' }));
+    db.prepare(
+      'INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run(
       'part_plan_user_text',
       'msg_plan_user',
       'ses_1',
@@ -185,14 +227,18 @@ describe('openCodeAdapter', () => {
       1301,
       JSON.stringify({ type: 'text', text: 'switch to plan' }),
     );
-    db.prepare('INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?)').run(
+    db.prepare(
+      'INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?)',
+    ).run(
       'msg_plan_assistant',
       'ses_1',
       1400,
       1400,
       JSON.stringify({ role: 'assistant', agent: 'plan' }),
     );
-    db.prepare('INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)').run(
+    db.prepare(
+      'INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run(
       'part_plan_assistant_text',
       'msg_plan_assistant',
       'ses_1',
@@ -200,14 +246,12 @@ describe('openCodeAdapter', () => {
       1401,
       JSON.stringify({ type: 'text', text: 'in plan now' }),
     );
-    db.prepare('INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?)').run(
-      'msg_build_user',
-      'ses_1',
-      1500,
-      1500,
-      JSON.stringify({ role: 'user', agent: 'build' }),
-    );
-    db.prepare('INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)').run(
+    db.prepare(
+      'INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?)',
+    ).run('msg_build_user', 'ses_1', 1500, 1500, JSON.stringify({ role: 'user', agent: 'build' }));
+    db.prepare(
+      'INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run(
       'part_build_user_text',
       'msg_build_user',
       'ses_1',
@@ -218,7 +262,8 @@ describe('openCodeAdapter', () => {
     db.close();
 
     const events = [];
-    for await (const event of openCodeAdapter.iterEvents(`opencode:${dbPath}#ses_1`)) events.push(event);
+    for await (const event of openCodeAdapter.iterEvents(`opencode:${dbPath}#ses_1`))
+      events.push(event);
     const modeChanges = events.filter((e) => e.kind === 'mode_change');
     expect(modeChanges).toEqual([
       { ts: 1300, kind: 'mode_change', mode: 'plan', prevMode: undefined },

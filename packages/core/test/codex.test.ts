@@ -36,12 +36,14 @@ function writeStateDb(path: string, rolloutPath: string): void {
       updated_at_ms INTEGER
     );
   `);
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO threads (
       id, rollout_path, cwd, first_user_message, git_branch,
       created_at, updated_at, created_at_ms, updated_at_ms
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
+  `,
+  ).run(
     'thread-1',
     rolloutPath,
     '/repo',
@@ -59,10 +61,30 @@ describe('codexAdapter', () => {
   it('discovers sessions from the Codex state DB and rollout file', async () => {
     const dir = await makeTempDir();
     const rolloutPath = join(dir, 'rollout.jsonl');
-    await writeFile(rolloutPath, [
-      JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '<system_instruction>internal</system_instruction>' }] } }),
-      JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Build the adapters' }] } }),
-    ].join('\n'), 'utf8');
+    await writeFile(
+      rolloutPath,
+      [
+        JSON.stringify({
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [
+              { type: 'input_text', text: '<system_instruction>internal</system_instruction>' },
+            ],
+          },
+        }),
+        JSON.stringify({
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [{ type: 'input_text', text: 'Build the adapters' }],
+          },
+        }),
+      ].join('\n'),
+      'utf8',
+    );
     const dbPath = join(dir, 'state.sqlite');
     writeStateDb(dbPath, rolloutPath);
     process.env.CODEX_STATE_DB = dbPath;
@@ -84,16 +106,69 @@ describe('codexAdapter', () => {
   it('normalizes text, tool calls, and tool outputs with pairable ids', async () => {
     const dir = await makeTempDir();
     const rolloutPath = join(dir, 'rollout.jsonl');
-    await writeFile(rolloutPath, [
-      JSON.stringify({ timestamp: '2026-05-21T04:00:00.000Z', type: 'session_meta', payload: { id: 'thread-1' } }),
-      JSON.stringify({ timestamp: '2026-05-21T04:00:01.000Z', type: 'response_item', payload: { type: 'message', role: 'developer', content: [{ type: 'input_text', text: 'internal' }] } }),
-      JSON.stringify({ timestamp: '2026-05-21T04:00:02.000Z', type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Run tests' }] } }),
-      JSON.stringify({ timestamp: '2026-05-21T04:00:03.000Z', type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'I will run a command.' }] } }),
-      JSON.stringify({ timestamp: '2026-05-21T04:00:04.000Z', type: 'response_item', payload: { type: 'function_call', call_id: 'call_123', name: 'exec_command', arguments: { cmd: 'pnpm test' } } }),
-      JSON.stringify({ timestamp: '2026-05-21T04:00:05.000Z', type: 'event_msg', payload: { type: 'exec_command_end', call_id: 'call_123', exit_code: 0 } }),
-      JSON.stringify({ timestamp: '2026-05-21T04:00:06.000Z', type: 'response_item', payload: { type: 'function_call_output', call_id: 'call_123', output: 'ok' } }),
-      JSON.stringify({ timestamp: '2026-05-21T04:00:07.000Z', type: 'response_item', payload: { type: 'reasoning', content: [] } }),
-    ].join('\n'), 'utf8');
+    await writeFile(
+      rolloutPath,
+      [
+        JSON.stringify({
+          timestamp: '2026-05-21T04:00:00.000Z',
+          type: 'session_meta',
+          payload: { id: 'thread-1' },
+        }),
+        JSON.stringify({
+          timestamp: '2026-05-21T04:00:01.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'developer',
+            content: [{ type: 'input_text', text: 'internal' }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-05-21T04:00:02.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [{ type: 'input_text', text: 'Run tests' }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-05-21T04:00:03.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'output_text', text: 'I will run a command.' }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-05-21T04:00:04.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'function_call',
+            call_id: 'call_123',
+            name: 'exec_command',
+            arguments: { cmd: 'pnpm test' },
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-05-21T04:00:05.000Z',
+          type: 'event_msg',
+          payload: { type: 'exec_command_end', call_id: 'call_123', exit_code: 0 },
+        }),
+        JSON.stringify({
+          timestamp: '2026-05-21T04:00:06.000Z',
+          type: 'response_item',
+          payload: { type: 'function_call_output', call_id: 'call_123', output: 'ok' },
+        }),
+        JSON.stringify({
+          timestamp: '2026-05-21T04:00:07.000Z',
+          type: 'response_item',
+          payload: { type: 'reasoning', content: [] },
+        }),
+      ].join('\n'),
+      'utf8',
+    );
 
     const events = [];
     for await (const event of codexAdapter.iterEvents(rolloutPath)) events.push(event);
@@ -115,41 +190,131 @@ describe('codexAdapter', () => {
   it('marks Codex tool outputs as errors only when command end status is nonzero', async () => {
     const dir = await makeTempDir();
     const rolloutPath = join(dir, 'rollout.jsonl');
-    await writeFile(rolloutPath, [
-      JSON.stringify({ timestamp: '2026-05-21T04:00:00.000Z', type: 'response_item', payload: { type: 'function_call', call_id: 'ok_call', name: 'exec_command', arguments: { cmd: 'node script.js' } } }),
-      JSON.stringify({ timestamp: '2026-05-21T04:00:01.000Z', type: 'event_msg', payload: { type: 'exec_command_end', call_id: 'ok_call', exit_code: 0 } }),
-      JSON.stringify({ timestamp: '2026-05-21T04:00:02.000Z', type: 'response_item', payload: { type: 'function_call_output', call_id: 'ok_call', output: 'throw new Error("example text")' } }),
-      JSON.stringify({ timestamp: '2026-05-21T04:00:03.000Z', type: 'response_item', payload: { type: 'function_call', call_id: 'bad_call', name: 'exec_command', arguments: { cmd: 'npm test' } } }),
-      JSON.stringify({ timestamp: '2026-05-21T04:00:04.000Z', type: 'event_msg', payload: { type: 'exec_command_end', call_id: 'bad_call', exit_code: 1 } }),
-      JSON.stringify({ timestamp: '2026-05-21T04:00:05.000Z', type: 'response_item', payload: { type: 'function_call_output', call_id: 'bad_call', output: 'AssertionError: failed' } }),
-    ].join('\n'), 'utf8');
+    await writeFile(
+      rolloutPath,
+      [
+        JSON.stringify({
+          timestamp: '2026-05-21T04:00:00.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'function_call',
+            call_id: 'ok_call',
+            name: 'exec_command',
+            arguments: { cmd: 'node script.js' },
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-05-21T04:00:01.000Z',
+          type: 'event_msg',
+          payload: { type: 'exec_command_end', call_id: 'ok_call', exit_code: 0 },
+        }),
+        JSON.stringify({
+          timestamp: '2026-05-21T04:00:02.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'function_call_output',
+            call_id: 'ok_call',
+            output: 'throw new Error("example text")',
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-05-21T04:00:03.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'function_call',
+            call_id: 'bad_call',
+            name: 'exec_command',
+            arguments: { cmd: 'npm test' },
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-05-21T04:00:04.000Z',
+          type: 'event_msg',
+          payload: { type: 'exec_command_end', call_id: 'bad_call', exit_code: 1 },
+        }),
+        JSON.stringify({
+          timestamp: '2026-05-21T04:00:05.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'function_call_output',
+            call_id: 'bad_call',
+            output: 'AssertionError: failed',
+          },
+        }),
+      ].join('\n'),
+      'utf8',
+    );
 
     const events = [];
     for await (const event of codexAdapter.iterEvents(rolloutPath)) events.push(event);
     const results = events.filter((event) => event.kind === 'tool_result');
 
     expect(results).toMatchObject([
-      { kind: 'tool_result', toolCallId: 'ok_call', isError: false, text: 'throw new Error("example text")' },
-      { kind: 'tool_result', toolCallId: 'bad_call', isError: true, text: 'AssertionError: failed' },
+      {
+        kind: 'tool_result',
+        toolCallId: 'ok_call',
+        isError: false,
+        text: 'throw new Error("example text")',
+      },
+      {
+        kind: 'tool_result',
+        toolCallId: 'bad_call',
+        isError: true,
+        text: 'AssertionError: failed',
+      },
     ]);
   });
 
   it('emits mode_change on turn_context collaboration_mode transitions', async () => {
     const dir = await makeTempDir();
     const rolloutPath = join(dir, 'rollout.jsonl');
-    await writeFile(rolloutPath, [
-      JSON.stringify({ timestamp: '2026-05-21T04:00:00.000Z', type: 'turn_context', payload: { collaboration_mode: { mode: 'plan' } } }),
-      JSON.stringify({ timestamp: '2026-05-21T04:00:01.000Z', type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'while in plan' }] } }),
-      JSON.stringify({ timestamp: '2026-05-21T04:00:02.000Z', type: 'turn_context', payload: { collaboration_mode: { mode: 'plan' } } }),
-      JSON.stringify({ timestamp: '2026-05-21T04:00:03.000Z', type: 'turn_context', payload: { collaboration_mode: { mode: 'default' } } }),
-    ].join('\n'), 'utf8');
+    await writeFile(
+      rolloutPath,
+      [
+        JSON.stringify({
+          timestamp: '2026-05-21T04:00:00.000Z',
+          type: 'turn_context',
+          payload: { collaboration_mode: { mode: 'plan' } },
+        }),
+        JSON.stringify({
+          timestamp: '2026-05-21T04:00:01.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [{ type: 'input_text', text: 'while in plan' }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-05-21T04:00:02.000Z',
+          type: 'turn_context',
+          payload: { collaboration_mode: { mode: 'plan' } },
+        }),
+        JSON.stringify({
+          timestamp: '2026-05-21T04:00:03.000Z',
+          type: 'turn_context',
+          payload: { collaboration_mode: { mode: 'default' } },
+        }),
+      ].join('\n'),
+      'utf8',
+    );
 
     const events = [];
     for await (const event of codexAdapter.iterEvents(rolloutPath)) events.push(event);
     const modeChanges = events.filter((e) => e.kind === 'mode_change');
     expect(modeChanges).toEqual([
-      { ts: Date.parse('2026-05-21T04:00:00.000Z'), kind: 'mode_change', mode: 'plan', prevMode: undefined },
-      { ts: Date.parse('2026-05-21T04:00:03.000Z'), kind: 'mode_change', mode: 'default', prevMode: 'plan' },
+      {
+        ts: Date.parse('2026-05-21T04:00:00.000Z'),
+        kind: 'mode_change',
+        mode: 'plan',
+        prevMode: undefined,
+      },
+      {
+        ts: Date.parse('2026-05-21T04:00:03.000Z'),
+        kind: 'mode_change',
+        mode: 'default',
+        prevMode: 'plan',
+      },
     ]);
   });
 });

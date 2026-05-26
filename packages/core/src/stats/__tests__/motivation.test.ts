@@ -26,7 +26,9 @@ const BASE: Session = {
 };
 
 function clearDb() {
-  getDb().exec('DELETE FROM query_matches; DELETE FROM query_enrich; DELETE FROM sessions; DELETE FROM queries;');
+  getDb().exec(
+    'DELETE FROM query_matches; DELETE FROM query_enrich; DELETE FROM sessions; DELETE FROM queries;',
+  );
 }
 
 // Anchor "now" to noon UTC for deterministic day-bucket math.
@@ -50,9 +52,24 @@ describe('getHeaderTotals', () => {
 
   it('counts Conductor sibling workspaces as one header project', () => {
     const now = utcNoon(2026, 5, 21);
-    upsertSession({ ...BASE, id: 's1', pwd: '/Users/x/conductor/workspaces/superdense/provo-v1', modifiedAt: now });
-    upsertSession({ ...BASE, id: 's2', pwd: '/Users/x/conductor/workspaces/superdense/provo-v2', modifiedAt: now });
-    upsertSession({ ...BASE, id: 's3', pwd: '/Users/x/conductor/workspaces/other/provo-v1', modifiedAt: now });
+    upsertSession({
+      ...BASE,
+      id: 's1',
+      pwd: '/Users/x/conductor/workspaces/superdense/provo-v1',
+      modifiedAt: now,
+    });
+    upsertSession({
+      ...BASE,
+      id: 's2',
+      pwd: '/Users/x/conductor/workspaces/superdense/provo-v2',
+      modifiedAt: now,
+    });
+    upsertSession({
+      ...BASE,
+      id: 's3',
+      pwd: '/Users/x/conductor/workspaces/other/provo-v1',
+      modifiedAt: now,
+    });
 
     expect(getHeaderTotals().distinctPwds).toBe(2);
   });
@@ -97,7 +114,8 @@ describe('getStreaks', () => {
   it('finds the longest streak among multiple', () => {
     const now = utcNoon(2026, 5, 21);
     // Run A: 5 days, ending 30 days ago.
-    for (let i = 0; i < 5; i++) upsertSession({ ...BASE, id: `a${i}`, modifiedAt: now - (30 + i) * DAY });
+    for (let i = 0; i < 5; i++)
+      upsertSession({ ...BASE, id: `a${i}`, modifiedAt: now - (30 + i) * DAY });
     // Run B: 3 days, ending today.
     for (let i = 0; i < 3; i++) upsertSession({ ...BASE, id: `b${i}`, modifiedAt: now - i * DAY });
     const s = getStreaks(now);
@@ -184,9 +202,24 @@ describe('getWindowMetrics', () => {
 
   it('groups active projects by Conductor projectKey', () => {
     const now = utcNoon(2026, 5, 21);
-    upsertSession({ ...BASE, id: 's1', pwd: '/Users/x/conductor/workspaces/superdense/provo-v1', modifiedAt: now - 1 * DAY });
-    upsertSession({ ...BASE, id: 's2', pwd: '/Users/x/conductor/workspaces/superdense/provo-v2', modifiedAt: now - 2 * DAY });
-    upsertSession({ ...BASE, id: 's3', pwd: '/Users/x/conductor/workspaces/other/provo-v1', modifiedAt: now - 1 * DAY });
+    upsertSession({
+      ...BASE,
+      id: 's1',
+      pwd: '/Users/x/conductor/workspaces/superdense/provo-v1',
+      modifiedAt: now - 1 * DAY,
+    });
+    upsertSession({
+      ...BASE,
+      id: 's2',
+      pwd: '/Users/x/conductor/workspaces/superdense/provo-v2',
+      modifiedAt: now - 2 * DAY,
+    });
+    upsertSession({
+      ...BASE,
+      id: 's3',
+      pwd: '/Users/x/conductor/workspaces/other/provo-v1',
+      modifiedAt: now - 1 * DAY,
+    });
 
     const w = getWindowMetrics(7, now);
 

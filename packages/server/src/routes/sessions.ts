@@ -36,7 +36,10 @@ export async function registerSessionsRoutes(app: FastifyInstance): Promise<void
   app.get('/api/sessions/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
     const s = getSession(id);
-    if (!s) { reply.status(404); return { error: 'not found' }; }
+    if (!s) {
+      reply.status(404);
+      return { error: 'not found' };
+    }
     return s;
   });
 
@@ -46,7 +49,10 @@ export async function registerSessionsRoutes(app: FastifyInstance): Promise<void
     const limit = q.limit ? Math.min(parseInt(q.limit, 10) || 500, 5000) : 500;
     const offset = q.offset ? parseInt(q.offset, 10) || 0 : 0;
     const s = getSession(id);
-    if (!s) { reply.status(404); return { error: 'not found' }; }
+    if (!s) {
+      reply.status(404);
+      return { error: 'not found' };
+    }
     const events: unknown[] = [];
     let i = 0;
     try {
@@ -63,11 +69,20 @@ export async function registerSessionsRoutes(app: FastifyInstance): Promise<void
 
   app.get('/api/sessions/:id/compactors/:name', async (req, reply) => {
     const { id, name } = req.params as { id: string; name: string };
-    if (!isAllowedCompactorName(name)) { reply.status(404); return { error: 'not found' }; }
+    if (!isAllowedCompactorName(name)) {
+      reply.status(404);
+      return { error: 'not found' };
+    }
     const s = getSession(id);
-    if (!s) { reply.status(404); return { error: 'not found' }; }
+    if (!s) {
+      reply.status(404);
+      return { error: 'not found' };
+    }
     const compactor = getCompactor(name);
-    if (!compactor) { reply.status(404); return { error: 'not found' }; }
+    if (!compactor) {
+      reply.status(404);
+      return { error: 'not found' };
+    }
     const result = await compactSession(name, s);
     return {
       session: s,
