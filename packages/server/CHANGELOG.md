@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.2.1](https://github.com/Nimrobo/superdense/compare/@nimrobo/superdense-v0.2.0...superdense-server-v0.2.1) (2026-05-26)
+
+
+### Bug Fixes
+
+* trigger release for npm provenance URL fix ([f0ce6c9](https://github.com/Nimrobo/superdense/commit/f0ce6c9b051f7da01b9d2b91902e34af308b58e3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @nimrobo/superdense-core bumped to 0.2.1
+
 ## [0.2.0](https://github.com/Nimrobo/superdense/compare/@nimrobo/superdense-v0.1.1...superdense-server-v0.2.0) (2026-05-26)
 
 
