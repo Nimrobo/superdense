@@ -18,13 +18,6 @@ Raw logs are too long and scattered to reuse directly. Superdense indexes local 
 - **Find standout coding sessions** — rank sessions that best show technical depth, iteration, shipped outcomes, or founder grit.
 - **Mine recurring failures and workflows** — compact similar sessions to see where agents get stuck and which patterns keep coming back.
 
-## How Superdense works
-
-1. **Index** sessions from Claude Code, Codex, OpenCode, and similar tools.
-2. **Search and filter** by project, prompt, agent, branch, errors, tools, commands, plan mode, and other metadata.
-3. **Compact** selected sessions into structural or semantic summaries such as `trace` and `salience`.
-4. **Run insights** as reusable prompts that ask an agent to analyze compacted session evidence.
-
 ## Install
 
 ```bash
@@ -33,6 +26,23 @@ superdense studio
 ```
 
 Requires Node 20+. The single `superdense` binary ships everything — the indexer, the local server, and the web UI.
+
+## How to Use It
+
+**Studio.** Start with `superdense studio` to open the local UI, index sessions, and install or update the Superdense skill when prompted. Use Studio to browse prior agent work with filters, saved queries, and compacted session views. The Insights view gives you copyable prompts for higher-level analyses; paste one into Claude Code, Codex, or OpenCode and Superdense will index the resulting run.
+
+**Direct from your agent.** Open Studio first so Superdense is running and the skills are installed. From your coding agent, use the slash command with a normal prompt:
+
+```text
+/superdense find why this architecture decision was made
+```
+
+## How Superdense works
+
+1. **Index** sessions from Claude Code, Codex, OpenCode, and similar tools.
+2. **Search and filter** by project, prompt, agent, branch, errors, tools, commands, plan mode, and other metadata.
+3. **Compact** selected sessions into structural or semantic summaries such as `trace` and `salience`.
+4. **Run insights** as reusable prompts that ask an agent to analyze compacted session evidence.
 
 ## What you get
 
