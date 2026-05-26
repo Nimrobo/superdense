@@ -13,7 +13,7 @@
     "start": "node packages/cli/dist/index.js",
     "release:npm:dry-run": "npm pack --dry-run --workspace packages/cli",
     "release:npm:e2e": "bash packages/cli/e2e/run-e2e.sh",
-    "release:npm": "pnpm run release:npm:dry-run && pnpm run release:npm:e2e && npm publish --workspace packages/cli --access public --ignore-scripts",
+    "release:npm": "pnpm run release:npm:dry-run && pnpm run release:npm:e2e && pnpm --filter=@nimrobo/superdense run prepare:package && npm publish --workspace packages/cli --access public --ignore-scripts",
     "typecheck": "pnpm -r run typecheck",
     "test": "pnpm -r run test"
   },
