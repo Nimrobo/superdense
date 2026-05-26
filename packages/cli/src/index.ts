@@ -1,6 +1,15 @@
 #!/usr/bin/env node
 import { readFile } from 'node:fs/promises';
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { spawn } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -78,7 +87,11 @@ interface CliPackageJson {
   version?: string;
 }
 
-function parseArgs(argv: string[]): { cmd: string; args: string[]; flags: Record<string, string | boolean> } {
+function parseArgs(argv: string[]): {
+  cmd: string;
+  args: string[];
+  flags: Record<string, string | boolean>;
+} {
   const flags: Record<string, string | boolean> = {};
   const positional: string[] = [];
   for (let i = 0; i < argv.length; i++) {
@@ -86,8 +99,9 @@ function parseArgs(argv: string[]): { cmd: string; args: string[]; flags: Record
     if (a.startsWith('--')) {
       const eq = a.indexOf('=');
       if (eq > -1) flags[a.slice(2, eq)] = a.slice(eq + 1);
-      else if (argv[i + 1] && !argv[i + 1]!.startsWith('--')) { flags[a.slice(2)] = argv[++i]!; }
-      else flags[a.slice(2)] = true;
+      else if (argv[i + 1] && !argv[i + 1]!.startsWith('--')) {
+        flags[a.slice(2)] = argv[++i]!;
+      } else flags[a.slice(2)] = true;
     } else {
       positional.push(a);
     }
@@ -100,13 +114,20 @@ function printJson(value: unknown, io: CliIo): void {
 }
 
 function printErrorJson(err: unknown, io: CliIo): void {
-  io.stderr.error(JSON.stringify({
-    error: err instanceof Error ? err.message : String(err),
-    code: err instanceof Error ? err.name : 'Error',
-  }));
+  io.stderr.error(
+    JSON.stringify({
+      error: err instanceof Error ? err.message : String(err),
+      code: err instanceof Error ? err.name : 'Error',
+    }),
+  );
 }
 
-function intFlag(flags: Record<string, string | boolean>, name: string, fallback: number, max?: number): number {
+function intFlag(
+  flags: Record<string, string | boolean>,
+  name: string,
+  fallback: number,
+  max?: number,
+): number {
   const raw = flags[name];
   if (raw == null || typeof raw === 'boolean') return fallback;
   const parsed = Number(raw);
@@ -119,7 +140,10 @@ function includePath(flags: Record<string, string | boolean>): boolean {
   return flags['include-path'] === true;
 }
 
-function serializeSession(session: Session, opts: { includePath?: boolean } = {}): Record<string, unknown> {
+function serializeSession(
+  session: Session,
+  opts: { includePath?: boolean } = {},
+): Record<string, unknown> {
   const out: Record<string, unknown> = {
     id: session.id,
     agent: session.agent,
@@ -249,20 +273,29 @@ async function runSavedQueryCommand(
   const offset = intFlag(flags, 'offset', 0);
   const details = listQueryMatchDetails(id, { limit, offset });
   const resultBySession = new Map(result.items.map((item) => [item.sessionId, item] as const));
-  printJson({
-    query: q,
-    matched: result.matched,
-    total: countQueryMatches(id),
-    limit,
-    offset,
-    items: details.map((m) => serializeQueryMatch(m, {
-      includePath: includePath(flags),
-      enrichments: resultBySession.get(m.session.id)?.enrichments ?? {},
-    })),
-  }, io);
+  printJson(
+    {
+      query: q,
+      matched: result.matched,
+      total: countQueryMatches(id),
+      limit,
+      offset,
+      items: details.map((m) =>
+        serializeQueryMatch(m, {
+          includePath: includePath(flags),
+          enrichments: resultBySession.get(m.session.id)?.enrichments ?? {},
+        }),
+      ),
+    },
+    io,
+  );
 }
 
-async function handleSavedQuery(args: string[], flags: Record<string, string | boolean>, io: CliIo): Promise<boolean> {
+async function handleSavedQuery(
+  args: string[],
+  flags: Record<string, string | boolean>,
+  io: CliIo,
+): Promise<boolean> {
   const action = args[0] ?? 'list';
   if (action === 'list') {
     printJson({ items: listQueries() }, io);
@@ -275,14 +308,19 @@ async function handleSavedQuery(args: string[], flags: Record<string, string | b
     const limit = intFlag(flags, 'limit', 200, 1000);
     const offset = intFlag(flags, 'offset', 0);
     const details = listQueryMatchDetails(id, { limit, offset });
-    printJson({
-      ...q,
-      total: countQueryMatches(id),
-      limit,
-      offset,
-      items: details.map((m) => serializeQueryMatch(m, { includePath: includePath(flags) })),
-      members: details.map((m) => serializeSession(m.session, { includePath: includePath(flags) })),
-    }, io);
+    printJson(
+      {
+        ...q,
+        total: countQueryMatches(id),
+        limit,
+        offset,
+        items: details.map((m) => serializeQueryMatch(m, { includePath: includePath(flags) })),
+        members: details.map((m) =>
+          serializeSession(m.session, { includePath: includePath(flags) }),
+        ),
+      },
+      io,
+    );
     return true;
   }
   if (action === 'save' || action === 'create') {
@@ -303,7 +341,11 @@ async function handleSavedQuery(args: string[], flags: Record<string, string | b
   throw new Error(`unknown saved-query command: ${action}`);
 }
 
-async function handleQuery(args: string[], flags: Record<string, string | boolean>, io: CliIo): Promise<boolean> {
+async function handleQuery(
+  args: string[],
+  flags: Record<string, string | boolean>,
+  io: CliIo,
+): Promise<boolean> {
   if (args.length === 0 && flags.query !== undefined) {
     await runAdHocQueryCommand(flags, io);
     return true;
@@ -320,14 +362,19 @@ async function handleQuery(args: string[], flags: Record<string, string | boolea
     const limit = intFlag(flags, 'limit', 200, 1000);
     const offset = intFlag(flags, 'offset', 0);
     const details = listQueryMatchDetails(id, { limit, offset });
-    printJson({
-      ...q,
-      total: countQueryMatches(id),
-      limit,
-      offset,
-      items: details.map((m) => serializeQueryMatch(m, { includePath: includePath(flags) })),
-      members: details.map((m) => serializeSession(m.session, { includePath: includePath(flags) })),
-    }, io);
+    printJson(
+      {
+        ...q,
+        total: countQueryMatches(id),
+        limit,
+        offset,
+        items: details.map((m) => serializeQueryMatch(m, { includePath: includePath(flags) })),
+        members: details.map((m) =>
+          serializeSession(m.session, { includePath: includePath(flags) }),
+        ),
+      },
+      io,
+    );
     return true;
   }
   if (action === 'create' || action === 'save') {
@@ -353,7 +400,11 @@ async function handleQuery(args: string[], flags: Record<string, string | boolea
   throw new Error(`unknown query command: ${action}`);
 }
 
-async function handleSession(args: string[], flags: Record<string, string | boolean>, io: CliIo): Promise<boolean> {
+async function handleSession(
+  args: string[],
+  flags: Record<string, string | boolean>,
+  io: CliIo,
+): Promise<boolean> {
   const action = args[0] ?? 'list';
   if (action === 'list') {
     const limit = intFlag(flags, 'limit', 200, 1000);
@@ -365,44 +416,58 @@ async function handleSession(args: string[], flags: Record<string, string | bool
       limit,
       offset,
     };
-    printJson({
-      items: listSessions(filter).map((s) => serializeSession(s, { includePath: includePath(flags) })),
-      total: countSessions(filter),
-      limit,
-      offset,
-    }, io);
+    printJson(
+      {
+        items: listSessions(filter).map((s) =>
+          serializeSession(s, { includePath: includePath(flags) }),
+        ),
+        total: countSessions(filter),
+        limit,
+        offset,
+      },
+      io,
+    );
     return true;
   }
   if (action === 'show') {
     const id = args[1];
     if (!id) throw new Error('session show requires <session-id>');
-    printJson({ session: serializeSession(getExistingSession(id), { includePath: includePath(flags) }) }, io);
+    printJson(
+      { session: serializeSession(getExistingSession(id), { includePath: includePath(flags) }) },
+      io,
+    );
     return true;
   }
   if (action === 'path') {
     const id = args[1];
     if (!id) throw new Error('session path requires <session-id>');
     const session = getExistingSession(id);
-    printJson({
-      id: session.id,
-      agent: session.agent,
-      sessionId: session.sessionId,
-      logPath: session.logPath,
-    }, io);
+    printJson(
+      {
+        id: session.id,
+        agent: session.agent,
+        sessionId: session.sessionId,
+        logPath: session.logPath,
+      },
+      io,
+    );
     return true;
   }
   if (action === 'fields') {
     await loadUserEnrichers();
-    printJson({
-      filters: await listFilterCatalog(),
-      enrichers: listEnrichers().map(({ name, version, returns, jsonSchema, description }) => ({
-        name,
-        version,
-        returns,
-        jsonSchema,
-        description,
-      })),
-    }, io);
+    printJson(
+      {
+        filters: await listFilterCatalog(),
+        enrichers: listEnrichers().map(({ name, version, returns, jsonSchema, description }) => ({
+          name,
+          version,
+          returns,
+          jsonSchema,
+          description,
+        })),
+      },
+      io,
+    );
     return true;
   }
   if (action === 'enrichments') {
@@ -416,16 +481,23 @@ async function handleSession(args: string[], flags: Record<string, string | bool
     } else {
       items = listSessionEnrichments(id);
     }
-    printJson({
-      session: serializeSession(session, { includePath: includePath(flags) }),
-      items,
-    }, io);
+    printJson(
+      {
+        session: serializeSession(session, { includePath: includePath(flags) }),
+        items,
+      },
+      io,
+    );
     return true;
   }
   throw new Error(`unknown session command: ${action}`);
 }
 
-async function handleCompactor(args: string[], flags: Record<string, string | boolean>, io: CliIo): Promise<boolean> {
+async function handleCompactor(
+  args: string[],
+  flags: Record<string, string | boolean>,
+  io: CliIo,
+): Promise<boolean> {
   const action = args[0] ?? 'list';
   if (action === 'list') {
     printJson({ items: listCompactors().map(serializeCompactor) }, io);
@@ -447,11 +519,14 @@ async function handleCompactor(args: string[], flags: Record<string, string | bo
     if (!compactor) throw new Error(`compactor not found: ${name}`);
     const session = getExistingSession(sessionId);
     const result = await compactSession(name, session);
-    printJson({
-      session: serializeSession(session, { includePath: includePath(flags) }),
-      compactor: serializeCompactor(compactor),
-      result,
-    }, io);
+    printJson(
+      {
+        session: serializeSession(session, { includePath: includePath(flags) }),
+        compactor: serializeCompactor(compactor),
+        result,
+      },
+      io,
+    );
     return true;
   }
   throw new Error(`unknown compactor command: ${action}`);
@@ -461,15 +536,18 @@ async function handleEnricher(args: string[], io: CliIo): Promise<boolean> {
   const action = args[0] ?? 'list';
   await loadUserEnrichers();
   if (action === 'list') {
-    printJson({
-      items: listEnrichers().map(({ name, version, returns, jsonSchema, description }) => ({
-        name,
-        version,
-        returns,
-        jsonSchema,
-        description,
-      })),
-    }, io);
+    printJson(
+      {
+        items: listEnrichers().map(({ name, version, returns, jsonSchema, description }) => ({
+          name,
+          version,
+          returns,
+          jsonSchema,
+          description,
+        })),
+      },
+      io,
+    );
     return true;
   }
   if (action === 'show') {
@@ -520,10 +598,9 @@ async function handleFilter(args: string[], io: CliIo): Promise<boolean> {
 
 function bundledSkillsRoot(): string {
   const moduleDir = dirname(fileURLToPath(import.meta.url));
-  const skillsRoot = [
-    join(moduleDir, 'skills'),
-    join(moduleDir, '..', '..', '..', 'skills'),
-  ].find((candidate) => existsSync(candidate));
+  const skillsRoot = [join(moduleDir, 'skills'), join(moduleDir, '..', '..', '..', 'skills')].find(
+    (candidate) => existsSync(candidate),
+  );
   if (!skillsRoot) throw new Error(`skills directory not found: ${join(moduleDir, 'skills')}`);
   return skillsRoot;
 }
@@ -544,9 +621,9 @@ function readInstalledMarker(dest: string): SkillInstallMarker | null {
   try {
     const parsed = JSON.parse(readFileSync(markerPath, 'utf8')) as Partial<SkillInstallMarker>;
     if (
-      typeof parsed.version === 'string'
-      && typeof parsed.installedAt === 'string'
-      && (parsed.scope === 'global' || parsed.scope === 'local')
+      typeof parsed.version === 'string' &&
+      typeof parsed.installedAt === 'string' &&
+      (parsed.scope === 'global' || parsed.scope === 'local')
     ) {
       return parsed as SkillInstallMarker;
     }
@@ -588,7 +665,10 @@ function writeInstallMarker(dest: string, version: string, scope: SkillScope): v
   writeFileSync(join(dest, '.superdense-install.json'), `${JSON.stringify(marker, null, 2)}\n`);
 }
 
-function classifySkillInstall(dest: string, sourceVersion: string): { status: SkillInstallStatus; version: string | null } {
+function classifySkillInstall(
+  dest: string,
+  sourceVersion: string,
+): { status: SkillInstallStatus; version: string | null } {
   if (!existsSync(dest)) return { status: 'missing', version: null };
   const marker = readInstalledMarker(dest);
   if (!marker) return { status: 'outdated', version: readSkillVersion(dest) };
@@ -633,7 +713,11 @@ function installSkills(
   return installed;
 }
 
-function handleSkillInstall(args: string[], flags: Record<string, string | boolean>, io: CliIo): void {
+function handleSkillInstall(
+  args: string[],
+  flags: Record<string, string | boolean>,
+  io: CliIo,
+): void {
   const installed = installSkills(args, {
     scope: flags.locally === true ? 'local' : 'global',
     cwd: process.cwd(),
@@ -646,8 +730,14 @@ function studioSkillSummary(
   cwd: string,
 ): {
   sourceVersion: string;
-  global: { claude: ReturnType<typeof classifySkillInstall>; codex: ReturnType<typeof classifySkillInstall> };
-  local: { claude: ReturnType<typeof classifySkillInstall>; codex: ReturnType<typeof classifySkillInstall> };
+  global: {
+    claude: ReturnType<typeof classifySkillInstall>;
+    codex: ReturnType<typeof classifySkillInstall>;
+  };
+  local: {
+    claude: ReturnType<typeof classifySkillInstall>;
+    codex: ReturnType<typeof classifySkillInstall>;
+  };
 } {
   const src = join(bundledSkillsRoot(), name);
   const sourceVersion = readSkillVersion(src);
@@ -681,15 +771,19 @@ function scopeStatus(
   return { status: 'missing', version: null };
 }
 
-function chooseStudioSkillAction(
-  summary: ReturnType<typeof studioSkillSummary>,
-): { scope: SkillScope; status: Exclude<SkillInstallStatus, 'current'>; version: string | null } | null {
+function chooseStudioSkillAction(summary: ReturnType<typeof studioSkillSummary>): {
+  scope: SkillScope;
+  status: Exclude<SkillInstallStatus, 'current'>;
+  version: string | null;
+} | null {
   const local = scopeStatus(summary, 'local');
   const global = scopeStatus(summary, 'global');
   if (local.status === 'current') return null;
-  if (local.status === 'outdated') return { scope: 'local', status: 'outdated', version: local.version };
+  if (local.status === 'outdated')
+    return { scope: 'local', status: 'outdated', version: local.version };
   if (global.status === 'current') return null;
-  if (global.status === 'outdated') return { scope: 'global', status: 'outdated', version: global.version };
+  if (global.status === 'outdated')
+    return { scope: 'global', status: 'outdated', version: global.version };
   return { scope: 'global', status: 'missing', version: null };
 }
 
@@ -712,7 +806,8 @@ function cliPackageVersion(): string {
   if (!packageJsonPath) throw new Error('CLI package.json not found');
 
   const parsed = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as CliPackageJson;
-  if (parsed.name !== CLI_PACKAGE_NAME) throw new Error(`unexpected CLI package name: ${parsed.name ?? '(missing)'}`);
+  if (parsed.name !== CLI_PACKAGE_NAME)
+    throw new Error(`unexpected CLI package name: ${parsed.name ?? '(missing)'}`);
   if (typeof parsed.version !== 'string' || !semver.valid(parsed.version)) {
     throw new Error(`invalid CLI package version: ${parsed.version ?? '(missing)'}`);
   }
@@ -726,7 +821,7 @@ async function fetchLatestCliVersion(): Promise<string> {
   });
   if (!response.ok) throw new Error(`npm registry returned ${response.status}`);
 
-  const body = await response.json() as { 'dist-tags'?: { latest?: unknown } };
+  const body = (await response.json()) as { 'dist-tags'?: { latest?: unknown } };
   const latest = body['dist-tags']?.latest;
   if (typeof latest !== 'string' || !semver.valid(latest)) {
     throw new Error('npm registry response did not include a valid latest version');
@@ -734,7 +829,11 @@ async function fetchLatestCliVersion(): Promise<string> {
   return latest;
 }
 
-function spawnAndWait(command: string, args: string[], env: NodeJS.ProcessEnv = process.env): Promise<number> {
+function spawnAndWait(
+  command: string,
+  args: string[],
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<number> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { stdio: 'inherit', env });
     child.once('error', reject);
@@ -752,7 +851,9 @@ async function checkNpmUpdateForStudio(
     current = cliPackageVersion();
     latest = await fetchLatestCliVersion();
   } catch (err) {
-    io.stderr.error(`[superdense] update check skipped: ${err instanceof Error ? err.message : String(err)}`);
+    io.stderr.error(
+      `[superdense] update check skipped: ${err instanceof Error ? err.message : String(err)}`,
+    );
     return { restarted: false, exitCode: 0 };
   }
 
@@ -760,7 +861,9 @@ async function checkNpmUpdateForStudio(
 
   const installCommand = `npm install -g ${CLI_PACKAGE_NAME}@latest`;
   if (!io.isTty || !process.stdin.isTTY) {
-    io.stdout.log(`[superdense] update available: ${current} -> ${latest}. Run \`${installCommand}\` to update.`);
+    io.stdout.log(
+      `[superdense] update available: ${current} -> ${latest}. Run \`${installCommand}\` to update.`,
+    );
     return { restarted: false, exitCode: 0 };
   }
 
@@ -772,11 +875,15 @@ async function checkNpmUpdateForStudio(
   try {
     const updateCode = await spawnAndWait('npm', ['install', '-g', `${CLI_PACKAGE_NAME}@latest`]);
     if (updateCode !== 0) {
-      io.stderr.error(`[superdense] npm update failed with exit code ${updateCode}; continuing with ${current}.`);
+      io.stderr.error(
+        `[superdense] npm update failed with exit code ${updateCode}; continuing with ${current}.`,
+      );
       return { restarted: false, exitCode: 0 };
     }
   } catch (err) {
-    io.stderr.error(`[superdense] npm update failed: ${err instanceof Error ? err.message : String(err)}; continuing with ${current}.`);
+    io.stderr.error(
+      `[superdense] npm update failed: ${err instanceof Error ? err.message : String(err)}; continuing with ${current}.`,
+    );
     return { restarted: false, exitCode: 0 };
   }
 
@@ -794,28 +901,36 @@ async function checkSkillsForStudio(io: CliIo, opts: { cwd: string }): Promise<v
 
   const scopeLabel = action.scope === 'global' ? 'globally' : 'locally';
   if (!io.isTty || !process.stdin.isTTY) {
-    const detail = action.status === 'outdated' && action.version
-      ? `skill outdated (${action.version} -> ${summary.sourceVersion})`
-      : `skill missing`;
-    const command = action.scope === 'local' ? 'superdense skill install --locally' : 'superdense skill install';
+    const detail =
+      action.status === 'outdated' && action.version
+        ? `skill outdated (${action.version} -> ${summary.sourceVersion})`
+        : `skill missing`;
+    const command =
+      action.scope === 'local' ? 'superdense skill install --locally' : 'superdense skill install';
     io.stdout.log(`[superdense] hint: ${detail}. Run \`${command}\` to update.`);
     return;
   }
 
-  const prompt = action.status === 'outdated' && action.version
-    ? `Update superdense skill ${scopeLabel} (${action.version} -> ${summary.sourceVersion})? [Y/n] `
-    : `Install superdense skill ${scopeLabel}? [Y/n] `;
+  const prompt =
+    action.status === 'outdated' && action.version
+      ? `Update superdense skill ${scopeLabel} (${action.version} -> ${summary.sourceVersion})? [Y/n] `
+      : `Install superdense skill ${scopeLabel}? [Y/n] `;
   if (await confirm(prompt)) {
     installSkills([name], { scope: action.scope, cwd: opts.cwd });
-    io.stdout.log(`[superdense] ${action.status === 'outdated' ? 'updated' : 'installed'} superdense skill ${scopeLabel}.`);
+    io.stdout.log(
+      `[superdense] ${action.status === 'outdated' ? 'updated' : 'installed'} superdense skill ${scopeLabel}.`,
+    );
   }
 }
 
-export async function runCli(argv: string[], io: CliIo = {
-  stdout: console,
-  stderr: console,
-  isTty: process.stdout.isTTY,
-}): Promise<number> {
+export async function runCli(
+  argv: string[],
+  io: CliIo = {
+    stdout: console,
+    stderr: console,
+    isTty: process.stdout.isTTY,
+  },
+): Promise<number> {
   ensureSuperdenseDirs();
   const { cmd, args, flags } = parseArgs(argv);
 
@@ -882,41 +997,43 @@ export async function runCli(argv: string[], io: CliIo = {
   }
 
   if (cmd === 'help') {
-    io.stdout.log([
-      'Usage: superdense <command> [options]',
-      '',
-      'Commands:',
-      '  start|studio        Start the Superdense web UI',
-      '  session list        List indexed sessions',
-      '  session show <id>   Show session metadata',
-      '  session path <id>   Get raw log file path',
-      '  session fields      List filters and enrichers',
-      '  session enrichments <id>  Get computed enrichments',
-      '  filter list         List available filters',
-      '  filter show <n>     Show filter params and examples',
-      '  query --query <json|@file>  Run an unsaved ad hoc query',
-      '  saved-query list          List saved queries',
-      '  saved-query show <id>     Show saved query with matching sessions',
-      '  saved-query save          Save a query without running it',
-      '  saved-query run <id>      Evaluate a saved query and return results',
-      '  saved-query delete <id>   Delete a saved query',
-      '  compactor list      List available compactors',
-      '  compactor show <n>  Show compactor details',
-      '  compactor run <n> <id>  Run a compactor on a session',
-      '  enricher list       List available enrichers',
-      '  enricher show <n>   Show enricher details',
-      '  insight list        List available insight recipes',
-      '  insight prompt <n>  Print a copy-pasteable insight prompt for your coding agent',
-      '  skill install [n]   Install skills into Claude and Codex',
-      '      --locally       Install skills into ./.claude and ./.codex for this cwd',
-      '  index               Incremental session index',
-      '  reindex             Full session reindex',
-      '  discover            Discover sessions from adapters',
-      '',
-      'Studio options:',
-      '  --no-update-check   Skip the startup npm version check',
-      '  --no-skill-check    Skip the startup skill freshness check',
-    ].join('\n'));
+    io.stdout.log(
+      [
+        'Usage: superdense <command> [options]',
+        '',
+        'Commands:',
+        '  start|studio        Start the Superdense web UI',
+        '  session list        List indexed sessions',
+        '  session show <id>   Show session metadata',
+        '  session path <id>   Get raw log file path',
+        '  session fields      List filters and enrichers',
+        '  session enrichments <id>  Get computed enrichments',
+        '  filter list         List available filters',
+        '  filter show <n>     Show filter params and examples',
+        '  query --query <json|@file>  Run an unsaved ad hoc query',
+        '  saved-query list          List saved queries',
+        '  saved-query show <id>     Show saved query with matching sessions',
+        '  saved-query save          Save a query without running it',
+        '  saved-query run <id>      Evaluate a saved query and return results',
+        '  saved-query delete <id>   Delete a saved query',
+        '  compactor list      List available compactors',
+        '  compactor show <n>  Show compactor details',
+        '  compactor run <n> <id>  Run a compactor on a session',
+        '  enricher list       List available enrichers',
+        '  enricher show <n>   Show enricher details',
+        '  insight list        List available insight recipes',
+        '  insight prompt <n>  Print a copy-pasteable insight prompt for your coding agent',
+        '  skill install [n]   Install skills into Claude and Codex',
+        '      --locally       Install skills into ./.claude and ./.codex for this cwd',
+        '  index               Incremental session index',
+        '  reindex             Full session reindex',
+        '  discover            Discover sessions from adapters',
+        '',
+        'Studio options:',
+        '  --no-update-check   Skip the startup npm version check',
+        '  --no-skill-check    Skip the startup skill freshness check',
+      ].join('\n'),
+    );
     return 0;
   }
 
@@ -952,7 +1069,9 @@ export async function runCli(argv: string[], io: CliIo = {
   runQueryEvaluation().catch((e) => io.stderr.error('[superdense] query eval failed:', e));
 
   if (!flags['no-open']) {
-    open(url).catch(() => { /* ignore */ });
+    open(url).catch(() => {
+      /* ignore */
+    });
   }
 
   return 0;

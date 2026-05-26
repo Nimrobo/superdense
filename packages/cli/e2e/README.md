@@ -6,14 +6,14 @@ last gate before `npm publish`.
 
 ## What it covers
 
-| Scenario | Catches |
-| --- | --- |
-| `a-install-bootstrap` | global install + binary on PATH; `better-sqlite3` native module loads; first-run creates `~/.superdense/index.db` on an empty HOME |
-| `b-adapters` | Claude Code, Codex, OpenCode discovery + indexing against synthetic fixtures; empty-home discover is a no-op |
-| `c-query-compactor` | ad hoc query, saved-query lifecycle (save/list/run/delete), `compactor run salience`, `insight list` / `insight prompt` — proves `dist/skills`, `dist/insights`, and compactor wiring shipped |
-| `d-server-web` | `superdense studio` boots, `/api/stats` returns 200, `/` serves the bundled web SPA, port fallback works when 4242 is busy |
-| `e-skill-install` | `skill install` writes to `~/.claude/skills/superdense` and `~/.codex/skills/superdense` with the right marker; re-install is idempotent; `--locally` writes under cwd |
-| `f-robustness` | malformed JSONL doesn't kill discovery; corrupt index.db doesn't unhandled-reject; invalid `--query` and unknown commands exit non-zero with a structured JSON error |
+| Scenario              | Catches                                                                                                                                                                                       |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `a-install-bootstrap` | global install + binary on PATH; `better-sqlite3` native module loads; first-run creates `~/.superdense/index.db` on an empty HOME                                                            |
+| `b-adapters`          | Claude Code, Codex, OpenCode discovery + indexing against synthetic fixtures; empty-home discover is a no-op                                                                                  |
+| `c-query-compactor`   | ad hoc query, saved-query lifecycle (save/list/run/delete), `compactor run salience`, `insight list` / `insight prompt` — proves `dist/skills`, `dist/insights`, and compactor wiring shipped |
+| `d-server-web`        | `superdense studio` boots, `/api/stats` returns 200, `/` serves the bundled web SPA, port fallback works when 4242 is busy                                                                    |
+| `e-skill-install`     | `skill install` writes to `~/.claude/skills/superdense` and `~/.codex/skills/superdense` with the right marker; re-install is idempotent; `--locally` writes under cwd                        |
+| `f-robustness`        | malformed JSONL doesn't kill discovery; corrupt index.db doesn't unhandled-reject; invalid `--query` and unknown commands exit non-zero with a structured JSON error                          |
 
 Full scenario list is in `scenarios/*.sh` — one bash file per group, each prints
 `ok` / `FAIL` lines per assertion.

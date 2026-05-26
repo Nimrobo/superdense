@@ -34,7 +34,9 @@ chmodSync(resolve(distDir, 'index.js'), 0o755);
 
 const webDist = resolve(repoRoot, 'packages/web/dist');
 if (!existsSync(webDist)) {
-  throw new Error(`web dist not found at ${webDist} — run \`pnpm --filter=@nimrobo/superdense-web run build\` first`);
+  throw new Error(
+    `web dist not found at ${webDist} — run \`pnpm --filter=@nimrobo/superdense-web run build\` first`,
+  );
 }
 cpSync(webDist, resolve(distDir, 'web'), { recursive: true });
 

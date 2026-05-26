@@ -1,5 +1,11 @@
 import type { Session } from '../api.js';
-import { formatDuration, formatRelativeTime, messageCountLabel, projectLabel, sessionTitle } from '../sessionDisplay.js';
+import {
+  formatDuration,
+  formatRelativeTime,
+  messageCountLabel,
+  projectLabel,
+  sessionTitle,
+} from '../sessionDisplay.js';
 
 type SessionCardProps =
   | { session: Session; onClick: () => void; href?: never }
@@ -18,15 +24,17 @@ export function SessionCard({ session, onClick, href }: SessionCardProps) {
 
   const content = (
     <>
-      <div className="session-card-title">
-        {title}
-      </div>
+      <div className="session-card-title">{title}</div>
       {session.summary && session.firstPrompt !== session.summary && (
         <div className="session-card-summary">{session.summary}</div>
       )}
       <div className="session-card-meta">
-        <span className="session-card-project" title={session.pwd}>{project}</span>
-        <span className="session-id-chip mono" title={session.id}>ID {session.id}</span>
+        <span className="session-card-project" title={session.pwd}>
+          {project}
+        </span>
+        <span className="session-id-chip mono" title={session.id}>
+          ID {session.id}
+        </span>
         {session.gitBranch && <span className="badge">{session.gitBranch}</span>}
         {messageCount && <span>{messageCount}</span>}
         {duration && <span>{duration}</span>}

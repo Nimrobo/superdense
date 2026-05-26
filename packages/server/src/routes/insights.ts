@@ -10,20 +10,23 @@ import {
 export async function registerInsightsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/insights/recipes', async () => ({ items: listInsightRecipes() }));
 
-  app.get<{ Params: { name: string } }>('/api/insights/recipes/:name/prompt', async (req, reply) => {
-    const { name } = req.params;
-    const recipe = getInsightRecipe(name);
-    if (!recipe) {
-      reply.status(404);
-      return { error: 'insight not found' };
-    }
-    const runId = randomUUID();
-    const body = assembleInsightPrompt(name, runId);
-    reply.header('content-type', 'text/markdown; charset=utf-8');
-    reply.header('x-superdense-run-id', runId);
-    reply.header('x-superdense-insight', name);
-    return body;
-  });
+  app.get<{ Params: { name: string } }>(
+    '/api/insights/recipes/:name/prompt',
+    async (req, reply) => {
+      const { name } = req.params;
+      const recipe = getInsightRecipe(name);
+      if (!recipe) {
+        reply.status(404);
+        return { error: 'insight not found' };
+      }
+      const runId = randomUUID();
+      const body = assembleInsightPrompt(name, runId);
+      reply.header('content-type', 'text/markdown; charset=utf-8');
+      reply.header('x-superdense-run-id', runId);
+      reply.header('x-superdense-insight', name);
+      return body;
+    },
+  );
 
   app.get('/api/insights/runs', async () => {
     const runs = listInsightRuns(200);

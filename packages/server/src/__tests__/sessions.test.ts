@@ -67,7 +67,10 @@ describe('sessions routes', () => {
   it('streams transcripts through session-aware adapter dispatch', async () => {
     const app = await buildApp();
 
-    const res = await app.inject({ method: 'GET', url: '/api/sessions/unknown%3Asession-1/transcript' });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/sessions/unknown%3Asession-1/transcript',
+    });
 
     expect(res.statusCode).toBe(200);
     expect(core.iterSessionEvents).toHaveBeenCalledWith(session);
@@ -77,13 +80,21 @@ describe('sessions routes', () => {
   it('runs the trace compactor for a session', async () => {
     const app = await buildApp();
 
-    const res = await app.inject({ method: 'GET', url: '/api/sessions/unknown%3Asession-1/compactors/trace' });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/sessions/unknown%3Asession-1/compactors/trace',
+    });
 
     expect(res.statusCode).toBe(200);
     expect(core.compactSession).toHaveBeenCalledWith('trace', session);
     expect(res.json()).toMatchObject({
       session,
-      compactor: { name: 'trace', kind: 'structural', targetBytes: 10000, description: 'Trace timeline' },
+      compactor: {
+        name: 'trace',
+        kind: 'structural',
+        targetBytes: 10000,
+        description: 'Trace timeline',
+      },
       result: { v: 1, name: 'trace' },
     });
   });
@@ -91,12 +102,20 @@ describe('sessions routes', () => {
   it('runs the salience compactor for a session', async () => {
     const app = await buildApp();
 
-    const res = await app.inject({ method: 'GET', url: '/api/sessions/unknown%3Asession-1/compactors/salience' });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/sessions/unknown%3Asession-1/compactors/salience',
+    });
 
     expect(res.statusCode).toBe(200);
     expect(core.compactSession).toHaveBeenCalledWith('salience', session);
     expect(res.json()).toMatchObject({
-      compactor: { name: 'salience', kind: 'semantic', targetBytes: 4000, description: 'Session salience' },
+      compactor: {
+        name: 'salience',
+        kind: 'semantic',
+        targetBytes: 4000,
+        description: 'Session salience',
+      },
       result: { v: 1, name: 'salience' },
     });
   });
@@ -114,7 +133,10 @@ describe('sessions routes', () => {
   it('returns 404 for unsupported compactors', async () => {
     const app = await buildApp();
 
-    const res = await app.inject({ method: 'GET', url: '/api/sessions/unknown%3Asession-1/compactors/other' });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/sessions/unknown%3Asession-1/compactors/other',
+    });
 
     expect(res.statusCode).toBe(404);
     expect(core.compactSession).not.toHaveBeenCalled();

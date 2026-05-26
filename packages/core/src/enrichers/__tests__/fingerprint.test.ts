@@ -66,7 +66,13 @@ describe('fingerprintEnricher', () => {
         toolCallId: 'c2',
         inputText: JSON.stringify({ command: 'npm test' }),
       },
-      { ts: 1500, kind: 'tool_result', role: 'user', toolCallId: 'c2', text: 'AssertionError: failed' },
+      {
+        ts: 1500,
+        kind: 'tool_result',
+        role: 'user',
+        toolCallId: 'c2',
+        text: 'AssertionError: failed',
+      },
       {
         ts: 1600,
         kind: 'tool_call',
@@ -100,7 +106,13 @@ describe('fingerprintEnricher', () => {
   it('is deterministic for the same input', async () => {
     const events: Partial<TranscriptEvent>[] = [
       { ts: 1, kind: 'text', role: 'user', text: 'add a test' },
-      { ts: 2, kind: 'tool_call', role: 'assistant', toolName: 'Bash', inputText: '{"command":"ls"}' },
+      {
+        ts: 2,
+        kind: 'tool_call',
+        role: 'assistant',
+        toolName: 'Bash',
+        inputText: '{"command":"ls"}',
+      },
     ];
     const a = await fingerprintEnricher.run(makeCtx(events));
     const b = await fingerprintEnricher.run(makeCtx(events));

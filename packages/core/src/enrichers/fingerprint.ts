@@ -2,7 +2,8 @@ import type { TranscriptEvent } from '../types.js';
 import type { Enricher } from './types.js';
 
 const ERROR_RE = /\b([A-Za-z]+Error|error|exception|traceback|failed|fatal)\b/i;
-const VERB_RE = /\b(add|fix|edit|update|refactor|test|commit|remove|delete|rename|implement|debug|review|investigate|create|write|build|run|check|merge|rebase|deploy|migrate|optimi[sz]e|document)\b/gi;
+const VERB_RE =
+  /\b(add|fix|edit|update|refactor|test|commit|remove|delete|rename|implement|debug|review|investigate|create|write|build|run|check|merge|rebase|deploy|migrate|optimi[sz]e|document)\b/gi;
 
 interface Fingerprint {
   v: 1;
@@ -34,7 +35,8 @@ export const fingerprintEnricher: Enricher = {
   version: 1,
   returns: 'json',
   alwaysRun: true,
-  description: 'Fixed-shape statistical fingerprint of a session: event/tool counts, error counts, role byte totals, unique paths, verb mentions, duration, and turn count. Designed for cross-session aggregation.',
+  description:
+    'Fixed-shape statistical fingerprint of a session: event/tool counts, error counts, role byte totals, unique paths, verb mentions, duration, and turn count. Designed for cross-session aggregation.',
   async run(ctx) {
     const fp: Fingerprint = {
       v: 1,

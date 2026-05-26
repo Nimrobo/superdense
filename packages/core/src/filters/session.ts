@@ -36,12 +36,18 @@ function countFromRecord(value: unknown, name: string): number {
 
 function compareInt(lhs: number, op: IntOp, rhs: number): boolean {
   switch (op) {
-    case '=': return lhs === rhs;
-    case '!=': return lhs !== rhs;
-    case '<': return lhs < rhs;
-    case '<=': return lhs <= rhs;
-    case '>': return lhs > rhs;
-    case '>=': return lhs >= rhs;
+    case '=':
+      return lhs === rhs;
+    case '!=':
+      return lhs !== rhs;
+    case '<':
+      return lhs < rhs;
+    case '<=':
+      return lhs <= rhs;
+    case '>':
+      return lhs > rhs;
+    case '>=':
+      return lhs >= rhs;
   }
 }
 
@@ -66,7 +72,8 @@ function matchUsedParam(value: unknown, enrichment: unknown): boolean {
 export const sessionFilter: Filter = {
   name: 'session',
   title: 'Session',
-  description: 'Filters sessions by metadata and always-on system data such as errors, tool counts, CLI counts, and event count.',
+  description:
+    'Filters sessions by metadata and always-on system data such as errors, tool counts, CLI counts, and event count.',
   usesSystemData: true,
   paramsSchema: {
     type: 'object',
@@ -76,13 +83,34 @@ export const sessionFilter: Filter = {
       pwdContains: { type: 'string', description: 'Substring contained in the working directory.' },
       project: { type: 'string', description: 'Exact project key.' },
       projectContains: { type: 'string', description: 'Substring contained in the project key.' },
-      firstPromptContains: { type: 'string', description: 'Substring contained in the first prompt.' },
-      summaryContains: { type: 'string', description: 'Substring contained in the session summary.' },
-      createdAfter: { type: ['number', 'string'], description: 'Minimum createdAt timestamp or parseable date.' },
-      createdBefore: { type: ['number', 'string'], description: 'Maximum createdAt timestamp or parseable date.' },
-      modifiedAfter: { type: ['number', 'string'], description: 'Minimum modifiedAt timestamp or parseable date.' },
-      modifiedBefore: { type: ['number', 'string'], description: 'Maximum modifiedAt timestamp or parseable date.' },
-      hasErrors: { type: 'boolean', description: 'Matches the always-on has_errors system signal.' },
+      firstPromptContains: {
+        type: 'string',
+        description: 'Substring contained in the first prompt.',
+      },
+      summaryContains: {
+        type: 'string',
+        description: 'Substring contained in the session summary.',
+      },
+      createdAfter: {
+        type: ['number', 'string'],
+        description: 'Minimum createdAt timestamp or parseable date.',
+      },
+      createdBefore: {
+        type: ['number', 'string'],
+        description: 'Maximum createdAt timestamp or parseable date.',
+      },
+      modifiedAfter: {
+        type: ['number', 'string'],
+        description: 'Minimum modifiedAt timestamp or parseable date.',
+      },
+      modifiedBefore: {
+        type: ['number', 'string'],
+        description: 'Maximum modifiedAt timestamp or parseable date.',
+      },
+      hasErrors: {
+        type: 'boolean',
+        description: 'Matches the always-on has_errors system signal.',
+      },
       toolUsed: {
         type: 'object',
         required: ['name'],
@@ -107,7 +135,10 @@ export const sessionFilter: Filter = {
           value: { type: 'number' },
         },
       },
-      enteredPlanMode: { type: 'boolean', description: 'Matches sessions that entered plan mode at least once.' },
+      enteredPlanMode: {
+        type: 'boolean',
+        description: 'Matches sessions that entered plan mode at least once.',
+      },
       planEnterCount: {
         type: 'object',
         required: ['value'],
@@ -124,8 +155,15 @@ export const sessionFilter: Filter = {
           value: { type: 'number' },
         },
       },
-      planUnclosed: { type: 'boolean', description: 'Matches sessions that entered plan mode and never exited it.' },
-      planFinalized: { type: 'boolean', description: 'Matches sessions where a plan was finalized (ExitPlanMode or <proposed_plan>).' },
+      planUnclosed: {
+        type: 'boolean',
+        description: 'Matches sessions that entered plan mode and never exited it.',
+      },
+      planFinalized: {
+        type: 'boolean',
+        description:
+          'Matches sessions where a plan was finalized (ExitPlanMode or <proposed_plan>).',
+      },
       toolUsedInPlan: {
         type: 'object',
         required: ['name'],
@@ -154,7 +192,12 @@ export const sessionFilter: Filter = {
   },
   examples: [
     { filter: { name: 'session', params: { agent: 'codex', hasErrors: true } } },
-    { filter: { name: 'session', params: { pwdContains: 'superdense', toolUsed: { name: 'Bash', min: 1 } } } },
+    {
+      filter: {
+        name: 'session',
+        params: { pwdContains: 'superdense', toolUsed: { name: 'Bash', min: 1 } },
+      },
+    },
     { filter: { name: 'session', params: { cliUsed: { name: 'git', min: 2 } } } },
     { filter: { name: 'session', params: { enteredPlanMode: true } } },
     { filter: { name: 'session', params: { planUnclosed: true } } },
@@ -187,16 +230,23 @@ export const sessionFilter: Filter = {
     if (summaryContains && !contains(session.summary, summaryContains)) return false;
 
     const createdAfter = asTimestamp(params.createdAfter);
-    if (createdAfter != null && (session.createdAt == null || session.createdAt < createdAfter)) return false;
+    if (createdAfter != null && (session.createdAt == null || session.createdAt < createdAfter))
+      return false;
 
     const createdBefore = asTimestamp(params.createdBefore);
-    if (createdBefore != null && (session.createdAt == null || session.createdAt > createdBefore)) return false;
+    if (createdBefore != null && (session.createdAt == null || session.createdAt > createdBefore))
+      return false;
 
     const modifiedAfter = asTimestamp(params.modifiedAfter);
-    if (modifiedAfter != null && (session.modifiedAt == null || session.modifiedAt < modifiedAfter)) return false;
+    if (modifiedAfter != null && (session.modifiedAt == null || session.modifiedAt < modifiedAfter))
+      return false;
 
     const modifiedBefore = asTimestamp(params.modifiedBefore);
-    if (modifiedBefore != null && (session.modifiedAt == null || session.modifiedAt > modifiedBefore)) return false;
+    if (
+      modifiedBefore != null &&
+      (session.modifiedAt == null || session.modifiedAt > modifiedBefore)
+    )
+      return false;
 
     if (typeof params.hasErrors === 'boolean') {
       const actual = ctx.getSystemEnrichment('has_errors')?.value === true;
@@ -220,12 +270,18 @@ export const sessionFilter: Filter = {
     }
 
     const planParams = [
-      'enteredPlanMode', 'planEnterCount', 'planDurationMs', 'planUnclosed',
-      'planFinalized', 'toolUsedInPlan', 'toolUsedOnlyOutOfPlan', 'userPromptsInPlan',
+      'enteredPlanMode',
+      'planEnterCount',
+      'planDurationMs',
+      'planUnclosed',
+      'planFinalized',
+      'toolUsedInPlan',
+      'toolUsedOnlyOutOfPlan',
+      'userPromptsInPlan',
     ];
     if (planParams.some((k) => params[k] !== undefined)) {
       const value = ctx.getSystemEnrichment('plan_mode')?.value;
-      const plan = (value && typeof value === 'object') ? value as Record<string, unknown> : {};
+      const plan = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
 
       if (typeof params.enteredPlanMode === 'boolean') {
         const entered = plan.entered === true;
@@ -244,7 +300,8 @@ export const sessionFilter: Filter = {
         if (unclosed !== params.planUnclosed) return false;
       }
       if (typeof params.planFinalized === 'boolean') {
-        const finalized = typeof plan.proposedPlanFinalized === 'number' && plan.proposedPlanFinalized > 0;
+        const finalized =
+          typeof plan.proposedPlanFinalized === 'number' && plan.proposedPlanFinalized > 0;
         if (finalized !== params.planFinalized) return false;
       }
       if (params.toolUsedInPlan !== undefined) {

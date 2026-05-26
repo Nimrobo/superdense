@@ -66,7 +66,9 @@ const BASE_QUERY: Omit<Query, 'memberCount' | 'lastRunAt'> = {
 
 function clearDb() {
   const db = getDb();
-  db.exec('DELETE FROM query_matches; DELETE FROM query_enrich; DELETE FROM sessions; DELETE FROM queries;');
+  db.exec(
+    'DELETE FROM query_matches; DELETE FROM query_enrich; DELETE FROM sessions; DELETE FROM queries;',
+  );
 }
 
 describe('sessions', () => {
@@ -84,8 +86,13 @@ describe('sessions', () => {
 
   it('updates existing session on conflict', () => {
     upsertSession(BASE);
-    upsertSession({ ...BASE, pwd: '/Users/x/conductor/workspaces/superdense/provo-v1/packages/core' });
-    expect(getSession('sess-1')!.pwd).toBe('/Users/x/conductor/workspaces/superdense/provo-v1/packages/core');
+    upsertSession({
+      ...BASE,
+      pwd: '/Users/x/conductor/workspaces/superdense/provo-v1/packages/core',
+    });
+    expect(getSession('sess-1')!.pwd).toBe(
+      '/Users/x/conductor/workspaces/superdense/provo-v1/packages/core',
+    );
     expect(getSession('sess-1')!.projectKey).toBe('/Users/x/conductor/workspaces/superdense');
   });
 
@@ -111,13 +118,15 @@ describe('sessions', () => {
         );
         PRAGMA user_version = 1;
       `);
-      db.prepare(`
+      db.prepare(
+        `
         INSERT INTO sessions (
           id, agent, session_id, log_path, pwd, first_prompt, summary,
           message_count, git_branch, created_at, modified_at, is_sidechain,
           file_mtime, last_indexed_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
+      `,
+      ).run(
         'old',
         'claude-code',
         'abc',
@@ -137,8 +146,9 @@ describe('sessions', () => {
       _migrateForTests(db);
 
       expect(db.pragma('user_version', { simple: true })).toBe(2);
-      expect(db.prepare('SELECT project_key FROM sessions WHERE id = ?').get('old'))
-        .toEqual({ project_key: '/Users/x/conductor/workspaces/superdense' });
+      expect(db.prepare('SELECT project_key FROM sessions WHERE id = ?').get('old')).toEqual({
+        project_key: '/Users/x/conductor/workspaces/superdense',
+      });
     } finally {
       db.close();
     }
@@ -420,7 +430,11 @@ describe('stats aggregates', () => {
 
   it('getStatsTotals counts Conductor sibling workspaces as one project', () => {
     upsertSession({ ...BASE, id: 's1', pwd: '/Users/x/conductor/workspaces/superdense/provo-v1' });
-    upsertSession({ ...BASE, id: 's2', pwd: '/Users/x/conductor/workspaces/superdense/provo-v2/packages/core' });
+    upsertSession({
+      ...BASE,
+      id: 's2',
+      pwd: '/Users/x/conductor/workspaces/superdense/provo-v2/packages/core',
+    });
     upsertSession({ ...BASE, id: 's3', pwd: '/Users/x/conductor/workspaces/other/provo-v1' });
 
     expect(getStatsTotals().distinctPwds).toBe(2);
@@ -456,7 +470,11 @@ describe('stats aggregates', () => {
 
   it('getTopPwds groups Conductor sibling workspaces by projectKey', () => {
     upsertSession({ ...BASE, id: 's1', pwd: '/Users/x/conductor/workspaces/superdense/provo-v1' });
-    upsertSession({ ...BASE, id: 's2', pwd: '/Users/x/conductor/workspaces/superdense/provo-v2/packages/core' });
+    upsertSession({
+      ...BASE,
+      id: 's2',
+      pwd: '/Users/x/conductor/workspaces/superdense/provo-v2/packages/core',
+    });
     upsertSession({ ...BASE, id: 's3', pwd: '/Users/x/conductor/workspaces/other/provo-v1' });
 
     const tops = getTopPwds(5);

@@ -47,7 +47,13 @@ describe('salienceCompactor', () => {
           toolCallId: 'c2',
           inputText: JSON.stringify({ command: 'npm test' }),
         },
-        { kind: 'tool_result', role: 'user', toolCallId: 'c2', isError: true, text: 'AssertionError: expected 200 got 401' },
+        {
+          kind: 'tool_result',
+          role: 'user',
+          toolCallId: 'c2',
+          isError: true,
+          text: 'AssertionError: expected 200 got 401',
+        },
         { kind: 'text', role: 'assistant', text: 'The issue is the regex misses trailing slash.' },
         {
           kind: 'tool_call',
@@ -76,7 +82,12 @@ describe('salienceCompactor', () => {
     expect(out.v).toBe(2);
     expect(out.timeline).toEqual([
       { type: 'user', t: 0, text: 'fix the failing test in auth.spec.ts' },
-      { type: 'assistant', t: 1, kind: 'decision', text: 'The issue is the regex misses trailing slash.' },
+      {
+        type: 'assistant',
+        t: 1,
+        kind: 'decision',
+        text: 'The issue is the regex misses trailing slash.',
+      },
       { type: 'user', t: 2, text: 'also add a test for null input' },
       { type: 'assistant', t: 3, kind: 'final', text: 'Done — tests pass.' },
     ]);
@@ -122,9 +133,19 @@ describe('salienceCompactor', () => {
     expect(out.timeline).toEqual([
       { type: 'user', t: 0, text: 'update salience for plan mode' },
       { type: 'plan_enter', t: 1 },
-      { type: 'assistant', t: 2, kind: 'proposed_plan', text: '<proposed_plan>first plan</proposed_plan>' },
+      {
+        type: 'assistant',
+        t: 2,
+        kind: 'proposed_plan',
+        text: '<proposed_plan>first plan</proposed_plan>',
+      },
       { type: 'user', t: 3, text: 'push back: keep plan events separate' },
-      { type: 'assistant', t: 4, kind: 'proposed_plan', text: '<proposed_plan>second plan</proposed_plan>' },
+      {
+        type: 'assistant',
+        t: 4,
+        kind: 'proposed_plan',
+        text: '<proposed_plan>second plan</proposed_plan>',
+      },
       { type: 'plan_exit', t: 5 },
       { type: 'assistant', t: 6, kind: 'final', text: 'Done — implemented.' },
     ]);
@@ -174,7 +195,12 @@ describe('salienceCompactor', () => {
       { type: 'plan_enter', t: 1 },
       { type: 'assistant', t: 2, kind: 'proposed_plan', text: '# Plan\n\nImplement the feature.' },
       { type: 'user', t: 3, text: 'change the plan' },
-      { type: 'assistant', t: 4, kind: 'proposed_plan', text: '# Revised Plan\n\nKeep system instructions.' },
+      {
+        type: 'assistant',
+        t: 4,
+        kind: 'proposed_plan',
+        text: '# Revised Plan\n\nKeep system instructions.',
+      },
       { type: 'plan_exit', t: 5 },
       { type: 'assistant', t: 6, kind: 'final', text: 'Done.' },
     ]);
@@ -245,7 +271,11 @@ describe('salienceCompactor', () => {
 
     const out = (await salienceCompactor.run(
       makeCtx([
-        { kind: 'text', role: 'user', text: '<environment_context>\n  <cwd>/repo</cwd>\n</environment_context>' },
+        {
+          kind: 'text',
+          role: 'user',
+          text: '<environment_context>\n  <cwd>/repo</cwd>\n</environment_context>',
+        },
         { kind: 'text', role: 'user', text: '<turn_aborted>stale turn</turn_aborted>' },
         { kind: 'text', role: 'user', text: longUser },
         { kind: 'text', role: 'assistant', text: longPlan },

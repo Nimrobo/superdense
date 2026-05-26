@@ -23,28 +23,24 @@ type LegacyMatcher = {
   ): Promise<MatchResult>;
 };
 
-const BUILTINS: Filter[] = [
-  sessionFilter,
-  userPromptContainsFilter,
-  isInsightRunFilter,
-];
+const BUILTINS: Filter[] = [sessionFilter, userPromptContainsFilter, isInsightRunFilter];
 
 let cache: Filter[] | null = null;
 
 function isFilter(x: unknown): x is Filter {
   const f = x as Partial<Filter> | undefined;
-  return !!f
-    && typeof f.name === 'string'
-    && typeof f.title === 'string'
-    && typeof f.paramsSchema === 'object'
-    && typeof f.run === 'function';
+  return (
+    !!f &&
+    typeof f.name === 'string' &&
+    typeof f.title === 'string' &&
+    typeof f.paramsSchema === 'object' &&
+    typeof f.run === 'function'
+  );
 }
 
 function isLegacyMatcher(x: unknown): x is LegacyMatcher {
   const f = x as Partial<LegacyMatcher> | undefined;
-  return !!f
-    && typeof f.name === 'string'
-    && typeof f.matches === 'function';
+  return !!f && typeof f.name === 'string' && typeof f.matches === 'function';
 }
 
 function legacySchemaToJsonSchema(fields: JsonSchemaField[] | undefined): object {
@@ -82,7 +78,9 @@ function legacyMatcherToFilter(matcher: LegacyMatcher): Filter {
     async run(ctx: FilterContext, params: Record<string, unknown>) {
       if (matcher.prefilter && !matcher.prefilter(ctx.session, params)) return false;
       const helpers = { iterEvents: () => ctx.iterEvents(ctx.logPath) };
-      return normalizeLegacyResult(await matcher.matches(ctx.session, ctx.logPath, params, helpers));
+      return normalizeLegacyResult(
+        await matcher.matches(ctx.session, ctx.logPath, params, helpers),
+      );
     },
   };
 }
@@ -105,7 +103,9 @@ async function readFilterDir(dir: string, legacy: boolean): Promise<Filter[]> {
       } else if (legacy && isLegacyMatcher(candidate)) {
         out.push(legacyMatcherToFilter(candidate));
       } else {
-        console.warn(`[superdense] filter ${f} missing required fields (name, title, paramsSchema, run)`);
+        console.warn(
+          `[superdense] filter ${f} missing required fields (name, title, paramsSchema, run)`,
+        );
       }
     } catch (err) {
       console.error(`[superdense] failed to load filter ${f}:`, err);
@@ -127,7 +127,8 @@ export async function loadFilters(): Promise<Filter[]> {
   if (cache) return cache;
   const all = [...BUILTINS];
   for (const filter of await readFilterDir(USER_FILTERS_DIR, false)) registerInto(all, filter);
-  for (const filter of await readFilterDir(LEGACY_USER_FILTERS_DIR, true)) registerInto(all, filter);
+  for (const filter of await readFilterDir(LEGACY_USER_FILTERS_DIR, true))
+    registerInto(all, filter);
   cache = all;
   return cache;
 }

@@ -63,13 +63,7 @@ describe('insightRunEnricher', () => {
   it('skips leading Codex environment context before the insight marker', async () => {
     const marker =
       '<!-- superdense:insight name="skills-to-build-for-this-repo" run="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" v=1 -->';
-    const assistantAnswer = [
-      'done',
-      '',
-      '## Answer',
-      '',
-      'Skill name: repo-review',
-    ].join('\n');
+    const assistantAnswer = ['done', '', '## Answer', '', 'Skill name: repo-review'].join('\n');
     const result = (await insightRunEnricher.run(
       ctx([
         {
@@ -109,7 +103,8 @@ describe('insightRunEnricher', () => {
   });
 
   it('still tags the session when the marker is present but there is no ## Answer yet', async () => {
-    const marker = '<!-- superdense:insight name="skills-to-build-for-this-repo" run="aaaa" v=1 -->';
+    const marker =
+      '<!-- superdense:insight name="skills-to-build-for-this-repo" run="aaaa" v=1 -->';
     const result = (await insightRunEnricher.run(
       ctx([
         { role: 'user', kind: 'text', text: marker },

@@ -9,7 +9,8 @@ export const USER_FILTERS_DIR = join(SUPERDENSE_HOME, 'filters');
 export const LEGACY_USER_FILTERS_DIR = join(SUPERDENSE_HOME, 'plugins');
 export const USER_ENRICHERS_DIR = join(SUPERDENSE_HOME, 'enrichers');
 
-export const CLAUDE_SKILLS_DIR = process.env.CLAUDE_SKILLS_DIR ?? join(homedir(), '.claude', 'skills');
+export const CLAUDE_SKILLS_DIR =
+  process.env.CLAUDE_SKILLS_DIR ?? join(homedir(), '.claude', 'skills');
 export const CODEX_SKILLS_DIR = process.env.CODEX_SKILLS_DIR ?? join(homedir(), '.codex', 'skills');
 
 export function localClaudeSkillsDir(cwd: string): string {

@@ -9,11 +9,15 @@ export async function registerFacetsRoutes(app: FastifyInstance): Promise<void> 
       .all()
       .map((r) => (r as { pwd: string }).pwd);
     const agent = db
-      .prepare("SELECT DISTINCT agent FROM sessions WHERE agent IS NOT NULL AND agent != '' ORDER BY agent")
+      .prepare(
+        "SELECT DISTINCT agent FROM sessions WHERE agent IS NOT NULL AND agent != '' ORDER BY agent",
+      )
       .all()
       .map((r) => (r as { agent: string }).agent);
     const project = db
-      .prepare("SELECT DISTINCT project_key FROM sessions WHERE project_key IS NOT NULL AND project_key != '' ORDER BY project_key")
+      .prepare(
+        "SELECT DISTINCT project_key FROM sessions WHERE project_key IS NOT NULL AND project_key != '' ORDER BY project_key",
+      )
       .all()
       .map((r) => (r as { project_key: string }).project_key);
     return { pwd, agent, project };

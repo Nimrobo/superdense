@@ -37,11 +37,7 @@ describe('eventCountEnricher', () => {
   });
 
   it('counts events with various fields', async () => {
-    const events = [
-      { text: 'hello' },
-      { toolName: 'bash' },
-      { role: 'user' as const },
-    ];
+    const events = [{ text: 'hello' }, { toolName: 'bash' }, { role: 'user' as const }];
     expect(await eventCountEnricher.run(makeCtx(events))).toBe(3);
   });
 });

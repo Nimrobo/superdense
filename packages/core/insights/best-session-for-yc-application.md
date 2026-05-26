@@ -2,7 +2,7 @@
 
 You are helping the user pick which of their past coding sessions to feature in a YC (Y Combinator) application. The goal is a ranked shortlist of sessions that best convey **founder grit, technical depth, real shipped outcomes, and ambitious scope**.
 
-Treat *all* of the user's sessions as candidates — across every project, every agent. This insight is **not** scoped to the current working directory.
+Treat _all_ of the user's sessions as candidates — across every project, every agent. This insight is **not** scoped to the current working directory.
 
 ## Before you start
 

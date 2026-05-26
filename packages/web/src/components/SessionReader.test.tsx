@@ -42,7 +42,12 @@ function mockTranscript(events: TranscriptEvent[]) {
 function mockCompactor(result: unknown = { v: 1 }) {
   vi.mocked(api.runSessionCompactor).mockResolvedValue({
     session: baseSession,
-    compactor: { name: 'trace', kind: 'structural', targetBytes: 10000, description: 'Trace timeline' },
+    compactor: {
+      name: 'trace',
+      kind: 'structural',
+      targetBytes: 10000,
+      description: 'Trace timeline',
+    },
     result,
   });
 }
@@ -151,7 +156,12 @@ describe('SessionReader', () => {
   it('loads trace compactor output into an inline pretty JSON drawer', async () => {
     const traceResponse: SessionCompactorResponse = {
       session: baseSession,
-      compactor: { name: 'trace', kind: 'structural', targetBytes: 10000, description: 'Trace timeline' },
+      compactor: {
+        name: 'trace',
+        kind: 'structural',
+        targetBytes: 10000,
+        description: 'Trace timeline',
+      },
       result: { v: 1, turns: [{ role: 'user', t: 0, text: 'Build the thing' }] },
     };
     const pending = deferred<typeof traceResponse>();
@@ -176,12 +186,22 @@ describe('SessionReader', () => {
   it('switches between cached trace output and salience output', async () => {
     const traceResponse: SessionCompactorResponse = {
       session: baseSession,
-      compactor: { name: 'trace', kind: 'structural', targetBytes: 10000, description: 'Trace timeline' },
+      compactor: {
+        name: 'trace',
+        kind: 'structural',
+        targetBytes: 10000,
+        description: 'Trace timeline',
+      },
       result: { v: 1, turns: [] },
     };
     const salienceResponse: SessionCompactorResponse = {
       session: baseSession,
-      compactor: { name: 'salience', kind: 'semantic', targetBytes: 4000, description: 'Session salience' },
+      compactor: {
+        name: 'salience',
+        kind: 'semantic',
+        targetBytes: 4000,
+        description: 'Session salience',
+      },
       result: { v: 1, firstAsk: 'Build the thing', decisions: [] },
     };
     vi.mocked(api.runSessionCompactor)
@@ -190,26 +210,36 @@ describe('SessionReader', () => {
 
     await renderReader();
     await userEvent.click(screen.getByRole('button', { name: 'Trace' }));
-    expect((await screen.findByTestId('compactor-json')).textContent).toBe(JSON.stringify(traceResponse, null, 2));
+    expect((await screen.findByTestId('compactor-json')).textContent).toBe(
+      JSON.stringify(traceResponse, null, 2),
+    );
 
     await userEvent.click(screen.getByRole('button', { name: 'Salience' }));
-    expect((await screen.findByTestId('compactor-json')).textContent).toBe(JSON.stringify(salienceResponse, null, 2));
+    expect((await screen.findByTestId('compactor-json')).textContent).toBe(
+      JSON.stringify(salienceResponse, null, 2),
+    );
 
     await userEvent.click(screen.getByRole('button', { name: 'Trace' }));
-    expect(screen.getByTestId('compactor-json').textContent).toBe(JSON.stringify(traceResponse, null, 2));
+    expect(screen.getByTestId('compactor-json').textContent).toBe(
+      JSON.stringify(traceResponse, null, 2),
+    );
     expect(api.runSessionCompactor).toHaveBeenCalledTimes(2);
   });
 
   it('shows compactor errors without hiding the transcript', async () => {
     mockTranscript([{ kind: 'text', role: 'assistant', text: 'visible assistant text' }]);
-    vi.mocked(api.runSessionCompactor).mockRejectedValueOnce(new Error('500 Internal Server Error'));
+    vi.mocked(api.runSessionCompactor).mockRejectedValueOnce(
+      new Error('500 Internal Server Error'),
+    );
 
     await renderReader();
     expect(await screen.findByText('visible assistant text')).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: 'Salience' }));
 
-    expect(await screen.findByText('Failed to load salience: 500 Internal Server Error')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Failed to load salience: 500 Internal Server Error'),
+    ).toBeInTheDocument();
     expect(screen.getByText('visible assistant text')).toBeInTheDocument();
   });
 
@@ -244,7 +274,9 @@ describe('SessionReader', () => {
 
     const toolRow = screen.getByTestId('tool-event-Bash').closest('.event');
     expect(toolRow).not.toBeNull();
-    await userEvent.click(within(toolRow as HTMLElement).getByRole('button', { name: 'Show more' }));
+    await userEvent.click(
+      within(toolRow as HTMLElement).getByRole('button', { name: 'Show more' }),
+    );
 
     expect(screen.getByText('Input')).toBeInTheDocument();
     expect(screen.getByText('Result')).toBeInTheDocument();
@@ -327,7 +359,9 @@ describe('SessionReader', () => {
 
     const toolRow = (await screen.findByTestId('tool-event-shell')).closest('.event');
     expect(toolRow).not.toBeNull();
-    await userEvent.click(within(toolRow as HTMLElement).getByRole('button', { name: 'Show more' }));
+    await userEvent.click(
+      within(toolRow as HTMLElement).getByRole('button', { name: 'Show more' }),
+    );
     expect(screen.getByText(longToolInput, { exact: false })).toBeInTheDocument();
 
     await userEvent.click(screen.getByLabelText('Show system events'));

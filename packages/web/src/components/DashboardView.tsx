@@ -66,20 +66,37 @@ export function DashboardView({ progress, onReindex, onOpenSession, onOpenSessio
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
   };
 
-  useEffect(() => { refreshAll(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
   useEffect(() => {
-    api.statsWindow(windowDays).then(setWindowData).catch((e) => setError(e instanceof Error ? e.message : String(e)));
+    refreshAll(); /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, []);
+  useEffect(() => {
+    api
+      .statsWindow(windowDays)
+      .then(setWindowData)
+      .catch((e) => setError(e instanceof Error ? e.message : String(e)));
   }, [windowDays]);
 
-  if (error) return <div className="dashboard"><div className="error">Failed to load: {error}</div></div>;
-  if (!header) return <div className="dashboard"><div className="muted">Loading...</div></div>;
+  if (error)
+    return (
+      <div className="dashboard">
+        <div className="error">Failed to load: {error}</div>
+      </div>
+    );
+  if (!header)
+    return (
+      <div className="dashboard">
+        <div className="muted">Loading...</div>
+      </div>
+    );
 
   const busy = progress && progress.phase !== 'idle';
 
   if (header.totals.sessions === 0) {
     return (
       <div className="dashboard">
-        <div className="dashboard-header"><h1>Dashboard</h1></div>
+        <div className="dashboard-header">
+          <h1>Dashboard</h1>
+        </div>
         <div className="card">
           <div className="card-title">No sessions yet</div>
           <p className="muted">Run a reindex to discover your agent transcripts.</p>
@@ -97,7 +114,11 @@ export function DashboardView({ progress, onReindex, onOpenSession, onOpenSessio
         <h1>Dashboard</h1>
         <div className="dashboard-header-actions">
           <span className="muted small">indexed {relTime(header.lastIndexedAt)}</span>
-          {busy && <span className="muted small">{progress!.phase} {progress!.done}/{progress!.total}</span>}
+          {busy && (
+            <span className="muted small">
+              {progress!.phase} {progress!.done}/{progress!.total}
+            </span>
+          )}
         </div>
       </div>
 
@@ -107,14 +128,12 @@ export function DashboardView({ progress, onReindex, onOpenSession, onOpenSessio
 
       <div className="activity-rhythm-row">
         <ContributionHeatmap contributions={header.contributions} />
-        {insights && <WorkRhythmCard cells={insights.hourDowHeatmap} rhythm={insights.workRhythm} />}
+        {insights && (
+          <WorkRhythmCard cells={insights.hourDowHeatmap} rhythm={insights.workRhythm} />
+        )}
       </div>
 
-      <WindowMetricsCard
-        windowDays={windowDays}
-        setWindowDays={setWindowDays}
-        data={windowData}
-      />
+      <WindowMetricsCard windowDays={windowDays} setWindowDays={setWindowDays} data={windowData} />
 
       {windowData && insights && (
         <ProjectMomentumCard
@@ -177,12 +196,26 @@ function MomentumHero({
         <div className="momentum-number">{streaks.current}</div>
         <div>
           <div className="momentum-label">current day streak</div>
-          {streaks.current > 0 && streaks.current >= streaks.longest && <div className="momentum-badge">New record pace</div>}
+          {streaks.current > 0 && streaks.current >= streaks.longest && (
+            <div className="momentum-badge">New record pace</div>
+          )}
         </div>
       </div>
       <div className="momentum-stats">
-        <RecordTile label="Longest streak" value={`${streaks.longest}d`} detail={streaks.longestRange ? `${ymdToLabel(streaks.longestRange.start)} - ${ymdToLabel(streaks.longestRange.end)}` : undefined} />
-        <RecordTile label="Best day" value={records?.bestDay ? `${records.bestDay.sessions}` : '-'} detail={records?.bestDay ? ymdToLabel(records.bestDay.date) : undefined} />
+        <RecordTile
+          label="Longest streak"
+          value={`${streaks.longest}d`}
+          detail={
+            streaks.longestRange
+              ? `${ymdToLabel(streaks.longestRange.start)} - ${ymdToLabel(streaks.longestRange.end)}`
+              : undefined
+          }
+        />
+        <RecordTile
+          label="Best day"
+          value={records?.bestDay ? `${records.bestDay.sessions}` : '-'}
+          detail={records?.bestDay ? ymdToLabel(records.bestDay.date) : undefined}
+        />
         <RecordTile
           label="Longest agent runtime"
           value={records?.longestSession ? formatDuration(records.longestSession.durationMs) : '-'}
@@ -193,7 +226,17 @@ function MomentumHero({
   );
 }
 
-function RecordTile({ label, value, detail, title }: { label: string; value: string; detail?: string; title?: string }) {
+function RecordTile({
+  label,
+  value,
+  detail,
+  title,
+}: {
+  label: string;
+  value: string;
+  detail?: string;
+  title?: string;
+}) {
   return (
     <div className="record-tile" title={title}>
       <div className="record-value">{value}</div>
@@ -214,7 +257,8 @@ function ContributionHeatmap({ contributions }: { contributions: HeaderStats['co
 
   const { weeks, max } = useMemo(() => {
     const max = visible.reduce((m, c) => Math.max(m, c.count), 0);
-    if (visible.length === 0) return { weeks: [] as Array<Array<{ date: string; count: number } | null>>, max };
+    if (visible.length === 0)
+      return { weeks: [] as Array<Array<{ date: string; count: number } | null>>, max };
     const first = visible[0]!;
     // Use local-time day-of-week for the leading pad so columns align by weekday.
     const firstDow = new Date(`${first.date}T12:00:00`).getDay();
@@ -253,7 +297,9 @@ function ContributionHeatmap({ contributions }: { contributions: HeaderStats['co
   return (
     <div className="card">
       <div className="window-header">
-        <div className="card-title" style={{ margin: 0 }}>Contribution heatmap · {totalDays} active days</div>
+        <div className="card-title" style={{ margin: 0 }}>
+          Contribution heatmap · {totalDays} active days
+        </div>
         <div className="segmented">
           {(['30D', '6M'] as HeatmapRange[]).map((r) => (
             <button
@@ -269,11 +315,15 @@ function ContributionHeatmap({ contributions }: { contributions: HeaderStats['co
       <div className="heatmap">
         <div
           className="heatmap-months"
-          style={{ gridTemplateColumns: `var(--hm-dow-width) repeat(${Math.max(1, weeks.length)}, var(--hm-cell))` }}
+          style={{
+            gridTemplateColumns: `var(--hm-dow-width) repeat(${Math.max(1, weeks.length)}, var(--hm-cell))`,
+          }}
         >
           <span />
           {monthLabels.map((m, i) => (
-            <span key={i} className="heatmap-month-label">{m}</span>
+            <span key={i} className="heatmap-month-label">
+              {m}
+            </span>
           ))}
         </div>
         <div className="heatmap-body">
@@ -318,7 +368,13 @@ function ContributionHeatmap({ contributions }: { contributions: HeaderStats['co
   );
 }
 
-function WorkRhythmCard({ cells, rhythm }: { cells: Insights['hourDowHeatmap']; rhythm: Insights['workRhythm'] }) {
+function WorkRhythmCard({
+  cells,
+  rhythm,
+}: {
+  cells: Insights['hourDowHeatmap'];
+  rhythm: Insights['workRhythm'];
+}) {
   const max = cells.reduce((m, c) => Math.max(m, c.count), 0);
   const intensity = (n: number) => (max === 0 ? 0 : n / max);
   return (
@@ -344,8 +400,16 @@ function WorkRhythmCard({ cells, rhythm }: { cells: Insights['hourDowHeatmap']; 
         ))}
       </div>
       <div className="rhythm-summary">
-        <span>{rhythm.peakHour ? `Peak: ${DOWS[rhythm.peakHour.dow]} ${String(rhythm.peakHour.hour).padStart(2, '0')}:00` : 'Peak: -'}</span>
-        <span>{rhythm.mostConsistentWeekday ? `Most consistent: ${DOWS[rhythm.mostConsistentWeekday.dow]}` : 'Most consistent: -'}</span>
+        <span>
+          {rhythm.peakHour
+            ? `Peak: ${DOWS[rhythm.peakHour.dow]} ${String(rhythm.peakHour.hour).padStart(2, '0')}:00`
+            : 'Peak: -'}
+        </span>
+        <span>
+          {rhythm.mostConsistentWeekday
+            ? `Most consistent: ${DOWS[rhythm.mostConsistentWeekday.dow]}`
+            : 'Most consistent: -'}
+        </span>
       </div>
     </div>
   );
@@ -363,7 +427,9 @@ function WindowMetricsCard({
   return (
     <div className="card">
       <div className="window-header">
-        <div className="card-title" style={{ margin: 0 }}>Selected window</div>
+        <div className="card-title" style={{ margin: 0 }}>
+          Selected window
+        </div>
         <div className="segmented">
           {([7, 14, 30] as WindowDays[]).map((d) => (
             <button
@@ -458,7 +524,12 @@ function ProjectMomentumCard({
   repeatedReturnProjects: WindowBundle['window']['repeatedReturnProjects'];
   comebackProjects: Insights['comebackProjects'];
 }) {
-  if (activeProjects.length === 0 && repeatedReturnProjects.length === 0 && comebackProjects.length === 0) return null;
+  if (
+    activeProjects.length === 0 &&
+    repeatedReturnProjects.length === 0 &&
+    comebackProjects.length === 0
+  )
+    return null;
 
   return (
     <div className="card">
@@ -539,7 +610,9 @@ function FocusPatternCard({ items }: { items: Insights['dayKinds'] }) {
           />
         ))}
       </div>
-      <div className="muted small">Focus = 3+ sessions on 1 project. Scatter = 3+ sessions across 3+ projects.</div>
+      <div className="muted small">
+        Focus = 3+ sessions on 1 project. Scatter = 3+ sessions across 3+ projects.
+      </div>
     </div>
   );
 }
@@ -560,15 +633,21 @@ function PersonalRecordsCard({
       <div className="records-grid">
         <RecordTile
           label="Most active hour"
-          value={peakHour ? `${DOWS[peakHour.dow]} ${String(peakHour.hour).padStart(2, '0')}:00` : '-'}
+          value={
+            peakHour ? `${DOWS[peakHour.dow]} ${String(peakHour.hour).padStart(2, '0')}:00` : '-'
+          }
           detail={peakHour ? `${peakHour.count} sessions` : undefined}
         />
         <button
           className="record-tile record-button"
           disabled={!records.mostCliInSession}
-          onClick={() => records.mostCliInSession && onOpenSession(records.mostCliInSession.sessionId)}
+          onClick={() =>
+            records.mostCliInSession && onOpenSession(records.mostCliInSession.sessionId)
+          }
         >
-          <span className="record-value">{records.mostCliInSession ? records.mostCliInSession.total : '-'}</span>
+          <span className="record-value">
+            {records.mostCliInSession ? records.mostCliInSession.total : '-'}
+          </span>
           <span className="record-label">Most CLI-heavy session</span>
         </button>
       </div>
@@ -588,14 +667,20 @@ function RecentWorkCard({
   return (
     <div className="card">
       <div className="window-header">
-        <div className="card-title" style={{ margin: 0 }}>Recent work</div>
-        <button className="reindex-btn" onClick={onOpenSessions}>All sessions</button>
+        <div className="card-title" style={{ margin: 0 }}>
+          Recent work
+        </div>
+        <button className="reindex-btn" onClick={onOpenSessions}>
+          All sessions
+        </button>
       </div>
       <ul className="list">
         {recentSessions.map((s) => (
           <li key={s.id} className="list-row clickable" onClick={() => onOpenSession(s.id)}>
             <span className="ellipsis">{sessionTitle(s)}</span>
-            <span className="muted small" title={s.pwd}>{projectLabel(s.pwd)} · {relTime(s.modifiedAt)}</span>
+            <span className="muted small" title={s.pwd}>
+              {projectLabel(s.pwd)} · {relTime(s.modifiedAt)}
+            </span>
           </li>
         ))}
       </ul>

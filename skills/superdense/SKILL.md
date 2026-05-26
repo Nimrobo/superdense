@@ -24,7 +24,6 @@ superdense index
 ```
 
 1. Find candidate sessions. Pick the discovery path that matches the search:
-
    - `superdense session list --q "text"` — substring search across **first prompt, summary, and working directory** only (case-insensitive `LIKE`). Use for quick keyword/topic/pwd hits.
 
      ```bash

@@ -21,14 +21,17 @@ async function tempDir(): Promise<string> {
 describe('readUserEnrichers', () => {
   it('loads a user enricher from a directory', async () => {
     const dir = await tempDir();
-    await writeFile(join(dir, 'word-count.mjs'), `
+    await writeFile(
+      join(dir, 'word-count.mjs'),
+      `
       export default {
         name: 'word_count',
         version: 1,
         returns: 'int',
         async run() { return 3; }
       };
-    `);
+    `,
+    );
 
     const enrichers = await readUserEnrichers(dir);
     expect(enrichers).toHaveLength(1);
@@ -46,11 +49,15 @@ describe('readUserEnrichers', () => {
   });
 
   it('rejects collisions with built-in enrichers', () => {
-    expect(() => registerEnricher({
-      name: 'event_count',
-      version: 99,
-      returns: 'int',
-      async run() { return 0; },
-    })).toThrow('enricher name collision');
+    expect(() =>
+      registerEnricher({
+        name: 'event_count',
+        version: 99,
+        returns: 'int',
+        async run() {
+          return 0;
+        },
+      }),
+    ).toThrow('enricher name collision');
   });
 });

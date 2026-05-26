@@ -101,7 +101,12 @@ export interface WindowMetrics {
   adapterMix: Array<{ agent: string; count: number }>;
   topClis: Array<{ cli: string; count: number }>;
   activeProjects: Array<{ pwd: string; count: number; activeDays: number; lastActiveAt: number }>;
-  repeatedReturnProjects: Array<{ pwd: string; activeDays: number; sessions: number; lastActiveAt: number }>;
+  repeatedReturnProjects: Array<{
+    pwd: string;
+    activeDays: number;
+    sessions: number;
+    lastActiveAt: number;
+  }>;
 }
 
 export interface WindowBundle {
@@ -115,8 +120,18 @@ export interface Insights {
     peakHour: { dow: number; hour: number; count: number } | null;
     mostConsistentWeekday: { dow: number; activeWeeks: number } | null;
   };
-  comebackProjects: Array<{ pwd: string; dormantDays: number; resumedAt: number; sessions7d: number }>;
-  dayKinds: Array<{ date: string; sessions: number; pwds: number; kind: 'focus' | 'scatter' | 'normal' }>;
+  comebackProjects: Array<{
+    pwd: string;
+    dormantDays: number;
+    resumedAt: number;
+    sessions7d: number;
+  }>;
+  dayKinds: Array<{
+    date: string;
+    sessions: number;
+    pwds: number;
+    kind: 'focus' | 'scatter' | 'normal';
+  }>;
   personalRecords: {
     bestDay: { date: string; sessions: number } | null;
     mostCliInSession: { sessionId: string; total: number } | null;
@@ -163,7 +178,9 @@ export const api = {
     const sp = new URLSearchParams();
     if (opts.offset) sp.set('offset', String(opts.offset));
     if (opts.limit) sp.set('limit', String(opts.limit));
-    return j<{ items: TranscriptEvent[]; offset: number; limit: number }>(`/api/sessions/${encodeURIComponent(id)}/transcript?${sp}`);
+    return j<{ items: TranscriptEvent[]; offset: number; limit: number }>(
+      `/api/sessions/${encodeURIComponent(id)}/transcript?${sp}`,
+    );
   },
   runSessionCompactor: (id: string, name: CompactorName) =>
     j<SessionCompactorResponse>(`/api/sessions/${encodeURIComponent(id)}/compactors/${name}`),
@@ -171,22 +188,49 @@ export const api = {
   listFilters: () => j<{ items: FilterInfo[] }>('/api/filters'),
   listFacets: () => j<{ pwd: string[]; agent: string[]; project: string[] }>('/api/facets'),
   listQueries: () => j<{ items: Query[] }>('/api/saved-queries'),
-  getQuery: (id: string) => j<Query & { members: Session[] }>(`/api/saved-queries/${encodeURIComponent(id)}`),
+  getQuery: (id: string) =>
+    j<Query & { members: Session[] }>(`/api/saved-queries/${encodeURIComponent(id)}`),
   createQuery: (q: { name: string } & QueryDefinition) =>
     j<Query>('/api/saved-queries', { method: 'POST', body: JSON.stringify(q) }),
   executeQuery: (definition: QueryDefinition, limit = 500, offset = 0) =>
-    j<{ items: { sessionId: string; evidence?: string | null; enrichments?: Record<string, unknown> }[]; total: number; matched: number; limit: number; offset: number; enrichers: string[] }>(
-      '/api/query',
-      { method: 'POST', body: JSON.stringify({ ...definition, limit, offset }) },
-    ),
+    j<{
+      items: {
+        sessionId: string;
+        evidence?: string | null;
+        enrichments?: Record<string, unknown>;
+      }[];
+      total: number;
+      matched: number;
+      limit: number;
+      offset: number;
+      enrichers: string[];
+    }>('/api/query', { method: 'POST', body: JSON.stringify({ ...definition, limit, offset }) }),
   previewQuery: (definition: QueryDefinition, limit = 500) =>
-    j<{ items: { sessionId: string; evidence?: string | null; enrichments?: Record<string, unknown> }[]; total: number; matched: number; limit: number; offset: number; enrichers: string[] }>(
-      '/api/query',
-      { method: 'POST', body: JSON.stringify({ ...definition, limit, offset: 0 }) },
-    ),
-  runQuery: (id: string) => j<{ matched: number; items: { sessionId: string; evidence?: string | null; enrichments?: Record<string, unknown> }[] }>(`/api/saved-queries/${encodeURIComponent(id)}/run`, { method: 'POST' }),
-  deleteQuery: (id: string) => j<{ ok: true }>(`/api/saved-queries/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-  reindex: (full = false) => j<{ ok: boolean }>(`/api/reindex${full ? '?full=1' : ''}`, { method: 'POST' }),
+    j<{
+      items: {
+        sessionId: string;
+        evidence?: string | null;
+        enrichments?: Record<string, unknown>;
+      }[];
+      total: number;
+      matched: number;
+      limit: number;
+      offset: number;
+      enrichers: string[];
+    }>('/api/query', { method: 'POST', body: JSON.stringify({ ...definition, limit, offset: 0 }) }),
+  runQuery: (id: string) =>
+    j<{
+      matched: number;
+      items: {
+        sessionId: string;
+        evidence?: string | null;
+        enrichments?: Record<string, unknown>;
+      }[];
+    }>(`/api/saved-queries/${encodeURIComponent(id)}/run`, { method: 'POST' }),
+  deleteQuery: (id: string) =>
+    j<{ ok: true }>(`/api/saved-queries/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  reindex: (full = false) =>
+    j<{ ok: boolean }>(`/api/reindex${full ? '?full=1' : ''}`, { method: 'POST' }),
   progress: () => j<{ phase: string; total: number; done: number }>('/api/progress'),
   stats: () => j<Stats>('/api/stats'),
   statsHeader: () => j<HeaderStats>('/api/stats/header'),

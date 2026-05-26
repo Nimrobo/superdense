@@ -175,11 +175,15 @@ beforeEach(() => {
   });
   vi.mocked(core.backfillQuery).mockResolvedValue({
     matched: 1,
-    items: [{ sessionId: 'codex:abc123', evidence: 'matched', enrichments: { tool_counts: { Bash: 3 } } }],
+    items: [
+      { sessionId: 'codex:abc123', evidence: 'matched', enrichments: { tool_counts: { Bash: 3 } } },
+    ],
   });
   vi.mocked(core.runSavedQuery).mockResolvedValue({
     matched: 1,
-    items: [{ sessionId: 'codex:abc123', evidence: 'matched', enrichments: { tool_counts: { Bash: 3 } } }],
+    items: [
+      { sessionId: 'codex:abc123', evidence: 'matched', enrichments: { tool_counts: { Bash: 3 } } },
+    ],
   });
   vi.mocked(core.countQueryMatches).mockReturnValue(1);
   vi.mocked(core.listQueryMatchDetails).mockReturnValue([
@@ -236,7 +240,11 @@ describe('superdense cli agent commands', () => {
 
     expect(core.runDiscovery).toHaveBeenCalledTimes(1);
     expect(startServer).toHaveBeenCalledTimes(1);
-    expect(startServer).toHaveBeenCalledWith({ port: 4242, host: '127.0.0.1', portFallbackAttempts: 50 });
+    expect(startServer).toHaveBeenCalledWith({
+      port: 4242,
+      host: '127.0.0.1',
+      portFallbackAttempts: 50,
+    });
     expect(noArgs.stdout[0]).toContain('Usage: superdense <command> [options]');
     expect(start.stdout).toContain('[superdense] http://127.0.0.1:4242');
   });
@@ -256,9 +264,12 @@ describe('superdense cli agent commands', () => {
 
     await runCli(['studio', '--no-open', '--no-skill-check'], out.io);
 
-    expect(fetch).toHaveBeenCalledWith('https://registry.npmjs.org/@nimrobo%2fsuperdense', expect.objectContaining({
-      headers: { accept: 'application/json' },
-    }));
+    expect(fetch).toHaveBeenCalledWith(
+      'https://registry.npmjs.org/@nimrobo%2fsuperdense',
+      expect.objectContaining({
+        headers: { accept: 'application/json' },
+      }),
+    );
     expect(spawnMock).not.toHaveBeenCalled();
     expect(out.stdout[0]).toBe('[superdense] discovering sessions...');
     expect(startServer).toHaveBeenCalled();
@@ -271,7 +282,9 @@ describe('superdense cli agent commands', () => {
     await runCli(['studio', '--no-open', '--no-skill-check'], out.io);
 
     expect(spawnMock).not.toHaveBeenCalled();
-    expect(out.stdout[0]).toBe('[superdense] update available: 0.1.0 -> 0.2.0. Run `npm install -g @nimrobo/superdense@latest` to update.');
+    expect(out.stdout[0]).toBe(
+      '[superdense] update available: 0.1.1 -> 0.2.0. Run `npm install -g @nimrobo/superdense@latest` to update.',
+    );
     expect(out.stdout).toContain('[superdense] discovering sessions...');
     expect(startServer).toHaveBeenCalled();
   });
@@ -285,14 +298,26 @@ describe('superdense cli agent commands', () => {
     const code = await runCli(['studio', '--no-open', '--no-skill-check'], out.io);
 
     expect(code).toBe(0);
-    expect(readlineMocks.question).toHaveBeenCalledWith('Update Superdense 0.1.0 -> 0.2.0 with npm? [Y/n] ');
-    expect(spawnMock).toHaveBeenNthCalledWith(1, 'npm', ['install', '-g', '@nimrobo/superdense@latest'], expect.objectContaining({
-      stdio: 'inherit',
-    }));
-    expect(spawnMock).toHaveBeenNthCalledWith(2, 'superdense', ['studio', '--no-open', '--no-skill-check'], expect.objectContaining({
-      stdio: 'inherit',
-      env: expect.objectContaining({ SUPERDENSE_SKIP_UPDATE_CHECK: '1' }),
-    }));
+    expect(readlineMocks.question).toHaveBeenCalledWith(
+      'Update Superdense 0.1.1 -> 0.2.0 with npm? [Y/n] ',
+    );
+    expect(spawnMock).toHaveBeenNthCalledWith(
+      1,
+      'npm',
+      ['install', '-g', '@nimrobo/superdense@latest'],
+      expect.objectContaining({
+        stdio: 'inherit',
+      }),
+    );
+    expect(spawnMock).toHaveBeenNthCalledWith(
+      2,
+      'superdense',
+      ['studio', '--no-open', '--no-skill-check'],
+      expect.objectContaining({
+        stdio: 'inherit',
+        env: expect.objectContaining({ SUPERDENSE_SKIP_UPDATE_CHECK: '1' }),
+      }),
+    );
     expect(startServer).not.toHaveBeenCalled();
     expect(out.stdout).toEqual([
       '[superdense] updating with `npm install -g @nimrobo/superdense@latest`...',
@@ -340,20 +365,23 @@ describe('superdense cli agent commands', () => {
   it('lists sessions with filters and paging without exposing logPath by default', async () => {
     const out = io();
 
-    await runCli([
-      'session',
-      'list',
-      '--agent',
-      'codex',
-      '--pwd',
-      '/repo',
-      '--q',
-      'tests',
-      '--limit',
-      '20',
-      '--offset',
-      '5',
-    ], out.io);
+    await runCli(
+      [
+        'session',
+        'list',
+        '--agent',
+        'codex',
+        '--pwd',
+        '/repo',
+        '--q',
+        'tests',
+        '--limit',
+        '20',
+        '--offset',
+        '5',
+      ],
+      out.io,
+    );
 
     expect(core.listSessions).toHaveBeenCalledWith({
       agent: 'codex',
@@ -439,11 +467,20 @@ describe('superdense cli agent commands', () => {
 
   it('runs ad hoc queries with session metadata and evidence without saving', async () => {
     const out = io();
-    const query = { filters: { filter: { name: 'session', params: { agent: 'codex' } } }, enrichers: [] };
+    const query = {
+      filters: { filter: { name: 'session', params: { agent: 'codex' } } },
+      enrichers: [],
+    };
 
-    await runCli(['query', '--query', JSON.stringify(query), '--limit', '12', '--offset', '2'], out.io);
+    await runCli(
+      ['query', '--query', JSON.stringify(query), '--limit', '12', '--offset', '2'],
+      out.io,
+    );
 
-    expect(core.validateQueryDefinition).toHaveBeenCalledWith(query, { filters: await core.listFilters(), enrichers: core.listEnrichers() });
+    expect(core.validateQueryDefinition).toHaveBeenCalledWith(query, {
+      filters: await core.listFilters(),
+      enrichers: core.listEnrichers(),
+    });
     expect(core.runAdHocQuery).toHaveBeenCalledWith(query, { limit: 12, offset: 2 });
     expect(core.createQuery).not.toHaveBeenCalled();
     expect(core.getSession).toHaveBeenCalledWith('codex:abc123');
@@ -452,11 +489,13 @@ describe('superdense cli agent commands', () => {
       total: 1,
       limit: 12,
       offset: 2,
-      items: [{
-        sessionId: 'codex:abc123',
-        evidence: 'query matched',
-        session: { id: 'codex:abc123' },
-      }],
+      items: [
+        {
+          sessionId: 'codex:abc123',
+          evidence: 'query matched',
+          session: { id: 'codex:abc123' },
+        },
+      ],
     });
   });
 
@@ -475,21 +514,31 @@ describe('superdense cli agent commands', () => {
       items: [{ addedAt: 3, evidence: 'matched', session: { id: 'codex:abc123' } }],
       members: [{ id: 'codex:abc123' }],
     });
-    expect((body.items as Array<{ session: Record<string, unknown> }>)[0].session).not.toHaveProperty('logPath');
+    expect(
+      (body.items as Array<{ session: Record<string, unknown> }>)[0].session,
+    ).not.toHaveProperty('logPath');
     expect((body.members as Array<Record<string, unknown>>)[0]).not.toHaveProperty('logPath');
   });
 
   it('saves queries without running them', async () => {
     const out = io();
-    const query = { filters: { filter: { name: 'session', params: { agent: 'codex' } } }, enrichers: [] };
-
-    await runCli(['saved-query', 'save', '--name', 'Interesting', '--query', JSON.stringify(query)], out.io);
-
-    expect(core.createQuery).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'Interesting',
-      filters: query.filters,
+    const query = {
+      filters: { filter: { name: 'session', params: { agent: 'codex' } } },
       enrichers: [],
-    }));
+    };
+
+    await runCli(
+      ['saved-query', 'save', '--name', 'Interesting', '--query', JSON.stringify(query)],
+      out.io,
+    );
+
+    expect(core.createQuery).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Interesting',
+        filters: query.filters,
+        enrichers: [],
+      }),
+    );
     expect(core.runSavedQuery).not.toHaveBeenCalled();
     expect(core.backfillQuery).not.toHaveBeenCalled();
     expect(json(out.stdout[0]!)).toMatchObject({ id: 'q1', name: 'Interesting' });
@@ -527,20 +576,28 @@ describe('superdense cli agent commands', () => {
 
   it('keeps legacy query preview as a small ad hoc query alias', async () => {
     const out = io();
-    const query = { filters: { filter: { name: 'session', params: { agent: 'codex' } } }, enrichers: [] };
+    const query = {
+      filters: { filter: { name: 'session', params: { agent: 'codex' } } },
+      enrichers: [],
+    };
 
     await runCli(['query', 'preview', '--query', JSON.stringify(query), '--limit', '12'], out.io);
 
-    expect(core.validateQueryDefinition).toHaveBeenCalledWith(query, { filters: await core.listFilters(), enrichers: core.listEnrichers() });
+    expect(core.validateQueryDefinition).toHaveBeenCalledWith(query, {
+      filters: await core.listFilters(),
+      enrichers: core.listEnrichers(),
+    });
     expect(core.runAdHocQuery).toHaveBeenCalledWith(query, { limit: 12, offset: 0 });
     expect(core.getSession).toHaveBeenCalledWith('codex:abc123');
     expect(json(out.stdout[0]!)).toMatchObject({
       limit: 12,
-      items: [{
-        sessionId: 'codex:abc123',
-        evidence: 'query matched',
-        session: { id: 'codex:abc123' },
-      }],
+      items: [
+        {
+          sessionId: 'codex:abc123',
+          evidence: 'query matched',
+          session: { id: 'codex:abc123' },
+        },
+      ],
     });
   });
 
@@ -561,13 +618,19 @@ describe('superdense cli agent commands', () => {
 
   it('throws intended errors for missing query, session, and compactor', async () => {
     vi.mocked(core.getQuery).mockReturnValue(null);
-    await expect(runCli(['query', 'show', 'missing'], io().io)).rejects.toThrow('query not found: missing');
+    await expect(runCli(['query', 'show', 'missing'], io().io)).rejects.toThrow(
+      'query not found: missing',
+    );
 
     vi.mocked(core.getSession).mockReturnValue(null);
-    await expect(runCli(['session', 'show', 'missing'], io().io)).rejects.toThrow('session not found: missing');
+    await expect(runCli(['session', 'show', 'missing'], io().io)).rejects.toThrow(
+      'session not found: missing',
+    );
 
     vi.mocked(core.getCompactor).mockReturnValue(undefined);
-    await expect(runCli(['compactor', 'show', 'missing'], io().io)).rejects.toThrow('compactor not found: missing');
+    await expect(runCli(['compactor', 'show', 'missing'], io().io)).rejects.toThrow(
+      'compactor not found: missing',
+    );
   });
 
   it('installs one named bundled skill into configured Claude and Codex skill dirs', async () => {
@@ -581,24 +644,32 @@ describe('superdense cli agent commands', () => {
 
     const claudeSkill = join(root, 'claude', 'superdense');
     const codexSkill = join(root, 'codex', 'superdense');
-    expect(readFileSync(join(claudeSkill, 'SKILL.md'), 'utf8')).toContain('# Superdense Stored Sessions');
-    expect(readFileSync(join(codexSkill, 'SKILL.md'), 'utf8')).toContain('# Superdense Stored Sessions');
+    expect(readFileSync(join(claudeSkill, 'SKILL.md'), 'utf8')).toContain(
+      '# Superdense Stored Sessions',
+    );
+    expect(readFileSync(join(codexSkill, 'SKILL.md'), 'utf8')).toContain(
+      '# Superdense Stored Sessions',
+    );
     expect(existsSync(join(claudeSkill, 'agents', 'openai.yaml'))).toBe(true);
     expect(existsSync(join(codexSkill, 'agents', 'openai.yaml'))).toBe(true);
-    expect(json(readFileSync(join(claudeSkill, '.superdense-install.json'), 'utf8'))).toMatchObject({
-      version: '0.1.2',
-      scope: 'global',
-    });
+    expect(json(readFileSync(join(claudeSkill, '.superdense-install.json'), 'utf8'))).toMatchObject(
+      {
+        version: '0.1.2',
+        scope: 'global',
+      },
+    );
     expect(json(readFileSync(join(codexSkill, '.superdense-install.json'), 'utf8'))).toMatchObject({
       version: '0.1.2',
       scope: 'global',
     });
     expect(json(out.stdout[0]!)).toEqual({
-      installed: [{
-        name: 'superdense',
-        claude: claudeSkill,
-        codex: codexSkill,
-      }],
+      installed: [
+        {
+          name: 'superdense',
+          claude: claudeSkill,
+          codex: codexSkill,
+        },
+      ],
     });
   });
 
@@ -612,13 +683,15 @@ describe('superdense cli agent commands', () => {
     await runCli(['skill', 'install'], out.io);
 
     const body = json(out.stdout[0]!);
-    expect(body.installed).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        name: 'superdense',
-        claude: join(root, 'claude', 'superdense'),
-        codex: join(root, 'codex', 'superdense'),
-      }),
-    ]));
+    expect(body.installed).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'superdense',
+          claude: join(root, 'claude', 'superdense'),
+          codex: join(root, 'codex', 'superdense'),
+        }),
+      ]),
+    );
     expect(existsSync(join(root, 'claude', 'superdense', 'agents', 'openai.yaml'))).toBe(true);
     expect(existsSync(join(root, 'codex', 'superdense', 'agents', 'openai.yaml'))).toBe(true);
   });
@@ -640,16 +713,20 @@ describe('superdense cli agent commands', () => {
     expect(existsSync(join(codexSkill, 'SKILL.md'))).toBe(true);
     expect(existsSync(join(root, 'global-claude', 'superdense'))).toBe(false);
     expect(existsSync(join(root, 'global-codex', 'superdense'))).toBe(false);
-    expect(json(readFileSync(join(claudeSkill, '.superdense-install.json'), 'utf8'))).toMatchObject({
-      version: '0.1.2',
-      scope: 'local',
-    });
+    expect(json(readFileSync(join(claudeSkill, '.superdense-install.json'), 'utf8'))).toMatchObject(
+      {
+        version: '0.1.2',
+        scope: 'local',
+      },
+    );
     expect(json(out.stdout[0]!)).toEqual({
-      installed: [{
-        name: 'superdense',
-        claude: claudeSkill,
-        codex: codexSkill,
-      }],
+      installed: [
+        {
+          name: 'superdense',
+          claude: claudeSkill,
+          codex: codexSkill,
+        },
+      ],
     });
   });
 
@@ -663,7 +740,9 @@ describe('superdense cli agent commands', () => {
 
     await runCli(['studio', '--no-open'], out.io);
 
-    expect(out.stdout[0]).toBe('[superdense] hint: skill missing. Run `superdense skill install` to update.');
+    expect(out.stdout[0]).toBe(
+      '[superdense] hint: skill missing. Run `superdense skill install` to update.',
+    );
     expect(existsSync(join(root, 'global-claude', 'superdense'))).toBe(false);
     expect(existsSync(join(root, 'global-codex', 'superdense'))).toBe(false);
     expect(startServer).toHaveBeenCalled();
@@ -706,7 +785,9 @@ describe('superdense cli agent commands', () => {
 
     await runCli(['studio', '--no-open'], out.io);
 
-    expect(out.stdout[0]).toBe('[superdense] hint: skill outdated (0.0.1 -> 0.1.2). Run `superdense skill install` to update.');
+    expect(out.stdout[0]).toBe(
+      '[superdense] hint: skill outdated (0.0.1 -> 0.1.2). Run `superdense skill install` to update.',
+    );
     expect(existsSync(join(claudeSkill, '.superdense-install.json'))).toBe(false);
     expect(existsSync(join(codexSkill, '.superdense-install.json'))).toBe(false);
     expect(startServer).toHaveBeenCalled();

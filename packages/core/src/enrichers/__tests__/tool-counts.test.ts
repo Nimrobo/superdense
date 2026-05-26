@@ -33,33 +33,34 @@ describe('toolCountsEnricher', () => {
   });
 
   it('returns empty object when no events have toolName', async () => {
-    expect(await toolCountsEnricher.run(makeCtx([{ text: 'hello' }, { role: 'user' }]))).toEqual({});
+    expect(await toolCountsEnricher.run(makeCtx([{ text: 'hello' }, { role: 'user' }]))).toEqual(
+      {},
+    );
   });
 
   it('counts a single tool', async () => {
-    const result = await toolCountsEnricher.run(makeCtx([
-      { toolName: 'bash' },
-      { toolName: 'bash' },
-    ]));
+    const result = await toolCountsEnricher.run(
+      makeCtx([{ toolName: 'bash' }, { toolName: 'bash' }]),
+    );
     expect(result).toEqual({ bash: 2 });
   });
 
   it('counts multiple distinct tools', async () => {
-    const result = await toolCountsEnricher.run(makeCtx([
-      { toolName: 'bash' },
-      { toolName: 'read' },
-      { toolName: 'bash' },
-      { toolName: 'write' },
-    ]));
+    const result = await toolCountsEnricher.run(
+      makeCtx([
+        { toolName: 'bash' },
+        { toolName: 'read' },
+        { toolName: 'bash' },
+        { toolName: 'write' },
+      ]),
+    );
     expect(result).toEqual({ bash: 2, read: 1, write: 1 });
   });
 
   it('ignores events without toolName', async () => {
-    const result = await toolCountsEnricher.run(makeCtx([
-      { toolName: 'bash' },
-      { text: 'some text' },
-      { toolName: 'bash' },
-    ]));
+    const result = await toolCountsEnricher.run(
+      makeCtx([{ toolName: 'bash' }, { text: 'some text' }, { toolName: 'bash' }]),
+    );
     expect(result).toEqual({ bash: 2 });
   });
 });

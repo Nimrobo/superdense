@@ -25,7 +25,9 @@ const BASE: Session = {
 };
 
 function clearDb() {
-  getDb().exec('DELETE FROM query_matches; DELETE FROM query_enrich; DELETE FROM sessions; DELETE FROM queries;');
+  getDb().exec(
+    'DELETE FROM query_matches; DELETE FROM query_enrich; DELETE FROM sessions; DELETE FROM queries;',
+  );
 }
 
 function utcNoon(y: number, m: number, d: number): number {
@@ -46,8 +48,18 @@ describe('getComebackProjects', () => {
 
   it('groups Conductor sibling workspaces for comeback projects', () => {
     const now = utcNoon(2026, 5, 21);
-    upsertSession({ ...BASE, id: 'old', pwd: '/Users/x/conductor/workspaces/superdense/provo-v1', modifiedAt: now - 40 * DAY });
-    upsertSession({ ...BASE, id: 'new', pwd: '/Users/x/conductor/workspaces/superdense/provo-v2', modifiedAt: now - 2 * DAY });
+    upsertSession({
+      ...BASE,
+      id: 'old',
+      pwd: '/Users/x/conductor/workspaces/superdense/provo-v1',
+      modifiedAt: now - 40 * DAY,
+    });
+    upsertSession({
+      ...BASE,
+      id: 'new',
+      pwd: '/Users/x/conductor/workspaces/superdense/provo-v2',
+      modifiedAt: now - 2 * DAY,
+    });
 
     const items = getComebackProjects(now);
 
@@ -104,9 +116,24 @@ describe('getDayKinds', () => {
 
   it('uses projectKey for focus and scatter project counts', () => {
     const now = utcNoon(2026, 5, 21);
-    upsertSession({ ...BASE, id: 's1', pwd: '/Users/x/conductor/workspaces/superdense/provo-v1', modifiedAt: now - 1 * DAY });
-    upsertSession({ ...BASE, id: 's2', pwd: '/Users/x/conductor/workspaces/superdense/provo-v2', modifiedAt: now - 1 * DAY });
-    upsertSession({ ...BASE, id: 's3', pwd: '/Users/x/conductor/workspaces/superdense/provo-v3', modifiedAt: now - 1 * DAY });
+    upsertSession({
+      ...BASE,
+      id: 's1',
+      pwd: '/Users/x/conductor/workspaces/superdense/provo-v1',
+      modifiedAt: now - 1 * DAY,
+    });
+    upsertSession({
+      ...BASE,
+      id: 's2',
+      pwd: '/Users/x/conductor/workspaces/superdense/provo-v2',
+      modifiedAt: now - 1 * DAY,
+    });
+    upsertSession({
+      ...BASE,
+      id: 's3',
+      pwd: '/Users/x/conductor/workspaces/superdense/provo-v3',
+      modifiedAt: now - 1 * DAY,
+    });
 
     const kinds = getDayKinds(now, 7);
 

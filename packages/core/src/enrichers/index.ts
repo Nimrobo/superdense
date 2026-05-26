@@ -77,7 +77,11 @@ export function clearEnricherCache(): void {
   activeNames = new Set();
 }
 
-function shouldRun(stored: ReturnType<typeof getEnrichment>, enricher: Enricher, session: Session): boolean {
+function shouldRun(
+  stored: ReturnType<typeof getEnrichment>,
+  enricher: Enricher,
+  session: Session,
+): boolean {
   if (!stored) return true;
   if (stored.version < enricher.version) return true;
   if (session.fileMtime != null && session.fileMtime > stored.computedAt) return true;

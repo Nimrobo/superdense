@@ -46,17 +46,21 @@ describe('startServer', () => {
     const port = portFromUrl(blocker.url);
 
     try {
-      await expect(startServer({ host: '127.0.0.1', port })).rejects.toMatchObject({ code: 'EADDRINUSE' });
+      await expect(startServer({ host: '127.0.0.1', port })).rejects.toMatchObject({
+        code: 'EADDRINUSE',
+      });
     } finally {
       await blocker.close();
     }
   });
 
   it('does not swallow non-address-in-use listen errors', async () => {
-    await expect(startServer({
-      host: 'not-a-real-superdense-host.invalid',
-      port: 4242,
-      portFallbackAttempts: 1,
-    })).rejects.not.toMatchObject({ code: 'EADDRINUSE' });
+    await expect(
+      startServer({
+        host: 'not-a-real-superdense-host.invalid',
+        port: 4242,
+        portFallbackAttempts: 1,
+      }),
+    ).rejects.not.toMatchObject({ code: 'EADDRINUSE' });
   });
 });

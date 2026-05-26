@@ -73,7 +73,13 @@ describe('claudeCodeAdapter.iterEvents', () => {
         toolName: 'Bash',
         inputText: '{"command":"printf hi"}',
       },
-      { kind: 'tool_result', role: 'user', toolCallId: 'toolu_test_123', text: 'hi', isError: false },
+      {
+        kind: 'tool_result',
+        role: 'user',
+        toolCallId: 'toolu_test_123',
+        text: 'hi',
+        isError: false,
+      },
       { kind: 'text', role: 'assistant', text: 'Done.' },
     ]);
   });
@@ -119,7 +125,10 @@ describe('claudeCodeAdapter.iterEvents', () => {
             {
               type: 'tool_result',
               tool_use_id: 'toolu_array_result',
-              content: [{ type: 'text', text: 'line one' }, { type: 'text', text: 'line two' }],
+              content: [
+                { type: 'text', text: 'line one' },
+                { type: 'text', text: 'line two' },
+              ],
             },
           ],
         },
@@ -159,8 +168,18 @@ describe('claudeCodeAdapter.iterEvents', () => {
 
     const modeChanges = events.filter((e) => e.kind === 'mode_change');
     expect(modeChanges).toEqual([
-      { ts: Date.parse('2026-05-21T04:00:00.000Z'), kind: 'mode_change', mode: 'plan', prevMode: undefined },
-      { ts: Date.parse('2026-05-21T04:00:02.000Z'), kind: 'mode_change', mode: 'default', prevMode: 'plan' },
+      {
+        ts: Date.parse('2026-05-21T04:00:00.000Z'),
+        kind: 'mode_change',
+        mode: 'plan',
+        prevMode: undefined,
+      },
+      {
+        ts: Date.parse('2026-05-21T04:00:02.000Z'),
+        kind: 'mode_change',
+        mode: 'default',
+        prevMode: 'plan',
+      },
     ]);
   });
 
@@ -187,8 +206,18 @@ describe('claudeCodeAdapter.iterEvents', () => {
 
     const modeChanges = events.filter((e) => e.kind === 'mode_change');
     expect(modeChanges).toEqual([
-      { ts: Date.parse('2026-05-21T04:00:00.000Z'), kind: 'mode_change', mode: 'plan', prevMode: undefined },
-      { ts: Date.parse('2026-05-21T04:00:05.000Z'), kind: 'mode_change', mode: 'default', prevMode: 'plan' },
+      {
+        ts: Date.parse('2026-05-21T04:00:00.000Z'),
+        kind: 'mode_change',
+        mode: 'plan',
+        prevMode: undefined,
+      },
+      {
+        ts: Date.parse('2026-05-21T04:00:05.000Z'),
+        kind: 'mode_change',
+        mode: 'default',
+        prevMode: 'plan',
+      },
     ]);
   });
 
@@ -214,15 +243,34 @@ describe('claudeCodeAdapter.iterEvents', () => {
 
     const modeChanges = events.filter((e) => e.kind === 'mode_change');
     expect(modeChanges).toEqual([
-      { ts: Date.parse('2026-05-21T04:00:00.000Z'), kind: 'mode_change', mode: 'plan', prevMode: undefined },
-      { ts: Date.parse('2026-05-21T04:00:05.000Z'), kind: 'mode_change', mode: 'default', prevMode: 'plan' },
+      {
+        ts: Date.parse('2026-05-21T04:00:00.000Z'),
+        kind: 'mode_change',
+        mode: 'plan',
+        prevMode: undefined,
+      },
+      {
+        ts: Date.parse('2026-05-21T04:00:05.000Z'),
+        kind: 'mode_change',
+        mode: 'default',
+        prevMode: 'plan',
+      },
     ]);
   });
 
   it('skips Claude metadata records that are not transcript turns', async () => {
     const events = await collectEvents([
-      { type: 'queue-operation', operation: 'add', timestamp: '2026-05-21T04:00:00.000Z', content: 'queued prompt' },
-      { type: 'attachment', timestamp: '2026-05-21T04:00:01.000Z', attachment: { type: 'skill_listing', content: 'skills' } },
+      {
+        type: 'queue-operation',
+        operation: 'add',
+        timestamp: '2026-05-21T04:00:00.000Z',
+        content: 'queued prompt',
+      },
+      {
+        type: 'attachment',
+        timestamp: '2026-05-21T04:00:01.000Z',
+        attachment: { type: 'skill_listing', content: 'skills' },
+      },
       { type: 'ai-title', aiTitle: 'Generated title', sessionId: 'session-1' },
       { type: 'last-prompt', lastPrompt: 'Last prompt preview', sessionId: 'session-1' },
       {
@@ -281,9 +329,15 @@ describe('claudeCodeAdapter.iterEvents', () => {
     const kinds = events.map((e) => e.kind);
     expect(kinds).toContain('mode_change');
     const lastModeChange = events.filter((e) => e.kind === 'mode_change').pop();
-    expect(lastModeChange).toMatchObject({ kind: 'mode_change', mode: 'default', prevMode: 'plan' });
+    expect(lastModeChange).toMatchObject({
+      kind: 'mode_change',
+      mode: 'default',
+      prevMode: 'plan',
+    });
 
-    const toolResultIdx = events.findIndex((e) => e.kind === 'tool_result' && e.toolCallId === 'toolu_epm_approve_1');
+    const toolResultIdx = events.findIndex(
+      (e) => e.kind === 'tool_result' && e.toolCallId === 'toolu_epm_approve_1',
+    );
     const modeChangeIdx = events.findIndex((e) => e.kind === 'mode_change' && e.mode === 'default');
     expect(toolResultIdx).toBeGreaterThanOrEqual(0);
     expect(modeChangeIdx).toBeGreaterThan(toolResultIdx);
@@ -348,7 +402,13 @@ describe('claudeCodeAdapter.iterEvents', () => {
         timestamp: '2026-05-21T04:00:01.000Z',
         message: {
           role: 'user',
-          content: [{ type: 'tool_result', tool_use_id: 'toolu_a', content: 'User has approved your plan.' }],
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 'toolu_a',
+              content: 'User has approved your plan.',
+            },
+          ],
         },
         toolUseResult: { plan: '# A' },
       },

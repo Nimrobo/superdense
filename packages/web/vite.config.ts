@@ -1,4 +1,4 @@
-import wandPlugin from "./wand.plugin.mjs";
+import wandPlugin from './wand.plugin.mjs';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 

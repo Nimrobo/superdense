@@ -34,7 +34,9 @@ export function App() {
   const [view, setView] = useState<View>({ type: 'dashboard' });
   const [queries, setQueries] = useState<Query[]>([]);
   const [search, setSearch] = useState('');
-  const [progress, setProgress] = useState<{ phase: string; total: number; done: number } | null>(null);
+  const [progress, setProgress] = useState<{ phase: string; total: number; done: number } | null>(
+    null,
+  );
 
   const pushView = (next: View) => {
     window.history.pushState({ view: next }, '');
@@ -58,10 +60,15 @@ export function App() {
     return () => window.removeEventListener('popstate', onPop);
   }, []);
 
-  useEffect(() => { refresh().catch(console.error); }, []);
+  useEffect(() => {
+    refresh().catch(console.error);
+  }, []);
   useEffect(() => {
     const t = setInterval(() => {
-      api.progress().then((p) => setProgress(p)).catch(() => {});
+      api
+        .progress()
+        .then((p) => setProgress(p))
+        .catch(() => {});
     }, 1500);
     return () => clearInterval(t);
   }, []);
@@ -94,18 +101,28 @@ export function App() {
         {view.type === 'insights' && (
           <InsightsView onOpenSession={(id) => pushView({ type: 'session', id })} />
         )}
-        {view.type === 'sessions' && <SessionsView search={search} onOpen={(id) => pushView({ type: 'session', id })} />}
-        {view.type === 'session' && <SessionReader id={view.id} onBack={() => window.history.back()} />}
+        {view.type === 'sessions' && (
+          <SessionsView search={search} onOpen={(id) => pushView({ type: 'session', id })} />
+        )}
+        {view.type === 'session' && (
+          <SessionReader id={view.id} onBack={() => window.history.back()} />
+        )}
         {view.type === 'query-builder' && (
           <QueryBuilder
-            onSaved={async (q) => { await refresh(); pushView({ type: 'query', id: q.id }); }}
+            onSaved={async (q) => {
+              await refresh();
+              pushView({ type: 'query', id: q.id });
+            }}
           />
         )}
         {view.type === 'query' && (
           <QueryView
             id={view.id}
             onBack={() => window.history.back()}
-            onDeleted={async () => { await refresh(); pushView({ type: 'sessions' }); }}
+            onDeleted={async () => {
+              await refresh();
+              pushView({ type: 'sessions' });
+            }}
           />
         )}
       </main>

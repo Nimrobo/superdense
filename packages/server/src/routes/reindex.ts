@@ -1,5 +1,10 @@
 import type { FastifyInstance } from 'fastify';
-import { clearFilterCache, getProgress, runDiscovery, runQueryEvaluation } from '@nimrobo/superdense-core';
+import {
+  clearFilterCache,
+  getProgress,
+  runDiscovery,
+  runQueryEvaluation,
+} from '@nimrobo/superdense-core';
 
 let running = false;
 
