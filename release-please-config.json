@@ -1,10 +1,23 @@
 {
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
   "release-type": "node",
+  "plugins": ["node-workspace"],
   "packages": {
     "packages/cli": {
       "package-name": "@nimrobo/superdense",
       "component": "@nimrobo/superdense"
+    },
+    "packages/core": {
+      "package-name": "@nimrobo/superdense-core",
+      "skip-github-release": true
+    },
+    "packages/server": {
+      "package-name": "@nimrobo/superdense-server",
+      "skip-github-release": true
+    },
+    "packages/web": {
+      "package-name": "@nimrobo/superdense-web",
+      "skip-github-release": true
     }
   }
 }
