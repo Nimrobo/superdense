@@ -78,7 +78,7 @@ export interface Query {
 }
 
 export interface QueryMatch {
-  queryId: string;
+  queryRunId: string;
   sessionId: string;
   addedAt: number;
   evidence?: string | null;
