@@ -30,6 +30,7 @@ vi.mock('open', () => ({
 vi.mock('@nimrobo/superdense-core', () => ({
   CLAUDE_SKILLS_DIR: '/unused/claude/skills',
   CODEX_SKILLS_DIR: '/unused/codex/skills',
+  SYSTEM_RUN_ID: 'system',
   backfillQuery: vi.fn(),
   compactSession: vi.fn(),
   countQueryMatches: vi.fn(),
@@ -432,9 +433,18 @@ describe('superdense cli agent commands', () => {
 
   it('returns session enrichments without exposing logPath by default', async () => {
     const out = io();
+    vi.mocked(core.listSessionEnrichments).mockImplementation((_sessionId, queryRunId) =>
+      queryRunId === 'system'
+        ? [{ name: 'has_errors', version: 1, computedAt: 2, value: true }]
+        : [
+            { name: 'has_errors', version: 1, computedAt: 2, value: true },
+            { name: 'has_errors', version: 1, computedAt: 3, value: false },
+          ],
+    );
 
     await runCli(['session', 'enrichments', 'codex:abc123'], out.io);
 
+    expect(core.listSessionEnrichments).toHaveBeenCalledWith('codex:abc123', 'system');
     const body = json(out.stdout[0]!);
     expect(body.session).toMatchObject({ id: 'codex:abc123', agent: 'codex' });
     expect(body.session).not.toHaveProperty('logPath');
@@ -446,7 +456,7 @@ describe('superdense cli agent commands', () => {
 
     await runCli(['session', 'enrichments', 'codex:abc123', '--name', 'tool_counts'], out.io);
 
-    expect(core.getEnrichment).toHaveBeenCalledWith('codex:abc123', 'tool_counts');
+    expect(core.getEnrichment).toHaveBeenCalledWith('codex:abc123', 'system', 'tool_counts');
     expect(core.listSessionEnrichments).not.toHaveBeenCalled();
     expect(json(out.stdout[0]!)).toMatchObject({
       items: [{ name: 'tool_counts', version: 1, computedAt: 2, value: { Bash: 3 } }],

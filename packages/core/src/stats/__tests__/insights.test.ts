@@ -26,7 +26,7 @@ const BASE: Session = {
 
 function clearDb() {
   getDb().exec(
-    'DELETE FROM query_matches; DELETE FROM query_enrich; DELETE FROM sessions; DELETE FROM queries;',
+    'DELETE FROM query_matches; DELETE FROM session_enrich; DELETE FROM sessions; DELETE FROM queries;',
   );
 }
 

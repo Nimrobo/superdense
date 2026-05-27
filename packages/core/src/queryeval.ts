@@ -1,13 +1,16 @@
 import { iterSessionEvents } from './adapters/index.js';
 import {
-  clearQueryMatches,
-  getDb,
+  SYSTEM_RUN_ID,
+  createQueryRun,
+  finishQueryRun,
   getEnrichment,
   getQuery,
   listAllSessionsForBackfill,
-  listSessionEnrichments,
   listQueries,
+  listSessionEnrichments,
   markQueryRun,
+  pruneQueryRuns,
+  upsertQueryMatch,
 } from './db.js';
 import {
   listEnrichers,
@@ -29,18 +32,26 @@ import {
 import { validateQueryDefinition } from './query/validate.js';
 import type { Query, Session } from './types.js';
 
-async function runPostFilterEnrichers(names: string[], sessions: Session[]): Promise<void> {
+async function runPostFilterEnrichers(
+  names: string[],
+  sessions: Session[],
+  queryRunId: string,
+): Promise<void> {
   for (const name of names) {
     for (const session of sessions) {
-      await runEnricherByNameForSession(name, session);
+      await runEnricherByNameForSession(name, session, queryRunId);
     }
   }
 }
 
-function requestedEnrichments(sessionId: string, names: string[]): Record<string, unknown> {
+function requestedEnrichments(
+  sessionId: string,
+  queryRunId: string,
+  names: string[],
+): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   if (names.length === 0) return out;
-  const all = listSessionEnrichments(sessionId);
+  const all = listSessionEnrichments(sessionId, queryRunId);
   const wanted = new Set(names);
   for (const item of all) {
     if (wanted.has(item.name)) out[item.name] = item.value;
@@ -79,20 +90,23 @@ export async function evaluateQuery(query: Query): Promise<EvaluateResult> {
   );
 
   const now = Date.now();
-  clearQueryMatches(query.id);
+  const dsl: QueryDefinition = { filters: query.filters, enrichers: query.enrichers };
+  const runId = createQueryRun({ savedQueryId: query.id, dsl, startedAt: now });
 
   const matchedSessions: Array<{ session: Session; evidence?: string | null }> = [];
   const filterByName = new Map(filters.map((f) => [f.name, f] as const));
   const sessions = listAllSessionsForBackfill();
-  const insert = getDb().prepare(
-    'INSERT OR REPLACE INTO query_matches (query_id, session_id, added_at, evidence) VALUES (?, ?, ?, ?)',
-  );
 
   for (const session of sessions) {
     await runEnrichersForSession(session);
     const r = await evalQueryFilter(query.filters, session, filterByName, systemEnrichers);
     if (r.match) {
-      insert.run(query.id, session.id, now, r.evidence ?? null);
+      upsertQueryMatch({
+        queryRunId: runId,
+        sessionId: session.id,
+        addedAt: now,
+        evidence: r.evidence ?? null,
+      });
       matchedSessions.push({ session, evidence: r.evidence ?? null });
     }
   }
@@ -100,16 +114,19 @@ export async function evaluateQuery(query: Query): Promise<EvaluateResult> {
   await runPostFilterEnrichers(
     query.enrichers,
     matchedSessions.map((m) => m.session),
+    runId,
   );
 
+  finishQueryRun(runId, { finishedAt: Date.now(), matchedCount: matchedSessions.length });
   markQueryRun(query.id, now);
+  pruneQueryRuns();
   refreshActiveEnricherNames();
   return {
     matched: matchedSessions.length,
     items: matchedSessions.map(({ session, evidence }) => ({
       sessionId: session.id,
       evidence: evidence ?? null,
-      enrichments: requestedEnrichments(session.id, query.enrichers),
+      enrichments: requestedEnrichments(session.id, runId, query.enrichers),
     })),
   };
 }
@@ -161,10 +178,19 @@ export async function runAdHocQuery(
   const offset = opts.offset ?? 0;
   const matchedSessions: Array<{ session: Session; evidence?: string | null }> = [];
 
+  const now = Date.now();
+  const runId = createQueryRun({ savedQueryId: null, dsl: definition, startedAt: now });
+
   for (const session of listAllSessionsForBackfill()) {
     await runEnrichersForSession(session);
     const r = await evalQueryFilter(definition.filters, session, filterByName, systemEnrichers);
     if (r.match) {
+      upsertQueryMatch({
+        queryRunId: runId,
+        sessionId: session.id,
+        addedAt: now,
+        evidence: r.evidence ?? null,
+      });
       matchedSessions.push({ session, evidence: r.evidence ?? null });
     }
   }
@@ -174,12 +200,16 @@ export async function runAdHocQuery(
   await runPostFilterEnrichers(
     names,
     page.map((m) => m.session),
+    runId,
   );
   const items = page.map(({ session, evidence }) => ({
     sessionId: session.id,
     evidence: evidence ?? null,
-    enrichments: requestedEnrichments(session.id, names),
+    enrichments: requestedEnrichments(session.id, runId, names),
   }));
+
+  finishQueryRun(runId, { finishedAt: Date.now(), matchedCount: matchedSessions.length });
+  pruneQueryRuns();
 
   return {
     matched: matchedSessions.length,
@@ -227,7 +257,7 @@ async function evalQueryFilter(
           logPath: session.logPath,
           iterEvents: () => iterSessionEvents(session),
           getSystemEnrichment: (name) =>
-            systemEnrichers.has(name) ? getEnrichment(session.id, name) : null,
+            systemEnrichers.has(name) ? getEnrichment(session.id, SYSTEM_RUN_ID, name) : null,
         },
         p.filter.params,
       );

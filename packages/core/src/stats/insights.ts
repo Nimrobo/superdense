@@ -1,4 +1,4 @@
-import { getDb } from '../db.js';
+import { SYSTEM_RUN_ID, getDb } from '../db.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -187,33 +187,35 @@ export function getPersonalRecords(): PersonalRecords {
   const mostCli = db
     .prepare(
       `
-      SELECT qe.session_id AS sid, (
-        SELECT SUM(CAST(je.value AS INTEGER)) FROM json_each(qe.value) je
+      SELECT se.session_id AS sid, (
+        SELECT SUM(CAST(je.value AS INTEGER)) FROM json_each(se.value) je
       ) AS total
-        FROM query_enrich qe
-       WHERE qe.name = 'bash_cli_counts'
+        FROM session_enrich se
+       WHERE se.name = 'bash_cli_counts'
+         AND se.query_run_id = ?
        ORDER BY total DESC
        LIMIT 1
     `,
     )
-    .get() as { sid: string; total: number } | undefined;
+    .get(SYSTEM_RUN_ID) as { sid: string; total: number } | undefined;
 
   // Longest agent runtime: cumulative active conversation time from the
   // active_duration enricher, which excludes idle gaps > 5 min.
   const longest = db
     .prepare(
       `
-      SELECT qe.session_id AS id,
-             CAST(json_extract(qe.value, '$.activeMs') AS INTEGER) AS dur
-        FROM query_enrich qe
-       WHERE qe.name = 'active_duration'
+      SELECT se.session_id AS id,
+             CAST(json_extract(se.value, '$.activeMs') AS INTEGER) AS dur
+        FROM session_enrich se
+       WHERE se.name = 'active_duration'
+         AND se.query_run_id = ?
          AND dur IS NOT NULL
          AND dur > 0
        ORDER BY dur DESC
        LIMIT 1
     `,
     )
-    .get() as { id: string; dur: number } | undefined;
+    .get(SYSTEM_RUN_ID) as { id: string; dur: number } | undefined;
 
   return {
     bestDay: bestDay ? { date: bestDay.d, sessions: bestDay.c } : null,

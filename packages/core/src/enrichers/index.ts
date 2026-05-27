@@ -1,5 +1,5 @@
 import { iterSessionEvents } from '../adapters/index.js';
-import { getEnrichment, upsertEnrichment } from '../db.js';
+import { SYSTEM_RUN_ID, getEnrichment, upsertEnrichment } from '../db.js';
 import type { Session } from '../types.js';
 import { activeDurationEnricher } from './active-duration.js';
 import { bashCliCountsEnricher } from './bash-cli-counts.js';
@@ -88,8 +88,8 @@ function shouldRun(
   return false;
 }
 
-async function runOne(enricher: Enricher, session: Session): Promise<void> {
-  const stored = getEnrichment(session.id, enricher.name);
+async function runOne(enricher: Enricher, session: Session, queryRunId: string): Promise<void> {
+  const stored = getEnrichment(session.id, queryRunId, enricher.name);
   if (!shouldRun(stored, enricher, session)) return;
   try {
     const value = await enricher.run({
@@ -97,7 +97,7 @@ async function runOne(enricher: Enricher, session: Session): Promise<void> {
       logPath: session.logPath,
       iterEvents: () => iterSessionEvents(session),
     });
-    upsertEnrichment(session.id, enricher.name, enricher.version, value, Date.now());
+    upsertEnrichment(session.id, queryRunId, enricher.name, enricher.version, value, Date.now());
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.warn(`[enricher] ${enricher.name} failed for ${session.id}: ${msg}`);
@@ -108,15 +108,19 @@ async function runOne(enricher: Enricher, session: Session): Promise<void> {
 export async function runEnrichersForSession(session: Session): Promise<void> {
   for (const enricher of registry) {
     if (!enricher.alwaysRun && !activeNames.has(enricher.name)) continue;
-    await runOne(enricher, session);
+    await runOne(enricher, session, SYSTEM_RUN_ID);
   }
 }
 
-/** Run a specific enricher for a session (used by query backfill). */
-export async function runEnricherByNameForSession(name: string, session: Session): Promise<void> {
+/** Run a specific enricher for a session (used by query backfill), scoped to a query_run. */
+export async function runEnricherByNameForSession(
+  name: string,
+  session: Session,
+  queryRunId: string,
+): Promise<void> {
   const enricher = getEnricher(name);
   if (!enricher) return;
-  await runOne(enricher, session);
+  await runOne(enricher, session, queryRunId);
 }
 
 export type { Enricher, EnricherContext } from './types.js';

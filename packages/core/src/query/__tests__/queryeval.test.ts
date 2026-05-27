@@ -17,8 +17,9 @@ import {
   _resetDbForTests,
   countQueryMatches,
   createQuery,
-  getEnrichment,
   getQuery,
+  listSessionEnrichments,
+  listStandaloneRuns,
   upsertSession,
 } from '../../db.js';
 import { clearEnricherCache, registerEnricher } from '../../enrichers/index.js';
@@ -108,7 +109,16 @@ describe('runAdHocQuery', () => {
       }),
     ]);
     expect(run).toHaveBeenCalledTimes(1);
-    expect(getEnrichment('codex:skipped', 'post_marker')).toBeNull();
+    expect(listSessionEnrichments('codex:skipped').some((e) => e.name === 'post_marker')).toBe(
+      false,
+    );
+    // The matched session has the enrichment, scoped to the standalone run.
+    const runs = listStandaloneRuns();
+    expect(runs).toHaveLength(1);
+    expect(
+      listSessionEnrichments('codex:matched', runs[0]!.id).find((e) => e.name === 'post_marker')
+        ?.value,
+    ).toBe('post-filter-data');
   });
 
   it('rejects invalid filter params before processing sessions', async () => {

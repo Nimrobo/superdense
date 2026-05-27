@@ -29,6 +29,7 @@ import {
   getCompactor,
   getEnrichment,
   getQuery,
+  SYSTEM_RUN_ID,
   getSession,
   indexAll,
   listCompactors,
@@ -476,10 +477,10 @@ async function handleSession(
     const session = getExistingSession(id);
     let items;
     if (typeof flags.name === 'string' && flags.name.trim()) {
-      const item = getEnrichment(id, flags.name.trim());
+      const item = getEnrichment(id, SYSTEM_RUN_ID, flags.name.trim());
       items = item ? [{ name: flags.name.trim(), ...item }] : [];
     } else {
-      items = listSessionEnrichments(id);
+      items = listSessionEnrichments(id, SYSTEM_RUN_ID);
     }
     printJson(
       {

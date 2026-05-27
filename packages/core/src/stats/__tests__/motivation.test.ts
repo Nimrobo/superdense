@@ -10,7 +10,7 @@ vi.mock('../../paths.js', () => ({
   ensureSuperdenseDirs: vi.fn(),
 }));
 
-import { getDb, upsertSession, upsertEnrichment } from '../../db.js';
+import { SYSTEM_RUN_ID, getDb, upsertSession, upsertEnrichment } from '../../db.js';
 import type { Session } from '../../types.js';
 import { getStreaks, getContributions, getWindowMetrics, getHeaderTotals } from '../motivation.js';
 
@@ -27,7 +27,7 @@ const BASE: Session = {
 
 function clearDb() {
   getDb().exec(
-    'DELETE FROM query_matches; DELETE FROM query_enrich; DELETE FROM sessions; DELETE FROM queries;',
+    "DELETE FROM query_matches; DELETE FROM session_enrich; DELETE FROM sessions; DELETE FROM queries; DELETE FROM query_run WHERE id != 'system';",
   );
 }
 
@@ -178,8 +178,8 @@ describe('getWindowMetrics', () => {
     const now = utcNoon(2026, 5, 21);
     upsertSession({ ...BASE, id: 's1', modifiedAt: now - 1 * DAY });
     upsertSession({ ...BASE, id: 's2', modifiedAt: now - 2 * DAY });
-    upsertEnrichment('s1', 'bash_cli_counts', 1, { git: 3, gh: 1 }, now);
-    upsertEnrichment('s2', 'bash_cli_counts', 1, { git: 4, npm: 2 }, now);
+    upsertEnrichment('s1', SYSTEM_RUN_ID, 'bash_cli_counts', 1, { git: 3, gh: 1 }, now);
+    upsertEnrichment('s2', SYSTEM_RUN_ID, 'bash_cli_counts', 1, { git: 4, npm: 2 }, now);
     const w = getWindowMetrics(7, now);
     const byCli = Object.fromEntries(w.window.topClis.map((c) => [c.cli, c.count]));
     expect(byCli['git']).toBe(7);

@@ -33,6 +33,14 @@ import {
   upsertEnrichment,
   getEnrichment,
   listSessionEnrichments,
+  SYSTEM_RUN_ID,
+  createQueryRun,
+  finishQueryRun,
+  clearQueryRun,
+  pruneQueryRuns,
+  listQueryRunsForSavedQuery,
+  listStandaloneRuns,
+  getQueryRun,
   getStatsTotals,
   getMaxLastIndexedAt,
   getSessionsPerDay,
@@ -67,8 +75,19 @@ const BASE_QUERY: Omit<Query, 'memberCount' | 'lastRunAt'> = {
 function clearDb() {
   const db = getDb();
   db.exec(
-    'DELETE FROM query_matches; DELETE FROM query_enrich; DELETE FROM sessions; DELETE FROM queries;',
+    "DELETE FROM query_matches; DELETE FROM session_enrich; DELETE FROM sessions; DELETE FROM queries; DELETE FROM query_run WHERE id != 'system';",
   );
+}
+
+function makeRunFor(savedQueryId: string): string {
+  const id = createQueryRun({
+    savedQueryId,
+    dsl: { filters: { and: [] }, enrichers: [] },
+    startedAt: Date.now(),
+  });
+  // Reads scope to the latest *finished* run, so tests must close the run out.
+  finishQueryRun(id, { finishedAt: Date.now(), matchedCount: 0 });
+  return id;
 }
 
 describe('sessions', () => {
@@ -145,10 +164,191 @@ describe('sessions', () => {
 
       _migrateForTests(db);
 
-      expect(db.pragma('user_version', { simple: true })).toBe(2);
+      expect(db.pragma('user_version', { simple: true })).toBe(3);
       expect(db.prepare('SELECT project_key FROM sessions WHERE id = ?').get('old')).toEqual({
         project_key: '/Users/x/conductor/workspaces/superdense',
       });
+    } finally {
+      db.close();
+    }
+  });
+
+  it('V3 migration: drops legacy query_enrich and rewrites query_matches to new schema', () => {
+    const db = new Database(':memory:');
+    try {
+      db.exec(`
+        CREATE TABLE sessions (
+          id              TEXT PRIMARY KEY,
+          agent           TEXT NOT NULL,
+          session_id      TEXT NOT NULL,
+          log_path        TEXT NOT NULL,
+          pwd             TEXT NOT NULL,
+          project_key     TEXT NOT NULL DEFAULT '',
+          first_prompt    TEXT,
+          summary         TEXT,
+          message_count   INTEGER,
+          git_branch      TEXT,
+          created_at      INTEGER,
+          modified_at     INTEGER,
+          is_sidechain    INTEGER DEFAULT 0,
+          file_mtime      INTEGER,
+          last_indexed_at INTEGER
+        );
+        CREATE TABLE queries (
+          id          TEXT PRIMARY KEY,
+          name        TEXT NOT NULL,
+          predicate   TEXT NOT NULL,
+          created_at  INTEGER,
+          last_run_at INTEGER
+        );
+        CREATE TABLE query_matches (
+          query_id   TEXT NOT NULL REFERENCES queries(id) ON DELETE CASCADE,
+          session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+          added_at   INTEGER,
+          evidence   TEXT,
+          PRIMARY KEY (query_id, session_id)
+        );
+        CREATE TABLE query_enrich (
+          session_id  TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+          name        TEXT NOT NULL,
+          version     INTEGER NOT NULL,
+          value       TEXT NOT NULL,
+          computed_at INTEGER NOT NULL,
+          PRIMARY KEY (session_id, name)
+        );
+        PRAGMA user_version = 2;
+      `);
+      db.prepare(
+        'INSERT INTO sessions (id, agent, session_id, log_path, pwd) VALUES (?, ?, ?, ?, ?)',
+      ).run('s1', 'codex', 'abc', '/tmp/abc.jsonl', '/proj');
+      db.prepare(
+        'INSERT INTO queries (id, name, predicate, created_at, last_run_at) VALUES (?, ?, ?, ?, ?)',
+      ).run('q1', 'Q1', JSON.stringify({ filters: { and: [] } }), 1000, 5000);
+      db.prepare(
+        'INSERT INTO query_matches (query_id, session_id, added_at, evidence) VALUES (?, ?, ?, ?)',
+      ).run('q1', 's1', 100, 'hit');
+      db.prepare(
+        'INSERT INTO query_enrich (session_id, name, version, value, computed_at) VALUES (?, ?, ?, ?, ?)',
+      ).run('s1', 'tool_counts', 1, JSON.stringify({ Bash: 3 }), 1000);
+
+      _migrateForTests(db);
+
+      expect(db.pragma('user_version', { simple: true })).toBe(3);
+
+      const tables = (
+        db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{
+          name: string;
+        }>
+      ).map((r) => r.name);
+      expect(tables).toContain('session_enrich');
+      expect(tables).toContain('query_run');
+      expect(tables).not.toContain('query_enrich');
+
+      // System run exists and saved query definition is preserved.
+      expect(db.prepare('SELECT id FROM query_run WHERE id = ?').get('system')).toEqual({
+        id: 'system',
+      });
+      expect(db.prepare('SELECT id FROM queries WHERE id = ?').get('q1')).toEqual({ id: 'q1' });
+
+      // Legacy match memberships and enrichments are dropped — they regenerate on next run/index.
+      const matchCols = db.prepare('PRAGMA table_info(query_matches)').all() as Array<{
+        name: string;
+      }>;
+      expect(matchCols.map((c) => c.name)).toContain('query_run_id');
+      expect(matchCols.map((c) => c.name)).not.toContain('query_id');
+      expect(db.prepare('SELECT COUNT(*) AS c FROM query_matches').get()).toEqual({ c: 0 });
+      expect(db.prepare('SELECT COUNT(*) AS c FROM session_enrich').get()).toEqual({ c: 0 });
+    } finally {
+      db.close();
+    }
+  });
+
+  it('V1 migration: preserves saved query definitions and drops legacy match/enrich tables', () => {
+    const db = new Database(':memory:');
+    try {
+      db.exec(`
+        CREATE TABLE sessions (
+          id              TEXT PRIMARY KEY,
+          agent           TEXT NOT NULL,
+          session_id      TEXT NOT NULL,
+          log_path        TEXT NOT NULL,
+          pwd             TEXT NOT NULL,
+          first_prompt    TEXT,
+          summary         TEXT,
+          message_count   INTEGER,
+          git_branch      TEXT,
+          created_at      INTEGER,
+          modified_at     INTEGER,
+          is_sidechain    INTEGER DEFAULT 0,
+          file_mtime      INTEGER,
+          last_indexed_at INTEGER
+        );
+        CREATE TABLE groups (
+          id            TEXT PRIMARY KEY,
+          name          TEXT NOT NULL,
+          plugin_name   TEXT NOT NULL,
+          plugin_config TEXT,
+          created_at    INTEGER,
+          last_run_at   INTEGER
+        );
+        CREATE TABLE group_items (
+          group_id   TEXT NOT NULL,
+          session_id TEXT NOT NULL,
+          added_at   INTEGER,
+          evidence   TEXT,
+          PRIMARY KEY (group_id, session_id)
+        );
+        CREATE TABLE session_enrichments (
+          session_id  TEXT NOT NULL,
+          name        TEXT NOT NULL,
+          version     INTEGER NOT NULL,
+          value       TEXT NOT NULL,
+          computed_at INTEGER NOT NULL,
+          PRIMARY KEY (session_id, name)
+        );
+        PRAGMA user_version = 0;
+      `);
+      db.prepare(
+        'INSERT INTO sessions (id, agent, session_id, log_path, pwd) VALUES (?, ?, ?, ?, ?)',
+      ).run('s1', 'codex', 'abc', '/tmp/abc.jsonl', '/proj');
+      db.prepare(
+        'INSERT INTO groups (id, name, plugin_name, plugin_config, created_at) VALUES (?, ?, ?, ?, ?)',
+      ).run('g1', 'My Group', 'by-user-prompt-keyword', JSON.stringify({ keyword: 'bug' }), 1000);
+      db.prepare(
+        'INSERT INTO group_items (group_id, session_id, added_at, evidence) VALUES (?, ?, ?, ?)',
+      ).run('g1', 's1', 100, 'hit');
+      db.prepare(
+        'INSERT INTO session_enrichments (session_id, name, version, value, computed_at) VALUES (?, ?, ?, ?, ?)',
+      ).run('s1', 'tool_counts', 1, JSON.stringify({ Bash: 3 }), 1000);
+
+      _migrateForTests(db);
+
+      expect(db.pragma('user_version', { simple: true })).toBe(3);
+
+      const tables = (
+        db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{
+          name: string;
+        }>
+      ).map((r) => r.name);
+      expect(tables).not.toContain('groups');
+      expect(tables).not.toContain('group_items');
+      expect(tables).not.toContain('session_enrichments');
+      expect(tables).toContain('queries');
+      expect(tables).toContain('query_matches');
+      expect(tables).toContain('session_enrich');
+
+      // The user's saved-query definition is the only legacy data preserved.
+      const q = db.prepare('SELECT id, name, predicate FROM queries WHERE id = ?').get('g1') as
+        | { id: string; name: string; predicate: string }
+        | undefined;
+      expect(q?.name).toBe('My Group');
+      expect(JSON.parse(q!.predicate)).toEqual({
+        filters: { filter: { name: 'user_prompt_contains', params: { keyword: 'bug' } } },
+        enrichers: [],
+      });
+
+      expect(db.prepare('SELECT COUNT(*) AS c FROM query_matches').get()).toEqual({ c: 0 });
+      expect(db.prepare('SELECT COUNT(*) AS c FROM session_enrich').get()).toEqual({ c: 0 });
     } finally {
       db.close();
     }
@@ -283,40 +483,41 @@ describe('queries', () => {
 describe('query matches', () => {
   beforeEach(clearDb);
 
-  function setup() {
+  function setup(): string {
     createQuery(BASE_QUERY);
     upsertSession({ ...BASE, id: 's1' });
     upsertSession({ ...BASE, id: 's2' });
+    return makeRunFor('q1');
   }
 
   it('upsertQueryMatch and isQueryMatch', () => {
-    setup();
-    upsertQueryMatch({ queryId: 'q1', sessionId: 's1', addedAt: 100 });
+    const runId = setup();
+    upsertQueryMatch({ queryRunId: runId, sessionId: 's1', addedAt: 100 });
     expect(isQueryMatch('q1', 's1')).toBe(true);
     expect(isQueryMatch('q1', 's2')).toBe(false);
   });
 
   it('dropQueryMatch removes membership', () => {
-    setup();
-    upsertQueryMatch({ queryId: 'q1', sessionId: 's1', addedAt: 100 });
-    dropQueryMatch('q1', 's1');
+    const runId = setup();
+    upsertQueryMatch({ queryRunId: runId, sessionId: 's1', addedAt: 100 });
+    dropQueryMatch(runId, 's1');
     expect(isQueryMatch('q1', 's1')).toBe(false);
   });
 
   it('listQueryMatches returns sessions in query', () => {
-    setup();
-    upsertQueryMatch({ queryId: 'q1', sessionId: 's1', addedAt: 100 });
+    const runId = setup();
+    upsertQueryMatch({ queryRunId: runId, sessionId: 's1', addedAt: 100 });
     const members = listQueryMatches('q1');
     expect(members).toHaveLength(1);
     expect(members[0].id).toBe('s1');
   });
 
   it('listQueryMatchDetails returns session metadata with evidence and paging', () => {
-    setup();
+    const runId = setup();
     upsertSession({ ...BASE, id: 's1', modifiedAt: 1000 });
     upsertSession({ ...BASE, id: 's2', modifiedAt: 2000 });
-    upsertQueryMatch({ queryId: 'q1', sessionId: 's1', addedAt: 100, evidence: 'first' });
-    upsertQueryMatch({ queryId: 'q1', sessionId: 's2', addedAt: 200, evidence: 'second' });
+    upsertQueryMatch({ queryRunId: runId, sessionId: 's1', addedAt: 100, evidence: 'first' });
+    upsertQueryMatch({ queryRunId: runId, sessionId: 's2', addedAt: 200, evidence: 'second' });
 
     const page = listQueryMatchDetails('q1', { limit: 1, offset: 0 });
 
@@ -328,26 +529,81 @@ describe('query matches', () => {
   });
 
   it('memberCount reflects current membership', () => {
-    setup();
-    upsertQueryMatch({ queryId: 'q1', sessionId: 's1', addedAt: 100 });
-    upsertQueryMatch({ queryId: 'q1', sessionId: 's2', addedAt: 200 });
+    const runId = setup();
+    upsertQueryMatch({ queryRunId: runId, sessionId: 's1', addedAt: 100 });
+    upsertQueryMatch({ queryRunId: runId, sessionId: 's2', addedAt: 200 });
     expect(getQuery('q1')!.memberCount).toBe(2);
-    dropQueryMatch('q1', 's1');
+    dropQueryMatch(runId, 's1');
     expect(getQuery('q1')!.memberCount).toBe(1);
   });
 
   it('upsertQueryMatch is idempotent (updates evidence)', () => {
-    setup();
-    upsertQueryMatch({ queryId: 'q1', sessionId: 's1', addedAt: 100, evidence: 'first' });
-    upsertQueryMatch({ queryId: 'q1', sessionId: 's1', addedAt: 200, evidence: 'second' });
+    const runId = setup();
+    upsertQueryMatch({ queryRunId: runId, sessionId: 's1', addedAt: 100, evidence: 'first' });
+    upsertQueryMatch({ queryRunId: runId, sessionId: 's1', addedAt: 200, evidence: 'second' });
     expect(getQuery('q1')!.memberCount).toBe(1);
   });
 
-  it('deleteQuery cascades to query_matches', () => {
-    setup();
-    upsertQueryMatch({ queryId: 'q1', sessionId: 's1', addedAt: 100 });
+  it('deleting a saved query preserves runs (saved_query_id set to NULL)', () => {
+    const runId = setup();
+    upsertQueryMatch({ queryRunId: runId, sessionId: 's1', addedAt: 100 });
     deleteQuery('q1');
-    expect(getDb().prepare('SELECT COUNT(*) AS c FROM query_matches').get()).toEqual({ c: 0 });
+    // The run survives, with saved_query_id nulled out.
+    const run = getQueryRun(runId);
+    expect(run).not.toBeNull();
+    expect(run!.savedQueryId).toBeNull();
+    // The match row still exists on the run, since the run wasn't deleted.
+    expect(
+      getDb().prepare('SELECT COUNT(*) AS c FROM query_matches WHERE query_run_id = ?').get(runId),
+    ).toEqual({ c: 1 });
+  });
+
+  it('clearQueryRun cascade-deletes matches and enrichments', () => {
+    const runId = setup();
+    upsertQueryMatch({ queryRunId: runId, sessionId: 's1', addedAt: 100 });
+    upsertEnrichment('s1', runId, 'whatever', 1, 42, 1000);
+    clearQueryRun(runId);
+    expect(
+      getDb().prepare('SELECT COUNT(*) AS c FROM query_matches WHERE query_run_id = ?').get(runId),
+    ).toEqual({ c: 0 });
+    expect(
+      getDb().prepare('SELECT COUNT(*) AS c FROM session_enrich WHERE query_run_id = ?').get(runId),
+    ).toEqual({ c: 0 });
+  });
+
+  it('clearQueryRun refuses to delete the system run', () => {
+    clearQueryRun(SYSTEM_RUN_ID);
+    expect(getQueryRun(SYSTEM_RUN_ID)).not.toBeNull();
+  });
+
+  it('unfinished runs do not displace the latest finished run', () => {
+    createQuery(BASE_QUERY);
+    upsertSession({ ...BASE, id: 's1' });
+    upsertSession({ ...BASE, id: 's2' });
+
+    // First run, finished, with one match.
+    const finishedRun = createQueryRun({
+      savedQueryId: 'q1',
+      dsl: { filters: { and: [] }, enrichers: [] },
+      startedAt: 1000,
+    });
+    upsertQueryMatch({ queryRunId: finishedRun, sessionId: 's1', addedAt: 1100 });
+    finishQueryRun(finishedRun, { finishedAt: 1200, matchedCount: 1 });
+
+    // Second run starts later but never finishes; partial match attached.
+    const inFlight = createQueryRun({
+      savedQueryId: 'q1',
+      dsl: { filters: { and: [] }, enrichers: [] },
+      startedAt: 2000,
+    });
+    upsertQueryMatch({ queryRunId: inFlight, sessionId: 's2', addedAt: 2100 });
+
+    // Reads should still surface the finished run, not the in-flight one.
+    expect(listQueryMatches('q1').map((s) => s.id)).toEqual(['s1']);
+    expect(countQueryMatches('q1')).toBe(1);
+    expect(isQueryMatch('q1', 's1')).toBe(true);
+    expect(isQueryMatch('q1', 's2')).toBe(false);
+    expect(getQuery('q1')!.memberCount).toBe(1);
   });
 });
 
@@ -356,8 +612,8 @@ describe('enrichments', () => {
 
   it('upserts and retrieves an enrichment', () => {
     upsertSession(BASE);
-    upsertEnrichment('sess-1', 'event_count', 1, 42, 1000);
-    const got = getEnrichment('sess-1', 'event_count');
+    upsertEnrichment('sess-1', SYSTEM_RUN_ID, 'event_count', 1, 42, 1000);
+    const got = getEnrichment('sess-1', SYSTEM_RUN_ID, 'event_count');
     expect(got).not.toBeNull();
     expect(got!.value).toBe(42);
     expect(got!.version).toBe(1);
@@ -366,14 +622,14 @@ describe('enrichments', () => {
 
   it('returns null for missing enrichment', () => {
     upsertSession(BASE);
-    expect(getEnrichment('sess-1', 'nonexistent')).toBeNull();
+    expect(getEnrichment('sess-1', SYSTEM_RUN_ID, 'nonexistent')).toBeNull();
   });
 
   it('updates version and value on conflict', () => {
     upsertSession(BASE);
-    upsertEnrichment('sess-1', 'event_count', 1, 42, 1000);
-    upsertEnrichment('sess-1', 'event_count', 2, 99, 2000);
-    const got = getEnrichment('sess-1', 'event_count');
+    upsertEnrichment('sess-1', SYSTEM_RUN_ID, 'event_count', 1, 42, 1000);
+    upsertEnrichment('sess-1', SYSTEM_RUN_ID, 'event_count', 2, 99, 2000);
+    const got = getEnrichment('sess-1', SYSTEM_RUN_ID, 'event_count');
     expect(got!.value).toBe(99);
     expect(got!.version).toBe(2);
     expect(got!.computedAt).toBe(2000);
@@ -381,15 +637,15 @@ describe('enrichments', () => {
 
   it('stores and retrieves complex JSON values', () => {
     upsertSession(BASE);
-    upsertEnrichment('sess-1', 'tool_counts', 1, { bash: 3, read: 1 }, 1000);
-    const got = getEnrichment('sess-1', 'tool_counts');
+    upsertEnrichment('sess-1', SYSTEM_RUN_ID, 'tool_counts', 1, { bash: 3, read: 1 }, 1000);
+    const got = getEnrichment('sess-1', SYSTEM_RUN_ID, 'tool_counts');
     expect(got!.value).toEqual({ bash: 3, read: 1 });
   });
 
   it('lists named enrichments ordered by name', () => {
     upsertSession(BASE);
-    upsertEnrichment('sess-1', 'tool_counts', 1, { Bash: 3 }, 1000);
-    upsertEnrichment('sess-1', 'event_count', 1, 42, 1000);
+    upsertEnrichment('sess-1', SYSTEM_RUN_ID, 'tool_counts', 1, { Bash: 3 }, 1000);
+    upsertEnrichment('sess-1', SYSTEM_RUN_ID, 'event_count', 1, 42, 1000);
 
     expect(listSessionEnrichments('sess-1')).toEqual([
       { name: 'event_count', version: 1, value: 42, computedAt: 1000 },
@@ -399,9 +655,87 @@ describe('enrichments', () => {
 
   it('returns false boolean value correctly', () => {
     upsertSession(BASE);
-    upsertEnrichment('sess-1', 'has_errors', 1, false, 1000);
-    const got = getEnrichment('sess-1', 'has_errors');
+    upsertEnrichment('sess-1', SYSTEM_RUN_ID, 'has_errors', 1, false, 1000);
+    const got = getEnrichment('sess-1', SYSTEM_RUN_ID, 'has_errors');
     expect(got!.value).toBe(false);
+  });
+
+  it('per-run enrichment with the same name as a system one coexists', () => {
+    upsertSession(BASE);
+    createQuery(BASE_QUERY);
+    const runId = makeRunFor('q1');
+    upsertEnrichment('sess-1', SYSTEM_RUN_ID, 'tool_counts', 1, { Bash: 1 }, 1000);
+    upsertEnrichment('sess-1', runId, 'tool_counts', 1, { Bash: 9 }, 2000);
+    expect(getEnrichment('sess-1', SYSTEM_RUN_ID, 'tool_counts')!.value).toEqual({ Bash: 1 });
+    expect(getEnrichment('sess-1', runId, 'tool_counts')!.value).toEqual({ Bash: 9 });
+  });
+
+  it('filters listSessionEnrichments by run id when provided', () => {
+    upsertSession(BASE);
+    createQuery(BASE_QUERY);
+    const runId = makeRunFor('q1');
+    upsertEnrichment('sess-1', SYSTEM_RUN_ID, 'sys', 1, 'a', 1000);
+    upsertEnrichment('sess-1', runId, 'qry', 1, 'b', 2000);
+
+    expect(listSessionEnrichments('sess-1', SYSTEM_RUN_ID).map((r) => r.name)).toEqual(['sys']);
+    expect(listSessionEnrichments('sess-1', runId).map((r) => r.name)).toEqual(['qry']);
+    expect(
+      listSessionEnrichments('sess-1')
+        .map((r) => r.name)
+        .sort(),
+    ).toEqual(['qry', 'sys']);
+  });
+});
+
+describe('query runs', () => {
+  beforeEach(clearDb);
+
+  it('system run is always present', () => {
+    expect(getQueryRun(SYSTEM_RUN_ID)).not.toBeNull();
+  });
+
+  it('saved-query run history accumulates and prunes', () => {
+    createQuery(BASE_QUERY);
+    for (let i = 0; i < 12; i++) {
+      createQueryRun({
+        savedQueryId: 'q1',
+        dsl: { filters: { and: [] }, enrichers: [] },
+        startedAt: 1000 + i,
+      });
+    }
+    expect(listQueryRunsForSavedQuery('q1')).toHaveLength(12);
+    pruneQueryRuns({ perSavedQuery: 10, standalone: 10 });
+    expect(listQueryRunsForSavedQuery('q1')).toHaveLength(10);
+    // System run is untouched
+    expect(getQueryRun(SYSTEM_RUN_ID)).not.toBeNull();
+  });
+
+  it('listStandaloneRuns excludes the system run and saved-query runs', () => {
+    createQuery(BASE_QUERY);
+    createQueryRun({
+      savedQueryId: 'q1',
+      dsl: { filters: { and: [] }, enrichers: [] },
+      startedAt: 100,
+    });
+    const sa = createQueryRun({
+      savedQueryId: null,
+      dsl: { filters: { and: [] }, enrichers: [] },
+      startedAt: 200,
+    });
+    const list = listStandaloneRuns();
+    expect(list.map((r) => r.id)).toEqual([sa]);
+  });
+
+  it('finishQueryRun updates finished_at and matched_count', () => {
+    const id = createQueryRun({
+      savedQueryId: null,
+      dsl: { filters: { and: [] }, enrichers: [] },
+      startedAt: 100,
+    });
+    finishQueryRun(id, { finishedAt: 500, matchedCount: 3 });
+    const got = getQueryRun(id);
+    expect(got!.finishedAt).toBe(500);
+    expect(got!.matchedCount).toBe(3);
   });
 });
 
@@ -503,8 +837,9 @@ describe('stats aggregates', () => {
     createQuery({ ...BASE_QUERY, id: 'q2', name: 'Large', createdAt: 2000 });
     upsertSession({ ...BASE, id: 's1' });
     upsertSession({ ...BASE, id: 's2' });
-    upsertQueryMatch({ queryId: 'q2', sessionId: 's1', addedAt: 1 });
-    upsertQueryMatch({ queryId: 'q2', sessionId: 's2', addedAt: 2 });
+    const q2Run = makeRunFor('q2');
+    upsertQueryMatch({ queryRunId: q2Run, sessionId: 's1', addedAt: 1 });
+    upsertQueryMatch({ queryRunId: q2Run, sessionId: 's2', addedAt: 2 });
     const tops = getTopQueries(5);
     expect(tops[0].name).toBe('Large');
     expect(tops[0].memberCount).toBe(2);
@@ -513,8 +848,8 @@ describe('stats aggregates', () => {
   it('getTopTools aggregates tool_counts enrichments across sessions', () => {
     upsertSession({ ...BASE, id: 's1' });
     upsertSession({ ...BASE, id: 's2' });
-    upsertEnrichment('s1', 'tool_counts', 1, { bash: 5, read: 2 }, 1000);
-    upsertEnrichment('s2', 'tool_counts', 1, { bash: 3, write: 1 }, 1000);
+    upsertEnrichment('s1', SYSTEM_RUN_ID, 'tool_counts', 1, { bash: 5, read: 2 }, 1000);
+    upsertEnrichment('s2', SYSTEM_RUN_ID, 'tool_counts', 1, { bash: 3, write: 1 }, 1000);
     const tops = getTopTools(10);
     const bash = tops.find((t) => t.tool === 'bash');
     expect(bash?.count).toBe(8);
@@ -524,7 +859,7 @@ describe('stats aggregates', () => {
 
   it('getTopTools respects limit', () => {
     upsertSession(BASE);
-    upsertEnrichment('sess-1', 'tool_counts', 1, { a: 1, b: 2, c: 3, d: 4 }, 1000);
+    upsertEnrichment('sess-1', SYSTEM_RUN_ID, 'tool_counts', 1, { a: 1, b: 2, c: 3, d: 4 }, 1000);
     expect(getTopTools(2)).toHaveLength(2);
   });
 

@@ -1,4 +1,4 @@
-import { getDb } from '../db.js';
+import { SYSTEM_RUN_ID, getDb } from '../db.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -239,16 +239,18 @@ function computeWindowMetrics(
       `
       SELECT je.key AS cli, SUM(CAST(je.value AS INTEGER)) AS c
         FROM sessions s
-        INNER JOIN query_enrich qe
-                ON qe.session_id = s.id AND qe.name = 'bash_cli_counts'
-        , json_each(qe.value) je
+        INNER JOIN session_enrich se
+                ON se.session_id = s.id
+               AND se.name = 'bash_cli_counts'
+               AND se.query_run_id = ?
+        , json_each(se.value) je
        WHERE s.modified_at IS NOT NULL AND s.modified_at >= ? AND s.modified_at < ?
        GROUP BY je.key
        ORDER BY c DESC, je.key ASC
        LIMIT 10
     `,
     )
-    .all(startMs, endMs) as Array<{ cli: string; c: number }>;
+    .all(SYSTEM_RUN_ID, startMs, endMs) as Array<{ cli: string; c: number }>;
   const topClis = topCliRows.map((r) => ({ cli: r.cli, count: r.c }));
 
   const activeProjectRows = db
