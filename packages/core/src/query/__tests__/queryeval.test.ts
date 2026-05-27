@@ -109,9 +109,9 @@ describe('runAdHocQuery', () => {
       }),
     ]);
     expect(run).toHaveBeenCalledTimes(1);
-    expect(
-      listSessionEnrichments('codex:skipped').some((e) => e.name === 'post_marker'),
-    ).toBe(false);
+    expect(listSessionEnrichments('codex:skipped').some((e) => e.name === 'post_marker')).toBe(
+      false,
+    );
     // The matched session has the enrichment, scoped to the standalone run.
     const runs = listStandaloneRuns();
     expect(runs).toHaveLength(1);

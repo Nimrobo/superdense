@@ -703,9 +703,9 @@ export function clearQueryRun(runId: string): void {
 }
 
 export function getQueryRun(runId: string): QueryRunRow | null {
-  const row = getDb()
-    .prepare('SELECT * FROM query_run WHERE id = ?')
-    .get(runId) as RawQueryRunRow | undefined;
+  const row = getDb().prepare('SELECT * FROM query_run WHERE id = ?').get(runId) as
+    | RawQueryRunRow
+    | undefined;
   return row ? rowToQueryRun(row) : null;
 }
 
@@ -767,9 +767,7 @@ export function pruneQueryRuns(opts: PruneOptions = {}): { pruned: number } {
   const tx = db.transaction(() => {
     // Per-saved-query
     const savedRows = db
-      .prepare(
-        'SELECT DISTINCT saved_query_id FROM query_run WHERE saved_query_id IS NOT NULL',
-      )
+      .prepare('SELECT DISTINCT saved_query_id FROM query_run WHERE saved_query_id IS NOT NULL')
       .all() as Array<{ saved_query_id: string }>;
     const pickKeep = db.prepare(
       `SELECT id FROM query_run
@@ -798,7 +796,10 @@ export function pruneQueryRuns(opts: PruneOptions = {}): { pruned: number } {
     };
     for (const r of savedRows) {
       const keep = pickKeep.all(r.saved_query_id, perSavedQuery) as Array<{ id: string }>;
-      deleteByIdNotIn(r.saved_query_id, keep.map((k) => k.id));
+      deleteByIdNotIn(
+        r.saved_query_id,
+        keep.map((k) => k.id),
+      );
     }
 
     // Standalone (saved_query_id IS NULL, excluding system)
@@ -814,9 +815,7 @@ export function pruneQueryRuns(opts: PruneOptions = {}): { pruned: number } {
     ).map((k) => k.id);
     if (keepStandalone.length === 0) {
       const r = db
-        .prepare(
-          'DELETE FROM query_run WHERE saved_query_id IS NULL AND id != ?',
-        )
+        .prepare('DELETE FROM query_run WHERE saved_query_id IS NULL AND id != ?')
         .run(SYSTEM_RUN_ID);
       pruned += r.changes;
     } else {

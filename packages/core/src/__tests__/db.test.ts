@@ -567,9 +567,7 @@ describe('query matches', () => {
       getDb().prepare('SELECT COUNT(*) AS c FROM query_matches WHERE query_run_id = ?').get(runId),
     ).toEqual({ c: 0 });
     expect(
-      getDb()
-        .prepare('SELECT COUNT(*) AS c FROM session_enrich WHERE query_run_id = ?')
-        .get(runId),
+      getDb().prepare('SELECT COUNT(*) AS c FROM session_enrich WHERE query_run_id = ?').get(runId),
     ).toEqual({ c: 0 });
   });
 
@@ -681,7 +679,11 @@ describe('enrichments', () => {
 
     expect(listSessionEnrichments('sess-1', SYSTEM_RUN_ID).map((r) => r.name)).toEqual(['sys']);
     expect(listSessionEnrichments('sess-1', runId).map((r) => r.name)).toEqual(['qry']);
-    expect(listSessionEnrichments('sess-1').map((r) => r.name).sort()).toEqual(['qry', 'sys']);
+    expect(
+      listSessionEnrichments('sess-1')
+        .map((r) => r.name)
+        .sort(),
+    ).toEqual(['qry', 'sys']);
   });
 });
 
