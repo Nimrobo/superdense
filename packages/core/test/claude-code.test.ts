@@ -1,12 +1,15 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { claudeCodeAdapter } from '../src/adapters/claude-code.js';
 
 let tempDir: string | undefined;
+const originalClaudeProjectsDir = process.env.CLAUDE_PROJECTS_DIR;
 
 afterEach(async () => {
+  if (originalClaudeProjectsDir == null) delete process.env.CLAUDE_PROJECTS_DIR;
+  else process.env.CLAUDE_PROJECTS_DIR = originalClaudeProjectsDir;
   if (!tempDir) return;
   await rm(tempDir, { recursive: true, force: true });
   tempDir = undefined;
@@ -21,6 +24,85 @@ async function collectEvents(lines: unknown[]) {
   for await (const event of claudeCodeAdapter.iterEvents(logPath)) events.push(event);
   return events;
 }
+
+describe('claudeCodeAdapter discovery', () => {
+  it('excludes sub-agent transcripts from root discovery', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'superdense-claude-discovery-'));
+    const projectsDir = join(tempDir, 'projects');
+    const projectDir = join(projectsDir, '-repo');
+    const rootPath = join(projectDir, 'root.jsonl');
+    const childPath = join(projectDir, 'root', 'subagents', 'agent-worker.jsonl');
+    await mkdir(join(projectDir, 'root', 'subagents'), { recursive: true });
+    await writeFile(
+      rootPath,
+      JSON.stringify({
+        cwd: '/repo',
+        type: 'user',
+        message: { role: 'user', content: 'Root prompt' },
+      }),
+      'utf8',
+    );
+    await writeFile(
+      childPath,
+      JSON.stringify({
+        cwd: '/repo',
+        type: 'user',
+        message: { role: 'user', content: 'Child prompt' },
+      }),
+      'utf8',
+    );
+    await writeFile(
+      join(projectDir, 'sessions-index.json'),
+      JSON.stringify({
+        version: 1,
+        entries: [
+          { sessionId: 'root', fullPath: rootPath, projectPath: '/repo' },
+          { sessionId: 'child', fullPath: childPath, projectPath: '/repo' },
+        ],
+      }),
+      'utf8',
+    );
+    process.env.CLAUDE_PROJECTS_DIR = projectsDir;
+
+    const sessions = await claudeCodeAdapter.discover();
+
+    expect(sessions.map((s) => s.sessionId)).toEqual(['root']);
+  });
+
+  it('discovers direct sub-agent transcripts with parent-scoped ids and metadata', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'superdense-claude-subagents-'));
+    const projectsDir = join(tempDir, 'projects');
+    const subagentsDir = join(projectsDir, '-repo', 'parent-1', 'subagents');
+    const childPath = join(subagentsDir, 'agent-worker.jsonl');
+    await mkdir(subagentsDir, { recursive: true });
+    await writeFile(
+      childPath,
+      JSON.stringify({
+        cwd: '/repo',
+        agentId: 'json-id',
+        slug: 'audit-tests',
+        type: 'user',
+        message: { role: 'user', content: 'Audit the tests' },
+      }),
+      'utf8',
+    );
+    process.env.CLAUDE_PROJECTS_DIR = projectsDir;
+
+    const children = await claudeCodeAdapter.discoverSubAgentSessions('parent-1');
+
+    expect(children).toHaveLength(1);
+    expect(children[0]).toMatchObject({
+      relation: 'subagent',
+      metadata: { agentId: 'json-id', slug: 'audit-tests' },
+      session: {
+        sessionId: 'parent-1:agent-json-id',
+        logPath: childPath,
+        pwd: '/repo',
+        firstPrompt: 'Audit the tests',
+      },
+    });
+  });
+});
 
 describe('claudeCodeAdapter.iterEvents', () => {
   it('normalizes Claude tool calls and results with pairable ids', async () => {

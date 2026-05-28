@@ -69,6 +69,10 @@ function matchUsedParam(value: unknown, enrichment: unknown): boolean {
   return countFromRecord(enrichment, name) >= min;
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+}
+
 export const sessionFilter: Filter = {
   name: 'session',
   title: 'Session',
@@ -90,6 +94,51 @@ export const sessionFilter: Filter = {
       summaryContains: {
         type: 'string',
         description: 'Substring contained in the session summary.',
+      },
+      isSubagent: {
+        type: 'boolean',
+        description:
+          'When true, match only sub-agent sessions. When false, match only root sessions. Omitting this param defaults to root-only (false).',
+      },
+      includeSubagents: {
+        type: 'boolean',
+        description: 'When true, include both root sessions and sub-agent sessions.',
+      },
+      parent: {
+        type: 'string',
+        description: 'Exact parent session id (adapter:sessionId). Matches direct children only.',
+      },
+      hasSubagents: {
+        type: 'boolean',
+        description: 'Matches the always-on subagent_summary direct-child signal.',
+      },
+      subagentCount: {
+        type: 'object',
+        required: ['value'],
+        properties: {
+          op: { type: 'string', enum: ['=', '!=', '<', '<=', '>', '>='], default: '=' },
+          value: { type: 'number' },
+        },
+      },
+      descendantSubagentCount: {
+        type: 'object',
+        required: ['value'],
+        properties: {
+          op: { type: 'string', enum: ['=', '!=', '<', '<=', '>', '>='], default: '=' },
+          value: { type: 'number' },
+        },
+      },
+      subagentDepth: {
+        type: 'object',
+        required: ['value'],
+        properties: {
+          op: { type: 'string', enum: ['=', '!=', '<', '<=', '>', '>='], default: '=' },
+          value: { type: 'number' },
+        },
+      },
+      rootSession: {
+        type: 'string',
+        description: 'Exact root session id for the recursive sub-agent tree.',
       },
       createdAfter: {
         type: ['number', 'string'],
@@ -204,9 +253,60 @@ export const sessionFilter: Filter = {
     { filter: { name: 'session', params: { toolUsedInPlan: { name: 'Edit', min: 1 } } } },
     { filter: { name: 'session', params: { planFinalized: true } } },
     { filter: { name: 'session', params: { userPromptsInPlan: { op: '>', value: 3 } } } },
+    { filter: { name: 'session', params: { hasSubagents: true } } },
+    {
+      filter: {
+        name: 'session',
+        params: { isSubagent: true, hasSubagents: true, subagentDepth: { op: '=', value: 1 } },
+      },
+    },
   ],
   async run(ctx, params) {
     const session = ctx.session;
+
+    const parent = asString(params.parent);
+    const rootSession = asString(params.rootSession);
+
+    const includeSubagents = params.includeSubagents === true || ctx.includeSubagents === true;
+
+    // Sub-agent filtering: default to root-only unless the evaluator has scoped
+    // this branch to include sub-agents or a relationship filter is requested.
+    if (typeof params.isSubagent === 'boolean') {
+      if (!!session.isSubagent !== params.isSubagent) return false;
+    } else if (!includeSubagents && !parent && !rootSession) {
+      if (session.isSubagent === true) return false;
+    }
+
+    if (parent && session.parentSessionId !== parent) return false;
+
+    const subagentSummary = asRecord(ctx.getSystemEnrichment('subagent_summary')?.value);
+
+    if (typeof params.hasSubagents === 'boolean') {
+      const actual = subagentSummary.hasSubagents === true;
+      if (actual !== params.hasSubagents) return false;
+    }
+
+    if (params.subagentCount !== undefined) {
+      const n =
+        typeof subagentSummary.subagentCount === 'number' ? subagentSummary.subagentCount : 0;
+      if (!matchCountParam(params.subagentCount, n)) return false;
+    }
+
+    if (params.descendantSubagentCount !== undefined) {
+      const n =
+        typeof subagentSummary.descendantSubagentCount === 'number'
+          ? subagentSummary.descendantSubagentCount
+          : 0;
+      if (!matchCountParam(params.descendantSubagentCount, n)) return false;
+    }
+
+    if (params.subagentDepth !== undefined) {
+      const n =
+        typeof subagentSummary.subagentDepth === 'number' ? subagentSummary.subagentDepth : 0;
+      if (!matchCountParam(params.subagentDepth, n)) return false;
+    }
+
+    if (rootSession && subagentSummary.rootSessionId !== rootSession) return false;
 
     const agent = asString(params.agent);
     if (agent && session.agent !== agent) return false;
@@ -280,8 +380,7 @@ export const sessionFilter: Filter = {
       'userPromptsInPlan',
     ];
     if (planParams.some((k) => params[k] !== undefined)) {
-      const value = ctx.getSystemEnrichment('plan_mode')?.value;
-      const plan = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+      const plan = asRecord(ctx.getSystemEnrichment('plan_mode')?.value);
 
       if (typeof params.enteredPlanMode === 'boolean') {
         const entered = plan.entered === true;

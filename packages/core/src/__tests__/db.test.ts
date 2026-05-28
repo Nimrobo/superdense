@@ -17,6 +17,11 @@ import {
   getSession,
   listSessions,
   countSessions,
+  upsertSessionLink,
+  getSessionChildren,
+  getSessionParent,
+  getSessionSubagentSummary,
+  getSessionTree,
   getDirtySessions,
   markIndexed,
   createQuery,
@@ -75,7 +80,7 @@ const BASE_QUERY: Omit<Query, 'memberCount' | 'lastRunAt'> = {
 function clearDb() {
   const db = getDb();
   db.exec(
-    "DELETE FROM query_matches; DELETE FROM session_enrich; DELETE FROM sessions; DELETE FROM queries; DELETE FROM query_run WHERE id != 'system';",
+    "DELETE FROM query_matches; DELETE FROM session_enrich; DELETE FROM session_links; DELETE FROM sessions; DELETE FROM queries; DELETE FROM query_run WHERE id != 'system';",
   );
 }
 
@@ -164,7 +169,7 @@ describe('sessions', () => {
 
       _migrateForTests(db);
 
-      expect(db.pragma('user_version', { simple: true })).toBe(3);
+      expect(db.pragma('user_version', { simple: true })).toBe(4);
       expect(db.prepare('SELECT project_key FROM sessions WHERE id = ?').get('old')).toEqual({
         project_key: '/Users/x/conductor/workspaces/superdense',
       });
@@ -233,7 +238,7 @@ describe('sessions', () => {
 
       _migrateForTests(db);
 
-      expect(db.pragma('user_version', { simple: true })).toBe(3);
+      expect(db.pragma('user_version', { simple: true })).toBe(4);
 
       const tables = (
         db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{
@@ -258,6 +263,90 @@ describe('sessions', () => {
       expect(matchCols.map((c) => c.name)).not.toContain('query_id');
       expect(db.prepare('SELECT COUNT(*) AS c FROM query_matches').get()).toEqual({ c: 0 });
       expect(db.prepare('SELECT COUNT(*) AS c FROM session_enrich').get()).toEqual({ c: 0 });
+    } finally {
+      db.close();
+    }
+  });
+
+  it('V4 migration: adds sub-agent columns and session_links table', () => {
+    const db = new Database(':memory:');
+    try {
+      db.exec(`
+        CREATE TABLE sessions (
+          id              TEXT PRIMARY KEY,
+          agent           TEXT NOT NULL,
+          session_id      TEXT NOT NULL,
+          log_path        TEXT NOT NULL,
+          pwd             TEXT NOT NULL,
+          project_key     TEXT NOT NULL DEFAULT '',
+          first_prompt    TEXT,
+          summary         TEXT,
+          message_count   INTEGER,
+          git_branch      TEXT,
+          created_at      INTEGER,
+          modified_at     INTEGER,
+          is_sidechain    INTEGER DEFAULT 0,
+          file_mtime      INTEGER,
+          last_indexed_at INTEGER
+        );
+        CREATE TABLE queries (
+          id          TEXT PRIMARY KEY,
+          name        TEXT NOT NULL,
+          predicate   TEXT NOT NULL,
+          created_at  INTEGER,
+          last_run_at INTEGER
+        );
+        CREATE TABLE query_run (
+          id              TEXT PRIMARY KEY,
+          saved_query_id  TEXT REFERENCES queries(id) ON DELETE SET NULL,
+          dsl             TEXT NOT NULL,
+          started_at      INTEGER NOT NULL,
+          finished_at     INTEGER,
+          matched_count   INTEGER
+        );
+        CREATE TABLE query_matches (
+          query_run_id TEXT NOT NULL,
+          session_id   TEXT NOT NULL,
+          added_at     INTEGER,
+          evidence     TEXT,
+          PRIMARY KEY (query_run_id, session_id)
+        );
+        CREATE TABLE session_enrich (
+          session_id   TEXT NOT NULL,
+          query_run_id TEXT NOT NULL,
+          name         TEXT NOT NULL,
+          version      INTEGER NOT NULL,
+          value        TEXT NOT NULL,
+          computed_at  INTEGER NOT NULL,
+          PRIMARY KEY (session_id, query_run_id, name)
+        );
+        PRAGMA user_version = 3;
+      `);
+      db.prepare(
+        'INSERT INTO sessions (id, agent, session_id, log_path, pwd, project_key) VALUES (?, ?, ?, ?, ?, ?)',
+      ).run('root', 'codex', 'root', '/tmp/root.jsonl', '/proj', '/proj');
+
+      _migrateForTests(db);
+
+      expect(db.pragma('user_version', { simple: true })).toBe(4);
+      const sessionCols = (
+        db.prepare('PRAGMA table_info(sessions)').all() as Array<{
+          name: string;
+        }>
+      ).map((c) => c.name);
+      expect(sessionCols).toContain('is_subagent');
+      expect(sessionCols).toContain('parent_session_id');
+      expect(
+        db.prepare('SELECT is_subagent, parent_session_id FROM sessions WHERE id = ?').get('root'),
+      ).toEqual({
+        is_subagent: 0,
+        parent_session_id: null,
+      });
+      expect(
+        db
+          .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='session_links'")
+          .get(),
+      ).toEqual({ name: 'session_links' });
     } finally {
       db.close();
     }
@@ -323,7 +412,7 @@ describe('sessions', () => {
 
       _migrateForTests(db);
 
-      expect(db.pragma('user_version', { simple: true })).toBe(3);
+      expect(db.pragma('user_version', { simple: true })).toBe(4);
 
       const tables = (
         db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{
@@ -361,6 +450,17 @@ describe('sessions', () => {
   it('preserves isSidechain flag', () => {
     upsertSession({ ...BASE, isSidechain: true });
     expect(getSession('sess-1')!.isSidechain).toBe(true);
+  });
+
+  it('upserts and retrieves sub-agent metadata', () => {
+    upsertSession({ ...BASE, id: 'root' });
+    upsertSession({ ...BASE, id: 'child', isSubagent: true, parentSessionId: 'root' });
+
+    expect(getSession('child')).toMatchObject({
+      id: 'child',
+      isSubagent: true,
+      parentSessionId: 'root',
+    });
   });
 
   it('listSessions orders by modifiedAt desc', () => {
@@ -412,6 +512,24 @@ describe('sessions', () => {
     expect(countSessions()).toBe(2);
   });
 
+  it('hides sub-agent sessions by default and includes them on request', () => {
+    upsertSession({ ...BASE, id: 'root', modifiedAt: 2000 });
+    upsertSession({
+      ...BASE,
+      id: 'child',
+      modifiedAt: 3000,
+      isSubagent: true,
+      parentSessionId: 'root',
+      firstPrompt: 'sub-agent prompt',
+    });
+
+    expect(listSessions().map((s) => s.id)).toEqual(['root']);
+    expect(countSessions()).toBe(1);
+    expect(listSessions({ q: 'sub-agent' })).toHaveLength(0);
+    expect(listSessions({ includeSubagents: true }).map((s) => s.id)).toEqual(['child', 'root']);
+    expect(countSessions({ includeSubagents: true })).toBe(2);
+  });
+
   it('countSessions respects agent filter', () => {
     upsertSession({ ...BASE, id: 's1', agent: 'a' });
     upsertSession({ ...BASE, id: 's2', agent: 'b' });
@@ -438,6 +556,107 @@ describe('sessions', () => {
     upsertSession(BASE);
     markIndexed('sess-1', 9999);
     expect(getSession('sess-1')!.lastIndexedAt).toBe(9999);
+  });
+
+  it('stores child links, parent lookup, and capped trees', () => {
+    upsertSession({ ...BASE, id: 'root' });
+    upsertSession({ ...BASE, id: 'child', isSubagent: true, parentSessionId: 'root' });
+    upsertSession({ ...BASE, id: 'grandchild', isSubagent: true, parentSessionId: 'child' });
+    upsertSessionLink('root', 'child', 'subagent', { agent_role: 'explorer' }, 1000);
+    upsertSessionLink('child', 'grandchild', 'subagent', null, 1001);
+
+    expect(getSessionChildren('root')).toEqual([
+      {
+        childId: 'child',
+        parentId: 'root',
+        relation: 'subagent',
+        metadata: { agent_role: 'explorer' },
+      },
+    ]);
+    expect(getSessionParent('child')).toEqual({
+      childId: 'child',
+      parentId: 'root',
+      relation: 'subagent',
+      metadata: { agent_role: 'explorer' },
+    });
+    expect(getSessionTree('root', 1)).toEqual({
+      id: 'root',
+      relation: 'root',
+      children: [{ id: 'child', relation: 'subagent', children: [] }],
+    });
+    expect(getSessionTree('root', 2).children[0]!.children).toEqual([
+      { id: 'grandchild', relation: 'subagent', children: [] },
+    ]);
+    expect(getSessionSubagentSummary('root')).toEqual({
+      v: 1,
+      hasSubagents: true,
+      subagentCount: 1,
+      subagentIds: ['child'],
+      descendantSubagentCount: 2,
+      subagentDepth: 0,
+      rootSessionId: 'root',
+      ancestorSessionIds: [],
+    });
+    expect(getSessionSubagentSummary('child')).toEqual({
+      v: 1,
+      hasSubagents: true,
+      subagentCount: 1,
+      subagentIds: ['grandchild'],
+      descendantSubagentCount: 1,
+      subagentDepth: 1,
+      rootSessionId: 'root',
+      ancestorSessionIds: ['root'],
+    });
+  });
+
+  it('removes stale parent links when a child is reparented', () => {
+    upsertSession({ ...BASE, id: 'parent-a' });
+    upsertSession({ ...BASE, id: 'parent-b' });
+    upsertSession({ ...BASE, id: 'child', isSubagent: true, parentSessionId: 'parent-a' });
+    upsertSessionLink('parent-a', 'child', 'subagent', { agent_role: 'explorer' }, 1000);
+
+    upsertSession({ ...BASE, id: 'child', isSubagent: true, parentSessionId: 'parent-b' });
+    upsertSessionLink('parent-b', 'child', 'subagent', { agent_role: 'worker' }, 1001);
+
+    expect(getSessionChildren('parent-a')).toEqual([]);
+    expect(getSessionChildren('parent-b')).toEqual([
+      {
+        childId: 'child',
+        parentId: 'parent-b',
+        relation: 'subagent',
+        metadata: { agent_role: 'worker' },
+      },
+    ]);
+    expect(getSessionParent('child')).toEqual({
+      childId: 'child',
+      parentId: 'parent-b',
+      relation: 'subagent',
+      metadata: { agent_role: 'worker' },
+    });
+    expect(getSessionTree('parent-a', 1)).toEqual({
+      id: 'parent-a',
+      relation: 'root',
+      children: [],
+    });
+    expect(getSessionTree('parent-b', 1)).toEqual({
+      id: 'parent-b',
+      relation: 'root',
+      children: [{ id: 'child', relation: 'subagent', children: [] }],
+    });
+    expect(getSessionSubagentSummary('parent-a')).toMatchObject({
+      hasSubagents: false,
+      subagentIds: [],
+      descendantSubagentCount: 0,
+    });
+    expect(getSessionSubagentSummary('parent-b')).toMatchObject({
+      hasSubagents: true,
+      subagentIds: ['child'],
+      descendantSubagentCount: 1,
+    });
+    expect(getSessionSubagentSummary('child')).toMatchObject({
+      rootSessionId: 'parent-b',
+      ancestorSessionIds: ['parent-b'],
+    });
   });
 });
 
