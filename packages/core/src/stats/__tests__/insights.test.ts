@@ -10,9 +10,15 @@ vi.mock('../../paths.js', () => ({
   ensureSuperdenseDirs: vi.fn(),
 }));
 
-import { getDb, upsertSession } from '../../db.js';
+import { SYSTEM_RUN_ID, getDb, upsertEnrichment, upsertSession } from '../../db.js';
 import type { Session } from '../../types.js';
-import { getComebackProjects, getWorkRhythm, getDayKinds } from '../insights.js';
+import {
+  getComebackProjects,
+  getDayKinds,
+  getHourDowHeatmap,
+  getPersonalRecords,
+  getWorkRhythm,
+} from '../insights.js';
 
 const DAY = 24 * 60 * 60 * 1000;
 const BASE: Session = {
@@ -138,5 +144,75 @@ describe('getDayKinds', () => {
     const kinds = getDayKinds(now, 7);
 
     expect(kinds.some((k) => k.kind === 'focus' && k.pwds === 1)).toBe(true);
+  });
+});
+
+describe('root-only insight stats', () => {
+  beforeEach(clearDb);
+
+  it('ignores sub-agent sessions across dashboard insight metrics', () => {
+    const now = utcNoon(2026, 5, 21);
+    const rootOld = now - 40 * DAY;
+    const rootNew = now - 2 * DAY;
+    const childHour = Date.UTC(2026, 4, 18, 10, 0, 0);
+
+    upsertSession({ ...BASE, id: 'root-old', pwd: '/root', modifiedAt: rootOld });
+    upsertSession({
+      ...BASE,
+      id: 'root-new',
+      pwd: '/root',
+      createdAt: rootNew,
+      modifiedAt: rootNew,
+    });
+    upsertSession({ ...BASE, id: 'root-new-extra', pwd: '/root', modifiedAt: rootNew + 1000 });
+    upsertEnrichment('root-new', SYSTEM_RUN_ID, 'bash_cli_counts', 1, { git: 1 }, now);
+    upsertEnrichment('root-new', SYSTEM_RUN_ID, 'active_duration', 1, { activeMs: 100 }, now);
+
+    upsertSession({
+      ...BASE,
+      id: 'child-old',
+      pwd: '/child',
+      modifiedAt: now - 40 * DAY,
+      isSubagent: true,
+      parentSessionId: 'root-new',
+    });
+    for (let i = 0; i < 4; i++) {
+      const childTime = childHour + i * 1000;
+      upsertSession({
+        ...BASE,
+        id: `child-${i}`,
+        pwd: '/child',
+        createdAt: childTime,
+        modifiedAt: now - i * 1000,
+        isSubagent: true,
+        parentSessionId: 'root-new',
+      });
+    }
+    upsertEnrichment('child-0', SYSTEM_RUN_ID, 'bash_cli_counts', 1, { git: 10 }, now);
+    upsertEnrichment('child-0', SYSTEM_RUN_ID, 'active_duration', 1, { activeMs: 999 }, now);
+
+    const rootDate = new Date(rootNew);
+    const rootCell = getHourDowHeatmap(now).find(
+      (c) => c.dow === rootDate.getDay() && c.hour === rootDate.getHours(),
+    );
+    const childDate = new Date(childHour);
+    const childCell = getHourDowHeatmap(now).find(
+      (c) => c.dow === childDate.getDay() && c.hour === childDate.getHours(),
+    );
+    expect(rootCell?.count).toBe(1);
+    expect(childCell?.count).toBe(0);
+
+    expect(getWorkRhythm(now).peakHour).toMatchObject({
+      dow: rootDate.getDay(),
+      hour: rootDate.getHours(),
+      count: 1,
+    });
+    expect(getComebackProjects(now).map((p) => p.pwd)).toEqual(['/root']);
+    expect(getDayKinds(now, 7).map((k) => k.sessions)).toEqual([2]);
+    expect(getPersonalRecords()).toEqual({
+      bestDay: { date: '2026-05-19', sessions: 2 },
+      mostCliInSession: { sessionId: 'root-new', total: 1 },
+      longestSession: { sessionId: 'root-new', durationMs: 100 },
+    });
   });
 });

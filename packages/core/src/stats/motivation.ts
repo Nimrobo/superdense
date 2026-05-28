@@ -62,10 +62,14 @@ function addDays(ms: number, n: number): number {
 
 export function getHeaderTotals(): HeaderTotals {
   const db = getDb();
-  const sessions = (db.prepare('SELECT COUNT(*) AS c FROM sessions').get() as { c: number }).c;
+  const sessions = (
+    db.prepare('SELECT COUNT(*) AS c FROM sessions WHERE is_subagent = 0').get() as { c: number }
+  ).c;
   const distinctPwds = (
     db
-      .prepare("SELECT COUNT(DISTINCT COALESCE(NULLIF(project_key, ''), pwd)) AS c FROM sessions")
+      .prepare(
+        "SELECT COUNT(DISTINCT COALESCE(NULLIF(project_key, ''), pwd)) AS c FROM sessions WHERE is_subagent = 0",
+      )
       .get() as { c: number }
   ).c;
   const activeDays = (
@@ -74,13 +78,16 @@ export function getHeaderTotals(): HeaderTotals {
         `
     SELECT COUNT(DISTINCT date(modified_at / 1000, 'unixepoch', 'localtime')) AS c
       FROM sessions
-     WHERE modified_at IS NOT NULL
+     WHERE is_subagent = 0
+       AND modified_at IS NOT NULL
   `,
       )
       .get() as { c: number }
   ).c;
   const distinctAgents = (
-    db.prepare('SELECT COUNT(DISTINCT agent) AS c FROM sessions').get() as { c: number }
+    db.prepare('SELECT COUNT(DISTINCT agent) AS c FROM sessions WHERE is_subagent = 0').get() as {
+      c: number;
+    }
   ).c;
   return { sessions, distinctPwds, activeDays, distinctAgents };
 }
@@ -97,7 +104,8 @@ export function getStreaks(now: number = Date.now()): Streaks {
       `
       SELECT DISTINCT date(modified_at / 1000, 'unixepoch', 'localtime') AS d
         FROM sessions
-       WHERE modified_at IS NOT NULL
+       WHERE is_subagent = 0
+         AND modified_at IS NOT NULL
        ORDER BY d ASC
     `,
     )
@@ -164,7 +172,8 @@ export function getContributions(now: number = Date.now(), days = 366): Contribu
       `
       SELECT date(modified_at / 1000, 'unixepoch', 'localtime') AS d, COUNT(*) AS c
         FROM sessions
-       WHERE modified_at IS NOT NULL
+       WHERE is_subagent = 0
+         AND modified_at IS NOT NULL
          AND modified_at >= ?
        GROUP BY d
     `,
@@ -192,7 +201,7 @@ function computeWindowMetrics(
   const sessions = (
     db
       .prepare(
-        `SELECT COUNT(*) AS c FROM sessions WHERE modified_at IS NOT NULL AND modified_at >= ? AND modified_at < ?`,
+        `SELECT COUNT(*) AS c FROM sessions WHERE is_subagent = 0 AND modified_at IS NOT NULL AND modified_at >= ? AND modified_at < ?`,
       )
       .get(startMs, endMs) as { c: number }
   ).c;
@@ -203,7 +212,8 @@ function computeWindowMetrics(
         `
       SELECT COUNT(DISTINCT COALESCE(NULLIF(project_key, ''), pwd)) AS c
         FROM sessions
-       WHERE modified_at IS NOT NULL AND modified_at >= ? AND modified_at < ?
+       WHERE is_subagent = 0
+         AND modified_at IS NOT NULL AND modified_at >= ? AND modified_at < ?
     `,
       )
       .get(startMs, endMs) as { c: number }
@@ -215,7 +225,8 @@ function computeWindowMetrics(
         `
       SELECT COUNT(DISTINCT date(modified_at / 1000, 'unixepoch', 'localtime')) AS c
         FROM sessions
-       WHERE modified_at IS NOT NULL AND modified_at >= ? AND modified_at < ?
+       WHERE is_subagent = 0
+         AND modified_at IS NOT NULL AND modified_at >= ? AND modified_at < ?
     `,
       )
       .get(startMs, endMs) as { c: number }
@@ -226,7 +237,8 @@ function computeWindowMetrics(
       `
       SELECT agent, COUNT(*) AS c
         FROM sessions
-       WHERE modified_at IS NOT NULL AND modified_at >= ? AND modified_at < ?
+       WHERE is_subagent = 0
+         AND modified_at IS NOT NULL AND modified_at >= ? AND modified_at < ?
        GROUP BY agent
        ORDER BY c DESC
     `,
@@ -244,7 +256,8 @@ function computeWindowMetrics(
                AND se.name = 'bash_cli_counts'
                AND se.query_run_id = ?
         , json_each(se.value) je
-       WHERE s.modified_at IS NOT NULL AND s.modified_at >= ? AND s.modified_at < ?
+       WHERE s.is_subagent = 0
+         AND s.modified_at IS NOT NULL AND s.modified_at >= ? AND s.modified_at < ?
        GROUP BY je.key
        ORDER BY c DESC, je.key ASC
        LIMIT 10
@@ -261,7 +274,8 @@ function computeWindowMetrics(
              COUNT(DISTINCT date(modified_at / 1000, 'unixepoch', 'localtime')) AS active_days,
              MAX(modified_at) AS last_active_at
         FROM sessions
-       WHERE modified_at IS NOT NULL AND modified_at >= ? AND modified_at < ?
+       WHERE is_subagent = 0
+         AND modified_at IS NOT NULL AND modified_at >= ? AND modified_at < ?
        GROUP BY COALESCE(NULLIF(project_key, ''), pwd)
        ORDER BY c DESC, last_active_at DESC
        LIMIT 6
@@ -288,7 +302,8 @@ function computeWindowMetrics(
              COUNT(*) AS sessions,
              MAX(modified_at) AS last_active_at
         FROM sessions
-       WHERE modified_at IS NOT NULL AND modified_at >= ? AND modified_at < ?
+       WHERE is_subagent = 0
+         AND modified_at IS NOT NULL AND modified_at >= ? AND modified_at < ?
        GROUP BY COALESCE(NULLIF(project_key, ''), pwd)
       HAVING active_days >= 3
        ORDER BY active_days DESC, sessions DESC, last_active_at DESC

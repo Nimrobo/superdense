@@ -55,6 +55,16 @@ export {
 } from './queryeval.js';
 export type { AdHocQueryResult, EvaluateResult, QueryResultItem } from './queryeval.js';
 export {
+  getStatsTotals,
+  getMaxLastIndexedAt,
+  getSessionsPerDay,
+  getTopPwds,
+  getTopQueries,
+  getTopTools,
+  listRecentSessions,
+} from './stats/dashboard.js';
+export type { StatsTotals } from './stats/dashboard.js';
+export {
   getHeaderTotals,
   getStreaks,
   getContributions,
