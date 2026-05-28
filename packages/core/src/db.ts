@@ -504,9 +504,7 @@ export function getSessionChildren(parentId: string): SessionLinkRow[] {
 
 export function getSessionParent(childId: string): SessionLinkRow | null {
   const row = getDb()
-    .prepare(
-      'SELECT parent_id, relation, metadata FROM session_links WHERE child_id = ? LIMIT 1',
-    )
+    .prepare('SELECT parent_id, relation, metadata FROM session_links WHERE child_id = ? LIMIT 1')
     .get(childId) as { parent_id: string; relation: string; metadata: string | null } | undefined;
   if (!row) return null;
   return {
@@ -532,6 +530,69 @@ export function getSessionTree(rootId: string, maxDepth = 1): SessionTreeNode {
     return { id, relation, children };
   }
   return build(rootId, 'root', 0);
+}
+
+export interface SessionSubagentSummary {
+  v: 1;
+  hasSubagents: boolean;
+  subagentCount: number;
+  subagentIds: string[];
+  descendantSubagentCount: number;
+  subagentDepth: number;
+  rootSessionId: string;
+  ancestorSessionIds: string[];
+}
+
+function getDirectSubagentChildIds(parentId: string): string[] {
+  const out = new Set<string>();
+  for (const child of getSessionChildren(parentId)) out.add(child.childId);
+  const rows = getDb()
+    .prepare('SELECT id FROM sessions WHERE parent_session_id = ? ORDER BY id ASC')
+    .all(parentId) as Array<{ id: string }>;
+  for (const row of rows) out.add(row.id);
+  return [...out];
+}
+
+function getParentSessionIdForSummary(childId: string): string | null {
+  const link = getSessionParent(childId);
+  if (link) return link.parentId;
+  return getSession(childId)?.parentSessionId ?? null;
+}
+
+export function getSessionSubagentSummary(sessionId: string): SessionSubagentSummary {
+  const subagentIds = getDirectSubagentChildIds(sessionId);
+  const visitedDescendants = new Set<string>([sessionId]);
+  const stack = [...subagentIds];
+  let descendantSubagentCount = 0;
+
+  while (stack.length > 0) {
+    const id = stack.pop()!;
+    if (visitedDescendants.has(id)) continue;
+    visitedDescendants.add(id);
+    descendantSubagentCount += 1;
+    stack.push(...getDirectSubagentChildIds(id));
+  }
+
+  const ancestorsFromParent: string[] = [];
+  const visitedAncestors = new Set<string>([sessionId]);
+  let parentId = getParentSessionIdForSummary(sessionId);
+  while (parentId && !visitedAncestors.has(parentId)) {
+    visitedAncestors.add(parentId);
+    ancestorsFromParent.push(parentId);
+    parentId = getParentSessionIdForSummary(parentId);
+  }
+
+  const ancestorSessionIds = ancestorsFromParent.reverse();
+  return {
+    v: 1,
+    hasSubagents: subagentIds.length > 0,
+    subagentCount: subagentIds.length,
+    subagentIds,
+    descendantSubagentCount,
+    subagentDepth: ancestorSessionIds.length,
+    rootSessionId: ancestorSessionIds[0] ?? sessionId,
+    ancestorSessionIds,
+  };
 }
 
 // ---- queries

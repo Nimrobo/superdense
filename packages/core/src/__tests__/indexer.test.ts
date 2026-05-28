@@ -24,7 +24,14 @@ vi.mock('../adapters/index.js', () => ({
   iterSessionEvents: vi.fn(async function* () {}),
 }));
 
-import { _resetDbForTests, getSession, getSessionChildren, getSessionTree } from '../db.js';
+import {
+  SYSTEM_RUN_ID,
+  _resetDbForTests,
+  getEnrichment,
+  getSession,
+  getSessionChildren,
+  getSessionTree,
+} from '../db.js';
 import { clearEnricherCache } from '../enrichers/index.js';
 import { runDiscovery } from '../indexer.js';
 
@@ -108,5 +115,25 @@ describe('runDiscovery sub-agent indexing', () => {
     expect(getSessionTree('mock-agent:root', 2).children[0]!.children).toEqual([
       { id: 'mock-agent:grandchild', relation: 'subagent', children: [] },
     ]);
+    expect(getEnrichment('mock-agent:root', SYSTEM_RUN_ID, 'subagent_summary')?.value).toEqual({
+      v: 1,
+      hasSubagents: true,
+      subagentCount: 1,
+      subagentIds: ['mock-agent:child'],
+      descendantSubagentCount: 2,
+      subagentDepth: 0,
+      rootSessionId: 'mock-agent:root',
+      ancestorSessionIds: [],
+    });
+    expect(getEnrichment('mock-agent:child', SYSTEM_RUN_ID, 'subagent_summary')?.value).toEqual({
+      v: 1,
+      hasSubagents: true,
+      subagentCount: 1,
+      subagentIds: ['mock-agent:grandchild'],
+      descendantSubagentCount: 1,
+      subagentDepth: 1,
+      rootSessionId: 'mock-agent:root',
+      ancestorSessionIds: ['mock-agent:root'],
+    });
   });
 });

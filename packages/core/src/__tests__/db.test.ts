@@ -20,6 +20,7 @@ import {
   upsertSessionLink,
   getSessionChildren,
   getSessionParent,
+  getSessionSubagentSummary,
   getSessionTree,
   getDirtySessions,
   markIndexed,
@@ -586,6 +587,26 @@ describe('sessions', () => {
     expect(getSessionTree('root', 2).children[0]!.children).toEqual([
       { id: 'grandchild', relation: 'subagent', children: [] },
     ]);
+    expect(getSessionSubagentSummary('root')).toEqual({
+      v: 1,
+      hasSubagents: true,
+      subagentCount: 1,
+      subagentIds: ['child'],
+      descendantSubagentCount: 2,
+      subagentDepth: 0,
+      rootSessionId: 'root',
+      ancestorSessionIds: [],
+    });
+    expect(getSessionSubagentSummary('child')).toEqual({
+      v: 1,
+      hasSubagents: true,
+      subagentCount: 1,
+      subagentIds: ['grandchild'],
+      descendantSubagentCount: 1,
+      subagentDepth: 1,
+      rootSessionId: 'root',
+      ancestorSessionIds: ['root'],
+    });
   });
 });
 

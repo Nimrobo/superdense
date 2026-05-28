@@ -22,7 +22,7 @@ Modern coding agents (Claude Code, Codex, OpenCode) spawn sub-agent sessions to 
 **How to discover children of a session:**
 
 ```bash
-# session show returns hasSubagents, subagentCount, subagentIds, parentSessionId
+# session show returns direct-child sub-agent metadata
 superdense session show <session-id>
 
 # list direct children (id + relation by default; --full for metadata)
@@ -45,9 +45,21 @@ superdense query --query '{"filters":{"filter":{"name":"session","params":{"isSu
 
 # find children of a specific parent via parent: param
 superdense query --query '{"filters":{"filter":{"name":"session","params":{"isSubagent":true,"parent":"claude-code:<parent-id>"}}}}'
+
+# find level-1 sub-agents that spawned their own sub-agents
+superdense query --query '{"filters":{"filter":{"name":"session","params":{"isSubagent":true,"hasSubagents":true,"subagentDepth":{"op":"=","value":1}}}}}'
+
+# find every indexed session in one root/sub-agent tree
+superdense query --query '{"filters":{"filter":{"name":"session","params":{"rootSession":"codex:<root-id>"}}}}'
 ```
 
 **Direct access works unchanged** — `session show <child-id>`, `session path <child-id>`, and `compactor run <name> <child-id>` all work on sub-agent sessions directly.
+
+**System enrichment:** every indexed session, including sub-agent sessions, gets an always-on `subagent_summary` enrichment. It contains direct-child fields (`hasSubagents`, `subagentCount`, `subagentIds`) plus recursive/tree fields (`descendantSubagentCount`, `subagentDepth`, `rootSessionId`, `ancestorSessionIds`). Inspect it with:
+
+```bash
+superdense session enrichments <session-id> --name subagent_summary
+```
 
 ## Workflow
 
@@ -102,7 +114,7 @@ superdense index
 
 ## Metadata Guidance
 
-Use metadata to decide whether a session is worth compacting. Useful signals include the user's prompt, working directory, project key, tools or commands used, errors, touched paths, and plan-mode fields.
+Use metadata to decide whether a session is worth compacting. Useful signals include the user's prompt, working directory, project key, tools or commands used, errors, touched paths, plan-mode fields, and `subagent_summary` fields.
 
 ## Query Guidance
 
@@ -148,6 +160,23 @@ Sub-agent fields:
     "filter": {
       "name": "session",
       "params": { "isSubagent": true, "parent": "claude-code:<parent-id>" }
+    }
+  }
+}
+```
+
+Nested sub-agent fields:
+
+```json
+{
+  "filters": {
+    "filter": {
+      "name": "session",
+      "params": {
+        "isSubagent": true,
+        "hasSubagents": true,
+        "subagentDepth": { "op": "=", "value": 1 }
+      }
     }
   }
 }

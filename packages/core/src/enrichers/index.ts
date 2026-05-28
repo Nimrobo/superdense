@@ -9,6 +9,7 @@ import { hasErrorsEnricher } from './has-errors.js';
 import { insightRunEnricher } from './insight-run.js';
 import { readUserEnrichers } from './loader.js';
 import { planModeEnricher } from './plan-mode.js';
+import { subagentSummaryEnricher } from './subagent-summary.js';
 import { toolCountsEnricher } from './tool-counts.js';
 import type { Enricher } from './types.js';
 
@@ -21,6 +22,7 @@ const BUILTINS: Enricher[] = [
   insightRunEnricher,
   activeDurationEnricher,
   planModeEnricher,
+  subagentSummaryEnricher,
 ];
 
 const registry: Enricher[] = [...BUILTINS];
@@ -88,9 +90,14 @@ function shouldRun(
   return false;
 }
 
-async function runOne(enricher: Enricher, session: Session, queryRunId: string): Promise<void> {
+async function runOne(
+  enricher: Enricher,
+  session: Session,
+  queryRunId: string,
+  opts: { force?: boolean } = {},
+): Promise<void> {
   const stored = getEnrichment(session.id, queryRunId, enricher.name);
-  if (!shouldRun(stored, enricher, session)) return;
+  if (!opts.force && !shouldRun(stored, enricher, session)) return;
   try {
     const value = await enricher.run({
       session,
@@ -117,10 +124,11 @@ export async function runEnricherByNameForSession(
   name: string,
   session: Session,
   queryRunId: string,
+  opts: { force?: boolean } = {},
 ): Promise<void> {
   const enricher = getEnricher(name);
   if (!enricher) return;
-  await runOne(enricher, session, queryRunId);
+  await runOne(enricher, session, queryRunId, opts);
 }
 
 export type { Enricher, EnricherContext } from './types.js';

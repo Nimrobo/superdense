@@ -2,6 +2,7 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { adapters } from './adapters/index.js';
 import {
+  SYSTEM_RUN_ID,
   getQuery,
   getSession,
   listQueryMatches,
@@ -12,6 +13,7 @@ import {
 import {
   loadUserEnrichers,
   refreshActiveEnricherNames,
+  runEnricherByNameForSession,
   runEnrichersForSession,
 } from './enrichers/index.js';
 import { GROUPS_DIR } from './paths.js';
@@ -82,6 +84,9 @@ async function indexSubagentsRecursive(
     count++;
 
     count += await indexSubagentsRecursive(adapter, id, d.sessionId, depth + 1, visited);
+    await runEnricherByNameForSession('subagent_summary', session, SYSTEM_RUN_ID, {
+      force: true,
+    });
   }
 
   return count;
@@ -134,6 +139,9 @@ export async function runDiscovery(): Promise<{ discovered: number }> {
       count += subCount;
       progress.total += subCount;
       progress.done += subCount;
+      await runEnricherByNameForSession('subagent_summary', session, SYSTEM_RUN_ID, {
+        force: true,
+      });
     }
   }
   progress = { ...progress, phase: 'idle' };

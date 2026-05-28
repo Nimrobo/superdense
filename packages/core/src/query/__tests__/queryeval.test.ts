@@ -21,6 +21,7 @@ import {
   listSessionEnrichments,
   listStandaloneRuns,
   upsertSession,
+  upsertSessionLink,
 } from '../../db.js';
 import { clearEnricherCache, registerEnricher } from '../../enrichers/index.js';
 import { clearFilterCache } from '../../filters/index.js';
@@ -217,5 +218,76 @@ describe('runAdHocQuery', () => {
       items: [expect.objectContaining({ sessionId: 'codex:child' })],
       matched: 1,
     });
+  });
+
+  it('filters sessions by always-on sub-agent summary metadata', async () => {
+    const rootLog = await writeCodexLog('root.jsonl', 'Root work');
+    const childLog = await writeCodexLog('child.jsonl', 'Child work');
+    const grandchildLog = await writeCodexLog('grandchild.jsonl', 'Grandchild work');
+    upsertSession(session('root', rootLog));
+    upsertSession({
+      ...session('child', childLog),
+      isSubagent: true,
+      parentSessionId: 'codex:root',
+    });
+    upsertSession({
+      ...session('grandchild', grandchildLog),
+      isSubagent: true,
+      parentSessionId: 'codex:child',
+    });
+    upsertSessionLink('codex:root', 'codex:child', 'subagent', null, 1000);
+    upsertSessionLink('codex:child', 'codex:grandchild', 'subagent', null, 1001);
+
+    await expect(
+      runAdHocQuery({ filters: { filter: { name: 'session', params: { hasSubagents: true } } } }),
+    ).resolves.toMatchObject({
+      matched: 1,
+      items: [expect.objectContaining({ sessionId: 'codex:root' })],
+    });
+
+    await expect(
+      runAdHocQuery({
+        filters: {
+          filter: {
+            name: 'session',
+            params: {
+              isSubagent: true,
+              hasSubagents: true,
+              subagentDepth: { op: '=', value: 1 },
+            },
+          },
+        },
+      }),
+    ).resolves.toMatchObject({
+      matched: 1,
+      items: [expect.objectContaining({ sessionId: 'codex:child' })],
+    });
+
+    await expect(
+      runAdHocQuery({
+        filters: {
+          filter: {
+            name: 'session',
+            params: {
+              rootSession: 'codex:root',
+              descendantSubagentCount: { op: '>=', value: 2 },
+            },
+          },
+        },
+      }),
+    ).resolves.toMatchObject({
+      matched: 1,
+      items: [expect.objectContaining({ sessionId: 'codex:root' })],
+    });
+
+    const tree = await runAdHocQuery({
+      filters: { filter: { name: 'session', params: { rootSession: 'codex:root' } } },
+    });
+    expect(tree.matched).toBe(3);
+    expect(tree.items.map((item) => item.sessionId).sort()).toEqual([
+      'codex:child',
+      'codex:grandchild',
+      'codex:root',
+    ]);
   });
 });
