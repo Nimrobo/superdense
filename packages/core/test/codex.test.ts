@@ -203,6 +203,168 @@ describe('codexAdapter', () => {
     });
   });
 
+  it('handles mixed source formats when discovering Codex sub-agents', async () => {
+    const dir = await makeTempDir();
+    const rolloutPaths = new Map<string, string>();
+    for (const id of [
+      'root-cli',
+      'root-exec',
+      'root-vscode',
+      'root-invalid-json',
+      'root-null',
+      'child-thread',
+    ]) {
+      const rolloutPath = join(dir, `${id}.jsonl`);
+      rolloutPaths.set(id, rolloutPath);
+      await writeFile(
+        rolloutPath,
+        JSON.stringify({
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [{ type: 'input_text', text: `Prompt for ${id}` }],
+          },
+        }),
+        'utf8',
+      );
+    }
+
+    const dbPath = join(dir, 'state.sqlite');
+    const db = new Database(dbPath);
+    db.exec(`
+      CREATE TABLE threads (
+        id TEXT PRIMARY KEY,
+        rollout_path TEXT NOT NULL,
+        cwd TEXT NOT NULL,
+        first_user_message TEXT,
+        git_branch TEXT,
+        created_at INTEGER,
+        updated_at INTEGER,
+        created_at_ms INTEGER,
+        updated_at_ms INTEGER,
+        source TEXT
+      );
+    `);
+    const insert = db.prepare(
+      `
+      INSERT INTO threads (
+        id, rollout_path, cwd, first_user_message, git_branch,
+        created_at, updated_at, created_at_ms, updated_at_ms, source
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    );
+    insert.run(
+      'root-cli',
+      rolloutPaths.get('root-cli'),
+      '/repo',
+      null,
+      null,
+      1,
+      2,
+      null,
+      null,
+      'cli',
+    );
+    insert.run(
+      'root-exec',
+      rolloutPaths.get('root-exec'),
+      '/repo',
+      null,
+      null,
+      1,
+      2,
+      null,
+      null,
+      'exec',
+    );
+    insert.run(
+      'root-vscode',
+      rolloutPaths.get('root-vscode'),
+      '/repo',
+      null,
+      null,
+      1,
+      2,
+      null,
+      null,
+      'vscode',
+    );
+    insert.run(
+      'root-invalid-json',
+      rolloutPaths.get('root-invalid-json'),
+      '/repo',
+      null,
+      null,
+      1,
+      2,
+      null,
+      null,
+      '{"subagent":',
+    );
+    insert.run(
+      'root-null',
+      rolloutPaths.get('root-null'),
+      '/repo',
+      null,
+      null,
+      1,
+      2,
+      null,
+      null,
+      null,
+    );
+    insert.run(
+      'child-thread',
+      rolloutPaths.get('child-thread'),
+      '/repo',
+      null,
+      null,
+      3,
+      4,
+      null,
+      null,
+      JSON.stringify({
+        subagent: {
+          thread_spawn: {
+            parent_thread_id: 'root-cli',
+            depth: 1,
+            agent_role: 'explorer',
+            agent_nickname: 'Dalton',
+            agent_path: '/agents/explorer',
+          },
+        },
+      }),
+    );
+    db.close();
+    process.env.CODEX_STATE_DB = dbPath;
+
+    const roots = await codexAdapter.discover();
+    const children = await codexAdapter.discoverSubAgentSessions('root-cli');
+
+    expect(roots.map((s) => s.sessionId).sort()).toEqual([
+      'root-cli',
+      'root-exec',
+      'root-invalid-json',
+      'root-null',
+      'root-vscode',
+    ]);
+    expect(children).toHaveLength(1);
+    expect(children[0]).toMatchObject({
+      relation: 'subagent',
+      metadata: {
+        depth: 1,
+        agent_role: 'explorer',
+        agent_nickname: 'Dalton',
+        agent_path: '/agents/explorer',
+      },
+      session: {
+        sessionId: 'child-thread',
+        firstPrompt: 'Prompt for child-thread',
+      },
+    });
+  });
+
   it('normalizes text, tool calls, and tool outputs with pairable ids', async () => {
     const dir = await makeTempDir();
     const rolloutPath = join(dir, 'rollout.jsonl');

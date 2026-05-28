@@ -9,6 +9,8 @@ import { statLogFile } from './claude-code.js';
 import { extractMeaningfulPrompt } from './prompt.js';
 
 const DEFAULT_CODEX_DB = join(homedir(), '.codex', 'state_5.sqlite');
+const CODEX_SUBAGENT_PARENT_THREAD_ID_SQL =
+  "CASE WHEN source IS NOT NULL AND json_valid(source) THEN json_extract(source, '$.subagent.thread_spawn.parent_thread_id') ELSE NULL END";
 
 interface ThreadRow {
   id: string;
@@ -155,10 +157,10 @@ export const codexAdapter: Adapter = {
     if (!db) return [];
     try {
       const hasSource = codexHasSourceColumn(db);
-      // Filter out sub-agent threads: their source JSON contains a subagent.thread_spawn key.
-      const sourceFilter = hasSource
-        ? "AND (source IS NULL OR source NOT LIKE '%\"subagent\"%')"
-        : '';
+      // Filter out sub-agent threads. Codex stores mixed source values: plain
+      // labels like "cli" and JSON sub-agent metadata. Guard json_extract so
+      // plain labels do not make SQLite abort with "malformed JSON".
+      const sourceFilter = hasSource ? `AND (${CODEX_SUBAGENT_PARENT_THREAD_ID_SQL}) IS NULL` : '';
       const rows = db
         .prepare(
           `
@@ -200,7 +202,7 @@ export const codexAdapter: Adapter = {
         FROM threads
         WHERE rollout_path IS NOT NULL AND rollout_path != ''
           AND cwd IS NOT NULL AND cwd != ''
-          AND JSON_EXTRACT(source, '$.subagent.thread_spawn.parent_thread_id') = ?
+          AND (${CODEX_SUBAGENT_PARENT_THREAD_ID_SQL}) = ?
       `,
         )
         .all(parentSessionId) as SubagentThreadRow[];
