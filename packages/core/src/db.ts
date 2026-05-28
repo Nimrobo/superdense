@@ -472,15 +472,22 @@ export function upsertSessionLink(
   metadata: Record<string, unknown> | null,
   createdAt: number,
 ): void {
-  getDb()
-    .prepare(
+  const db = getDb();
+  const metadataJson = metadata ? JSON.stringify(metadata) : null;
+  const tx = db.transaction(() => {
+    db.prepare('DELETE FROM session_links WHERE child_id = ? AND parent_id != ?').run(
+      childId,
+      parentId,
+    );
+    db.prepare(
       `INSERT INTO session_links (parent_id, child_id, relation, metadata, created_at)
        VALUES (?, ?, ?, ?, ?)
        ON CONFLICT(parent_id, child_id) DO UPDATE SET
          relation=excluded.relation,
          metadata=excluded.metadata`,
-    )
-    .run(parentId, childId, relation, metadata ? JSON.stringify(metadata) : null, createdAt);
+    ).run(parentId, childId, relation, metadataJson, createdAt);
+  });
+  tx();
 }
 
 export interface SessionLinkRow {

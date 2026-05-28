@@ -9,6 +9,7 @@ export interface FilterContext {
   logPath: string;
   iterEvents: (logPath: string) => AsyncIterable<TranscriptEvent>;
   getSystemEnrichment: (name: string) => EnrichmentRow | null;
+  includeSubagents?: boolean;
 }
 
 export interface Filter {

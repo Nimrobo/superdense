@@ -80,7 +80,7 @@ const BASE_QUERY: Omit<Query, 'memberCount' | 'lastRunAt'> = {
 function clearDb() {
   const db = getDb();
   db.exec(
-    "DELETE FROM query_matches; DELETE FROM session_enrich; DELETE FROM sessions; DELETE FROM queries; DELETE FROM query_run WHERE id != 'system';",
+    "DELETE FROM query_matches; DELETE FROM session_enrich; DELETE FROM session_links; DELETE FROM sessions; DELETE FROM queries; DELETE FROM query_run WHERE id != 'system';",
   );
 }
 
@@ -606,6 +606,56 @@ describe('sessions', () => {
       subagentDepth: 1,
       rootSessionId: 'root',
       ancestorSessionIds: ['root'],
+    });
+  });
+
+  it('removes stale parent links when a child is reparented', () => {
+    upsertSession({ ...BASE, id: 'parent-a' });
+    upsertSession({ ...BASE, id: 'parent-b' });
+    upsertSession({ ...BASE, id: 'child', isSubagent: true, parentSessionId: 'parent-a' });
+    upsertSessionLink('parent-a', 'child', 'subagent', { agent_role: 'explorer' }, 1000);
+
+    upsertSession({ ...BASE, id: 'child', isSubagent: true, parentSessionId: 'parent-b' });
+    upsertSessionLink('parent-b', 'child', 'subagent', { agent_role: 'worker' }, 1001);
+
+    expect(getSessionChildren('parent-a')).toEqual([]);
+    expect(getSessionChildren('parent-b')).toEqual([
+      {
+        childId: 'child',
+        parentId: 'parent-b',
+        relation: 'subagent',
+        metadata: { agent_role: 'worker' },
+      },
+    ]);
+    expect(getSessionParent('child')).toEqual({
+      childId: 'child',
+      parentId: 'parent-b',
+      relation: 'subagent',
+      metadata: { agent_role: 'worker' },
+    });
+    expect(getSessionTree('parent-a', 1)).toEqual({
+      id: 'parent-a',
+      relation: 'root',
+      children: [],
+    });
+    expect(getSessionTree('parent-b', 1)).toEqual({
+      id: 'parent-b',
+      relation: 'root',
+      children: [{ id: 'child', relation: 'subagent', children: [] }],
+    });
+    expect(getSessionSubagentSummary('parent-a')).toMatchObject({
+      hasSubagents: false,
+      subagentIds: [],
+      descendantSubagentCount: 0,
+    });
+    expect(getSessionSubagentSummary('parent-b')).toMatchObject({
+      hasSubagents: true,
+      subagentIds: ['child'],
+      descendantSubagentCount: 1,
+    });
+    expect(getSessionSubagentSummary('child')).toMatchObject({
+      rootSessionId: 'parent-b',
+      ancestorSessionIds: ['parent-b'],
     });
   });
 });

@@ -25,7 +25,7 @@ import {
 } from '../../db.js';
 import { clearEnricherCache, registerEnricher } from '../../enrichers/index.js';
 import { clearFilterCache } from '../../filters/index.js';
-import { previewQuery, runAdHocQuery } from '../../queryeval.js';
+import { previewQuery, runAdHocQuery, runSavedQuery } from '../../queryeval.js';
 import type { Session } from '../../types.js';
 
 let tempDir: string | undefined;
@@ -184,6 +184,158 @@ describe('runAdHocQuery', () => {
     expect(result.enrichers).toEqual([]);
   });
 
+  it('defaults non-session filters to root sessions for ad-hoc and saved queries', async () => {
+    const rootLog = await writeCodexLog('root.jsonl', 'Fix billing root');
+    const childLog = await writeCodexLog('child.jsonl', 'Fix billing child');
+    upsertSession(session('root', rootLog));
+    upsertSession({
+      ...session('child', childLog),
+      isSubagent: true,
+      parentSessionId: 'codex:root',
+    });
+
+    const filters = { filter: { name: 'user_prompt_contains', params: { keyword: 'billing' } } };
+
+    await expect(runAdHocQuery({ filters })).resolves.toMatchObject({
+      matched: 1,
+      items: [expect.objectContaining({ sessionId: 'codex:root' })],
+    });
+
+    createQuery({
+      id: 'saved-root-default',
+      name: 'Saved root default',
+      filters,
+      enrichers: [],
+      createdAt: 1,
+    });
+    await expect(runSavedQuery('saved-root-default')).resolves.toMatchObject({
+      matched: 1,
+      items: [expect.objectContaining({ sessionId: 'codex:root' })],
+    });
+  });
+
+  it('lets session includeSubagents apply to sibling filters in the same and branch', async () => {
+    const rootLog = await writeCodexLog('root.jsonl', 'Fix billing root');
+    const childLog = await writeCodexLog('child.jsonl', 'Fix billing child');
+    upsertSession(session('root', rootLog));
+    upsertSession({
+      ...session('child', childLog),
+      isSubagent: true,
+      parentSessionId: 'codex:root',
+    });
+
+    const result = await runAdHocQuery({
+      filters: {
+        and: [
+          { filter: { name: 'user_prompt_contains', params: { keyword: 'billing' } } },
+          { filter: { name: 'session', params: { includeSubagents: true } } },
+        ],
+      },
+    });
+
+    expect(result.matched).toBe(2);
+    expect(result.items.map((item) => item.sessionId).sort()).toEqual([
+      'codex:child',
+      'codex:root',
+    ]);
+  });
+
+  it('keeps includeSubagents scoped to its or branch', async () => {
+    const rootBillingLog = await writeCodexLog('root-billing.jsonl', 'Fix billing root');
+    const childBillingLog = await writeCodexLog('child-billing.jsonl', 'Fix billing child');
+    const rootRefundLog = await writeCodexLog('root-refund.jsonl', 'Fix refund root');
+    const childRefundLog = await writeCodexLog('child-refund.jsonl', 'Fix refund child');
+    upsertSession(session('root-billing', rootBillingLog));
+    upsertSession({
+      ...session('child-billing', childBillingLog),
+      isSubagent: true,
+      parentSessionId: 'codex:root-billing',
+    });
+    upsertSession(session('root-refund', rootRefundLog));
+    upsertSession({
+      ...session('child-refund', childRefundLog),
+      isSubagent: true,
+      parentSessionId: 'codex:root-refund',
+    });
+
+    const result = await runAdHocQuery({
+      filters: {
+        or: [
+          {
+            and: [
+              { filter: { name: 'session', params: { includeSubagents: true } } },
+              { filter: { name: 'user_prompt_contains', params: { keyword: 'billing' } } },
+            ],
+          },
+          { filter: { name: 'user_prompt_contains', params: { keyword: 'refund' } } },
+        ],
+      },
+    });
+
+    expect(result.matched).toBe(3);
+    expect(result.items.map((item) => item.sessionId).sort()).toEqual([
+      'codex:child-billing',
+      'codex:root-billing',
+      'codex:root-refund',
+    ]);
+  });
+
+  it('treats nested and includeSubagents like a flattened and', async () => {
+    const rootLog = await writeCodexLog('root.jsonl', 'Fix billing root');
+    const childLog = await writeCodexLog('child.jsonl', 'Fix billing child');
+    upsertSession(session('root', rootLog));
+    upsertSession({
+      ...session('child', childLog),
+      isSubagent: true,
+      parentSessionId: 'codex:root',
+    });
+
+    const result = await runAdHocQuery({
+      filters: {
+        and: [
+          {
+            and: [{ filter: { name: 'session', params: { includeSubagents: true } } }],
+          },
+          { filter: { name: 'user_prompt_contains', params: { keyword: 'billing' } } },
+        ],
+      },
+    });
+
+    expect(result.matched).toBe(2);
+    expect(result.items.map((item) => item.sessionId).sort()).toEqual([
+      'codex:child',
+      'codex:root',
+    ]);
+  });
+
+  it('does not let includeSubagents inside nested or scope sibling and filters', async () => {
+    const rootBillingLog = await writeCodexLog('root-billing.jsonl', 'Fix billing root');
+    const childBillingLog = await writeCodexLog('child-billing.jsonl', 'Fix billing child');
+    upsertSession(session('root-billing', rootBillingLog));
+    upsertSession({
+      ...session('child-billing', childBillingLog),
+      isSubagent: true,
+      parentSessionId: 'codex:root-billing',
+    });
+
+    const result = await runAdHocQuery({
+      filters: {
+        and: [
+          {
+            or: [
+              { filter: { name: 'session', params: { includeSubagents: true } } },
+              { filter: { name: 'session', params: { agent: 'codex' } } },
+            ],
+          },
+          { filter: { name: 'user_prompt_contains', params: { keyword: 'billing' } } },
+        ],
+      },
+    });
+
+    expect(result.matched).toBe(1);
+    expect(result.items).toEqual([expect.objectContaining({ sessionId: 'codex:root-billing' })]);
+  });
+
   it('defaults session filters to roots while allowing sub-agent and parent queries', async () => {
     const rootLog = await writeCodexLog('root.jsonl', 'Root work');
     const childLog = await writeCodexLog('child.jsonl', 'Child work');
@@ -209,6 +361,12 @@ describe('runAdHocQuery', () => {
       items: [expect.objectContaining({ sessionId: 'codex:child' })],
       matched: 1,
     });
+
+    const all = await runAdHocQuery({
+      filters: { filter: { name: 'session', params: { includeSubagents: true } } },
+    });
+    expect(all.matched).toBe(2);
+    expect(all.items.map((item) => item.sessionId).sort()).toEqual(['codex:child', 'codex:root']);
 
     await expect(
       runAdHocQuery({

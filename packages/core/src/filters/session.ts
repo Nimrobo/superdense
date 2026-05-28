@@ -100,6 +100,10 @@ export const sessionFilter: Filter = {
         description:
           'When true, match only sub-agent sessions. When false, match only root sessions. Omitting this param defaults to root-only (false).',
       },
+      includeSubagents: {
+        type: 'boolean',
+        description: 'When true, include both root sessions and sub-agent sessions.',
+      },
       parent: {
         type: 'string',
         description: 'Exact parent session id (adapter:sessionId). Matches direct children only.',
@@ -263,11 +267,13 @@ export const sessionFilter: Filter = {
     const parent = asString(params.parent);
     const rootSession = asString(params.rootSession);
 
-    // Sub-agent filtering: default to root-only when param is omitted, unless
-    // a parent or root tree is requested because those filters target relationships.
+    const includeSubagents = params.includeSubagents === true || ctx.includeSubagents === true;
+
+    // Sub-agent filtering: default to root-only unless the evaluator has scoped
+    // this branch to include sub-agents or a relationship filter is requested.
     if (typeof params.isSubagent === 'boolean') {
       if (!!session.isSubagent !== params.isSubagent) return false;
-    } else if (!parent && !rootSession) {
+    } else if (!includeSubagents && !parent && !rootSession) {
       if (session.isSubagent === true) return false;
     }
 

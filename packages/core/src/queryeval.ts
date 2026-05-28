@@ -79,6 +79,10 @@ export interface AdHocQueryResult {
   enrichers: string[];
 }
 
+interface EvalScope {
+  includeSubagents: boolean;
+}
+
 export async function evaluateQuery(query: Query): Promise<EvaluateResult> {
   await loadUserEnrichers();
   const filters = await loadFilters();
@@ -226,11 +230,19 @@ async function evalQueryFilter(
   session: Session,
   filterByName: Map<string, Filter>,
   systemEnrichers: Set<string>,
+  scope: EvalScope = { includeSubagents: false },
 ): Promise<{ match: boolean; evidence?: string | null }> {
   if (isAnd(p)) {
+    const includeSubagents =
+      scope.includeSubagents ||
+      (await directAndSubagentScopeMatches(p.and, session, filterByName, systemEnrichers));
+    if (session.isSubagent === true && !includeSubagents) return { match: false };
+
     let evidence: string | null | undefined;
     for (const c of p.and) {
-      const r = await evalQueryFilter(c, session, filterByName, systemEnrichers);
+      const r = await evalQueryFilter(c, session, filterByName, systemEnrichers, {
+        includeSubagents,
+      });
       if (!r.match) return { match: false };
       if (r.evidence) evidence = r.evidence;
     }
@@ -238,35 +250,82 @@ async function evalQueryFilter(
   }
   if (isOr(p)) {
     for (const c of p.or) {
-      const r = await evalQueryFilter(c, session, filterByName, systemEnrichers);
+      const r = await evalQueryFilter(c, session, filterByName, systemEnrichers, scope);
       if (r.match) return r;
     }
     return { match: false };
   }
   if (isNot(p)) {
-    const r = await evalQueryFilter(p.not, session, filterByName, systemEnrichers);
+    if (session.isSubagent === true && !scope.includeSubagents) return { match: false };
+    const r = await evalQueryFilter(p.not, session, filterByName, systemEnrichers, scope);
     return { match: !r.match };
   }
   if (isFilterLeaf(p)) {
-    const filter = filterByName.get(p.filter.name);
-    if (!filter) return { match: false };
-    try {
-      const result = await filter.run(
-        {
-          session,
-          logPath: session.logPath,
-          iterEvents: () => iterSessionEvents(session),
-          getSystemEnrichment: (name) =>
-            systemEnrichers.has(name) ? getEnrichment(session.id, SYSTEM_RUN_ID, name) : null,
-        },
-        p.filter.params,
-      );
-      return normalizeFilterResult(result);
-    } catch {
-      return { match: false };
-    }
+    const includeSubagents = scope.includeSubagents || sessionLeafOptsIntoSubagents(p);
+    if (session.isSubagent === true && !includeSubagents) return { match: false };
+    return evalFilterLeaf(p, session, filterByName, systemEnrichers, includeSubagents);
   }
   return { match: false };
+}
+
+async function directAndSubagentScopeMatches(
+  children: QueryFilter[],
+  session: Session,
+  filterByName: Map<string, Filter>,
+  systemEnrichers: Set<string>,
+): Promise<boolean> {
+  if (session.isSubagent !== true) return false;
+  for (const child of children) {
+    if (isAnd(child)) {
+      if (await directAndSubagentScopeMatches(child.and, session, filterByName, systemEnrichers)) {
+        return true;
+      }
+      continue;
+    }
+    if (isFilterLeaf(child) && sessionLeafOptsIntoSubagents(child)) {
+      const r = await evalFilterLeaf(child, session, filterByName, systemEnrichers, true);
+      if (r.match) return true;
+    }
+  }
+  return false;
+}
+
+function sessionLeafOptsIntoSubagents(p: QueryFilter): boolean {
+  if (!isFilterLeaf(p) || p.filter.name !== 'session') return false;
+  const params = p.filter.params;
+  if (params.includeSubagents === true) return true;
+  if (params.isSubagent === true) return true;
+  if (typeof params.parent === 'string' && params.parent.length > 0) return true;
+  if (typeof params.rootSession === 'string' && params.rootSession.length > 0) return true;
+  return false;
+}
+
+async function evalFilterLeaf(
+  p: QueryFilter,
+  session: Session,
+  filterByName: Map<string, Filter>,
+  systemEnrichers: Set<string>,
+  includeSubagents: boolean,
+): Promise<{ match: boolean; evidence?: string | null }> {
+  if (!isFilterLeaf(p)) return { match: false };
+  const filter = filterByName.get(p.filter.name);
+  if (!filter) return { match: false };
+  try {
+    const result = await filter.run(
+      {
+        session,
+        logPath: session.logPath,
+        iterEvents: () => iterSessionEvents(session),
+        getSystemEnrichment: (name) =>
+          systemEnrichers.has(name) ? getEnrichment(session.id, SYSTEM_RUN_ID, name) : null,
+        includeSubagents,
+      },
+      p.filter.params,
+    );
+    return normalizeFilterResult(result);
+  } catch {
+    return { match: false };
+  }
 }
 
 function normalizeFilterResult(result: FilterResult): { match: boolean; evidence?: string | null } {
