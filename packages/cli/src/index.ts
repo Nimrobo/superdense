@@ -31,6 +31,8 @@ import {
   getQuery,
   SYSTEM_RUN_ID,
   getSession,
+  getSessionChildren,
+  getSessionTree,
   indexAll,
   listCompactors,
   listEnrichers,
@@ -158,6 +160,8 @@ function serializeSession(
     createdAt: session.createdAt ?? null,
     modifiedAt: session.modifiedAt ?? null,
     isSidechain: !!session.isSidechain,
+    isSubagent: !!session.isSubagent,
+    parentSessionId: session.parentSessionId ?? null,
     fileMtime: session.fileMtime ?? null,
     lastIndexedAt: session.lastIndexedAt ?? null,
   };
@@ -414,6 +418,7 @@ async function handleSession(
       agent: typeof flags.agent === 'string' ? flags.agent : undefined,
       pwd: typeof flags.pwd === 'string' ? flags.pwd : undefined,
       q: typeof flags.q === 'string' ? flags.q : undefined,
+      includeSubagents: flags['include-subagents'] === true,
       limit,
       offset,
     };
@@ -433,10 +438,56 @@ async function handleSession(
   if (action === 'show') {
     const id = args[1];
     if (!id) throw new Error('session show requires <session-id>');
-    printJson(
-      { session: serializeSession(getExistingSession(id), { includePath: includePath(flags) }) },
-      io,
-    );
+    const session = getExistingSession(id);
+    const children = getSessionChildren(id);
+    const serialized = serializeSession(session, { includePath: includePath(flags) });
+    serialized.isSubagent = !!session.isSubagent;
+    serialized.parentSessionId = session.parentSessionId ?? null;
+    serialized.hasSubagents = children.length > 0;
+    serialized.subagentCount = children.length;
+    serialized.subagentIds = children.map((c) => c.childId);
+    printJson({ session: serialized }, io);
+    return true;
+  }
+  if (action === 'children') {
+    const id = args[1];
+    if (!id) throw new Error('session children requires <session-id>');
+    getExistingSession(id); // validate session exists
+    const children = getSessionChildren(id);
+    if (flags.full === true) {
+      printJson(
+        {
+          parentId: id,
+          items: children.map((c) => ({
+            id: c.childId,
+            relation: c.relation,
+            metadata: c.metadata,
+            session: (() => {
+              const s = getSession(c.childId);
+              return s ? serializeSession(s, { includePath: includePath(flags) }) : null;
+            })(),
+          })),
+        },
+        io,
+      );
+    } else {
+      printJson(
+        {
+          parentId: id,
+          items: children.map((c) => ({ id: c.childId, relation: c.relation })),
+        },
+        io,
+      );
+    }
+    return true;
+  }
+  if (action === 'tree') {
+    const id = args[1];
+    if (!id) throw new Error('session tree requires <session-id>');
+    getExistingSession(id); // validate session exists
+    const depth = intFlag(flags, 'depth', 1, 20);
+    const tree = getSessionTree(id, depth);
+    printJson({ tree }, io);
     return true;
   }
   if (action === 'path') {
@@ -1004,8 +1055,12 @@ export async function runCli(
         '',
         'Commands:',
         '  start|studio        Start the Superdense web UI',
-        '  session list        List indexed sessions',
-        '  session show <id>   Show session metadata',
+        '  session list        List indexed sessions (root sessions only by default)',
+        '      --include-subagents  Include sub-agent sessions in listing',
+        '  session show <id>   Show session metadata (includes hasSubagents, subagentIds)',
+        '  session children <id>  List direct sub-agent children of a session',
+        '      --full          Include full session metadata for each child',
+        '  session tree <id>   Show recursive sub-agent tree (--depth N, default 1)',
         '  session path <id>   Get raw log file path',
         '  session fields      List filters and enrichers',
         '  session enrichments <id>  Get computed enrichments',

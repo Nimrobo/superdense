@@ -91,6 +91,15 @@ export const sessionFilter: Filter = {
         type: 'string',
         description: 'Substring contained in the session summary.',
       },
+      isSubagent: {
+        type: 'boolean',
+        description:
+          'When true, match only sub-agent sessions. When false, match only root sessions. Omitting this param defaults to root-only (false).',
+      },
+      parent: {
+        type: 'string',
+        description: 'Exact parent session id (adapter:sessionId). Matches direct children only.',
+      },
       createdAfter: {
         type: ['number', 'string'],
         description: 'Minimum createdAt timestamp or parseable date.',
@@ -207,6 +216,16 @@ export const sessionFilter: Filter = {
   ],
   async run(ctx, params) {
     const session = ctx.session;
+
+    // Sub-agent filtering: default to root-only when param is omitted.
+    if (typeof params.isSubagent === 'boolean') {
+      if (!!session.isSubagent !== params.isSubagent) return false;
+    } else {
+      if (session.isSubagent === true) return false;
+    }
+
+    const parent = asString(params.parent);
+    if (parent && session.parentSessionId !== parent) return false;
 
     const agent = asString(params.agent);
     if (agent && session.agent !== agent) return false;

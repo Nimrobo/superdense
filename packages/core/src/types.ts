@@ -14,6 +14,8 @@ export interface Session {
   createdAt?: number | null;
   modifiedAt?: number | null;
   isSidechain?: boolean;
+  isSubagent?: boolean;
+  parentSessionId?: string | null;
   fileMtime?: number | null;
   lastIndexedAt?: number | null;
 }
@@ -46,9 +48,16 @@ export interface TranscriptEvent {
   raw?: unknown;
 }
 
+export interface DiscoveredSubAgent {
+  session: DiscoveredSession;
+  relation: 'subagent';
+  metadata?: Record<string, unknown>;
+}
+
 export interface Adapter {
   name: string;
   discover(): Promise<DiscoveredSession[]>;
+  discoverSubAgentSessions(parentSessionId: string): Promise<DiscoveredSubAgent[]>;
   iterEvents(logPath: string): AsyncIterable<TranscriptEvent>;
   sourceMtime?(session: DiscoveredSession): Promise<number | undefined>;
 }

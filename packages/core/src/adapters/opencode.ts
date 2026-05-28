@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
-import type { Adapter, DiscoveredSession, TranscriptEvent } from '../types.js';
+import type { Adapter, DiscoveredSession, DiscoveredSubAgent, TranscriptEvent } from '../types.js';
 import { extractFirstMeaningfulPrompt } from './prompt.js';
 
 interface OpenCodeSessionRow {
@@ -116,7 +116,7 @@ function shouldEmitToolResult(state: any): boolean {
   );
 }
 
-function openCodeSelect(db: Database.Database): string {
+function openCodeSelect(db: Database.Database, whereClause = ''): string {
   const hasProject = tableExists(db, 'project');
   const hasWorkspace = tableExists(db, 'workspace');
   const workspaceHasBranch =
@@ -139,6 +139,7 @@ function openCodeSelect(db: Database.Database): string {
     ${hasProject ? 'LEFT JOIN project p ON p.id = s.project_id' : ''}
     ${workspaceHasBranch ? 'LEFT JOIN workspace w ON w.id = s.workspace_id' : ''}
     LEFT JOIN message m ON m.session_id = s.id
+    ${whereClause ? 'WHERE ' + whereClause : ''}
     GROUP BY s.id
     ORDER BY COALESCE(s.time_updated, 0) DESC
   `;
@@ -174,7 +175,8 @@ export const openCodeAdapter: Adapter = {
     if (!db) return [];
     try {
       if (!tableExists(db, 'session')) return [];
-      const rows = db.prepare(openCodeSelect(db)).all() as OpenCodeSessionRow[];
+      // Only discover root sessions (parent_id IS NULL).
+      const rows = db.prepare(openCodeSelect(db, 's.parent_id IS NULL')).all() as OpenCodeSessionRow[];
       return rows
         .filter((row) => !!row.id)
         .map((row) => {
@@ -189,11 +191,49 @@ export const openCodeAdapter: Adapter = {
             gitBranch: row.git_branch ?? undefined,
             createdAt: row.time_created ?? undefined,
             modifiedAt: row.time_updated ?? undefined,
-            isSidechain: !!row.parent_id,
             raw: row,
           };
         })
         .filter((s) => s.pwd);
+    } catch {
+      return [];
+    } finally {
+      db.close();
+    }
+  },
+
+  async discoverSubAgentSessions(parentSessionId: string): Promise<DiscoveredSubAgent[]> {
+    const dbPath = firstExistingDbPath();
+    if (!dbPath) return [];
+    const db = openReadonlyDb(dbPath);
+    if (!db) return [];
+    try {
+      if (!tableExists(db, 'session')) return [];
+      const rows = db
+        .prepare(openCodeSelect(db, 's.parent_id = ?'))
+        .all(parentSessionId) as OpenCodeSessionRow[];
+      return rows
+        .filter((row) => !!row.id)
+        .map((row) => {
+          const pwd = row.directory || row.project_worktree || '';
+          return {
+            session: {
+              sessionId: row.id,
+              logPath: locator(dbPath, row.id),
+              pwd,
+              firstPrompt: firstPrompt(db, row.id),
+              summary: row.title ?? undefined,
+              messageCount: row.message_count ?? undefined,
+              gitBranch: row.git_branch ?? undefined,
+              createdAt: row.time_created ?? undefined,
+              modifiedAt: row.time_updated ?? undefined,
+              raw: row,
+            },
+            relation: 'subagent' as const,
+            metadata: undefined,
+          };
+        })
+        .filter((s) => s.session.pwd);
     } catch {
       return [];
     } finally {

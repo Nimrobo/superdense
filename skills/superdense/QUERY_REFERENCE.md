@@ -39,6 +39,8 @@ A query is filter JSON. `--query` accepts inline JSON or `@path/to/query.json`. 
 - `toolUsed` — tool name plus optional minimum count.
 - `cliUsed` — CLI name plus optional minimum count.
 - `eventCount` — numeric comparison.
+- `isSubagent` — boolean. `false` (or omitted) matches root sessions only; `true` matches sub-agent sessions only. Omitting this param defaults to root-only, so existing queries are unaffected.
+- `parent` — exact parent session id (`adapter:sessionId`). Matches direct children of that parent. Requires `isSubagent: true`.
 - `enteredPlanMode` — boolean.
 - `planEnterCount` — numeric comparison.
 - `planDurationMs` — numeric comparison over total time in plan mode.
@@ -88,6 +90,16 @@ Project filter examples. In Conductor, `/Users/x/conductor/workspaces/superdense
 { "pwdContains": "casablanca" }
 { "pwd": "/Users/x/conductor/workspaces/superdense/casablanca/packages/core" }
 ```
+
+Sub-agent fields:
+
+```json
+{ "isSubagent": true }
+{ "isSubagent": false }
+{ "isSubagent": true, "parent": "claude-code:502c9379-..." }
+```
+
+`parent` requires `isSubagent: true`. `isSubagent` omitted defaults to `false` (root-only).
 
 ### Timestamp formats
 

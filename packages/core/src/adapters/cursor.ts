@@ -4,7 +4,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
-import type { Adapter, DiscoveredSession, TranscriptEvent } from '../types.js';
+import type { Adapter, DiscoveredSession, DiscoveredSubAgent, TranscriptEvent } from '../types.js';
 import { statLogFile } from './claude-code.js';
 import { extractMeaningfulPrompt } from './prompt.js';
 
@@ -278,6 +278,11 @@ export const cursorAdapter: Adapter = {
     } finally {
       db.close();
     }
+  },
+
+  // TODO: implement when Cursor adds sub-agent support
+  async discoverSubAgentSessions(_parentSessionId: string): Promise<DiscoveredSubAgent[]> {
+    return [];
   },
 
   iterEvents(logPath: string): AsyncIterable<TranscriptEvent> {

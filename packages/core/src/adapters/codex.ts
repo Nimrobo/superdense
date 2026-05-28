@@ -4,7 +4,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import Database from 'better-sqlite3';
-import type { Adapter, DiscoveredSession, TranscriptEvent } from '../types.js';
+import type { Adapter, DiscoveredSession, DiscoveredSubAgent, TranscriptEvent } from '../types.js';
 import { statLogFile } from './claude-code.js';
 import { extractMeaningfulPrompt } from './prompt.js';
 
@@ -20,6 +20,14 @@ interface ThreadRow {
   updated_at?: number | null;
   created_at_ms?: number | null;
   updated_at_ms?: number | null;
+  source?: string | null;
+}
+
+interface SubagentThreadRow extends ThreadRow {
+  depth?: number | null;
+  agent_role?: string | null;
+  agent_nickname?: string | null;
+  agent_path?: string | null;
 }
 
 function codexDbPath(): string {
@@ -118,6 +126,27 @@ function openReadonlyDb(path: string): Database.Database | null {
   }
 }
 
+function codexHasSourceColumn(db: Database.Database): boolean {
+  try {
+    const rows = db.prepare('PRAGMA table_info(threads)').all() as Array<{ name: string }>;
+    return rows.some((r) => r.name === 'source');
+  } catch {
+    return false;
+  }
+}
+
+function rowToDiscoveredSession(row: ThreadRow): DiscoveredSession {
+  return {
+    sessionId: row.id,
+    logPath: row.rollout_path,
+    pwd: row.cwd,
+    gitBranch: row.git_branch ?? undefined,
+    createdAt: row.created_at_ms ?? (row.created_at != null ? row.created_at * 1000 : undefined),
+    modifiedAt: row.updated_at_ms ?? (row.updated_at != null ? row.updated_at * 1000 : undefined),
+    raw: row,
+  };
+}
+
 export const codexAdapter: Adapter = {
   name: 'codex',
 
@@ -125,14 +154,21 @@ export const codexAdapter: Adapter = {
     const db = openReadonlyDb(codexDbPath());
     if (!db) return [];
     try {
+      const hasSource = codexHasSourceColumn(db);
+      // Filter out sub-agent threads: their source JSON contains a subagent.thread_spawn key.
+      const sourceFilter = hasSource
+        ? "AND (source IS NULL OR source NOT LIKE '%\"subagent\"%')"
+        : '';
       const rows = db
         .prepare(
           `
         SELECT id, rollout_path, cwd, first_user_message, git_branch,
                created_at, updated_at, created_at_ms, updated_at_ms
+               ${hasSource ? ', source' : ''}
         FROM threads
         WHERE rollout_path IS NOT NULL AND rollout_path != ''
           AND cwd IS NOT NULL AND cwd != ''
+          ${sourceFilter}
       `,
         )
         .all() as ThreadRow[];
@@ -141,17 +177,61 @@ export const codexAdapter: Adapter = {
       for (const row of rows) {
         if (!row.id || !row.rollout_path || !row.cwd || !existsSync(row.rollout_path)) continue;
         const firstPrompt = await firstPromptFromRollout(row.rollout_path, row.first_user_message);
+        out.push({ ...rowToDiscoveredSession(row), firstPrompt });
+      }
+      return out;
+    } catch {
+      return [];
+    } finally {
+      db.close();
+    }
+  },
+
+  async discoverSubAgentSessions(parentSessionId: string): Promise<DiscoveredSubAgent[]> {
+    const db = openReadonlyDb(codexDbPath());
+    if (!db) return [];
+    try {
+      if (!codexHasSourceColumn(db)) return [];
+      const rows = db
+        .prepare(
+          `
+        SELECT id, rollout_path, cwd, first_user_message, git_branch,
+               created_at, updated_at, created_at_ms, updated_at_ms, source
+        FROM threads
+        WHERE rollout_path IS NOT NULL AND rollout_path != ''
+          AND cwd IS NOT NULL AND cwd != ''
+          AND JSON_EXTRACT(source, '$.subagent.thread_spawn.parent_thread_id') = ?
+      `,
+        )
+        .all(parentSessionId) as SubagentThreadRow[];
+
+      const out: DiscoveredSubAgent[] = [];
+      for (const row of rows) {
+        if (!row.id || !row.rollout_path || !row.cwd || !existsSync(row.rollout_path)) continue;
+        const firstPrompt = await firstPromptFromRollout(row.rollout_path, row.first_user_message);
+        const sourceData = row.source ? (safeJsonParse(row.source) as Record<string, unknown>) : {};
+        const spawn =
+          sourceData?.subagent &&
+          typeof sourceData.subagent === 'object' &&
+          (sourceData.subagent as Record<string, unknown>).thread_spawn
+            ? (sourceData.subagent as Record<string, unknown>).thread_spawn
+            : {};
+        const metadata: Record<string, unknown> = {};
+        if (row.depth != null) metadata.depth = row.depth;
+        if (row.agent_role) metadata.agent_role = row.agent_role;
+        if (row.agent_nickname) metadata.agent_nickname = row.agent_nickname;
+        if (row.agent_path) metadata.agent_path = row.agent_path;
+        if (spawn && typeof spawn === 'object') {
+          const s = spawn as Record<string, unknown>;
+          if (s.depth != null) metadata.depth = s.depth;
+          if (s.agent_role) metadata.agent_role = s.agent_role;
+          if (s.agent_nickname) metadata.agent_nickname = s.agent_nickname;
+          if (s.agent_path) metadata.agent_path = s.agent_path;
+        }
         out.push({
-          sessionId: row.id,
-          logPath: row.rollout_path,
-          pwd: row.cwd,
-          firstPrompt,
-          gitBranch: row.git_branch ?? undefined,
-          createdAt:
-            row.created_at_ms ?? (row.created_at != null ? row.created_at * 1000 : undefined),
-          modifiedAt:
-            row.updated_at_ms ?? (row.updated_at != null ? row.updated_at * 1000 : undefined),
-          raw: row,
+          session: { ...rowToDiscoveredSession(row), firstPrompt },
+          relation: 'subagent',
+          metadata: Object.keys(metadata).length ? metadata : undefined,
         });
       }
       return out;
