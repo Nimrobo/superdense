@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
-import type { Adapter, DiscoveredSession, TranscriptEvent } from '../types.js';
+import type { Adapter, DiscoveredSession, DiscoveredSubAgent, TranscriptEvent } from '../types.js';
 import { extractFirstMeaningfulPrompt, extractMeaningfulPrompt } from './prompt.js';
 
 function claudeProjectsDir(): string {
@@ -47,6 +47,8 @@ export function decodeProjectDir(dir: string): string {
 interface JsonlHead {
   firstPrompt?: string;
   cwd?: string;
+  agentId?: string;
+  slug?: string;
 }
 
 export async function scanJsonlHead(logPath: string, maxLines = 50): Promise<JsonlHead> {
@@ -80,6 +82,12 @@ export async function scanJsonlHead(logPath: string, maxLines = 50): Promise<Jso
         const obj = JSON.parse(line);
         if (!result.cwd && typeof obj?.cwd === 'string' && obj.cwd.startsWith('/')) {
           result.cwd = obj.cwd;
+        }
+        if (!result.agentId && typeof obj?.agentId === 'string' && obj.agentId) {
+          result.agentId = obj.agentId;
+        }
+        if (!result.slug && typeof obj?.slug === 'string' && obj.slug) {
+          result.slug = obj.slug;
         }
         if (!result.firstPrompt) {
           const m = obj?.message;
@@ -133,6 +141,8 @@ export const claudeCodeAdapter: Adapter = {
         const parsed = JSON.parse(raw) as IndexFile;
         for (const e of parsed.entries ?? []) {
           if (!e.sessionId || !e.fullPath) continue;
+          // Skip sub-agent transcripts — they live inside a subagents/ directory.
+          if (e.fullPath.includes('/subagents/')) continue;
           seen.add(e.sessionId);
           let pwd = e.projectPath;
           let firstPrompt = extractMeaningfulPrompt(e.firstPrompt);
@@ -192,6 +202,66 @@ export const claudeCodeAdapter: Adapter = {
       }
     }
     return out;
+  },
+
+  async discoverSubAgentSessions(parentSessionId: string): Promise<DiscoveredSubAgent[]> {
+    const projectsDir = claudeProjectsDir();
+    let projectDirs: string[];
+    try {
+      projectDirs = await readdir(projectsDir);
+    } catch {
+      return [];
+    }
+
+    for (const dir of projectDirs) {
+      const projectPath = join(projectsDir, dir);
+      const subagentsDir = join(projectPath, parentSessionId, 'subagents');
+      let agentFiles: string[];
+      try {
+        agentFiles = await readdir(subagentsDir);
+      } catch {
+        continue;
+      }
+
+      const pwdGuess = decodeProjectDir(dir);
+      const out: DiscoveredSubAgent[] = [];
+
+      for (const f of agentFiles) {
+        if (!f.endsWith('.jsonl')) continue;
+        const logPath = join(subagentsDir, f);
+        let mtime: number | undefined;
+        try {
+          mtime = (await stat(logPath)).mtimeMs;
+        } catch {
+          continue;
+        }
+        const head = await scanJsonlHead(logPath);
+        // agentId from filename: "agent-<id>.jsonl" → "<id>"; also from JSONL head
+        const filenameAgentId = f.startsWith('agent-')
+          ? f.slice('agent-'.length, -'.jsonl'.length)
+          : f.slice(0, -'.jsonl'.length);
+        const agentId = head.agentId ?? filenameAgentId;
+        const slug = head.slug;
+        // Child sessionId: "<parentSessionId>:agent-<agentId>"
+        const sessionId = `${parentSessionId}:agent-${agentId}`;
+        out.push({
+          session: {
+            sessionId,
+            logPath,
+            pwd: head.cwd ?? pwdGuess,
+            firstPrompt: head.firstPrompt,
+            createdAt: mtime,
+            modifiedAt: mtime,
+          },
+          relation: 'subagent',
+          metadata: slug ? { agentId, slug } : { agentId },
+        });
+      }
+
+      if (out.length > 0) return out;
+    }
+
+    return [];
   },
 
   iterEvents(logPath: string): AsyncIterable<TranscriptEvent> {

@@ -1,6 +1,6 @@
 ---
 name: superdense
-version: 0.1.2
+version: 0.2.0
 description: Find & read context prior AI-agent sessions. Use when the user asks about previous or other agent runs, needs context from earlier work, wants to understand what happened, compare attempts, audit decisions/tools/errors, plan-mode behavior, or access the original session record.
 ---
 
@@ -10,8 +10,56 @@ description: Find & read context prior AI-agent sessions. Use when the user asks
 
 - **Session** — one stored agent run, identified by `<adapter>:<sessionId>` (e.g. `codex:abc-123`).
 - **Project key** — normalized project identity used to group related workspaces. For Conductor paths, `/Users/x/conductor/workspaces/superdense/casablanca/packages/core` has project key `/Users/x/conductor/workspaces/superdense`; outside Conductor, project key equals `pwd`.
-- **Session filter** — query filter named `session`; use it for agent, project, `pwd`, time, errors, tools, commands, event count, and plan-mode fields.
+- **Session filter** — query filter named `session`; use it for agent, project, `pwd`, time, errors, tools, commands, event count, plan-mode fields, and sub-agent relationships.
 - **Compactor** — on-demand view that re-reads the session log and prints to stdout. Only `salience` (gist) and `trace` (timeline).
+
+## Sub-Agent Sessions
+
+Modern coding agents (Claude Code, Codex, OpenCode) spawn sub-agent sessions to delegate work. Superdense indexes these as first-class sessions linked to their parent.
+
+**Default behavior**: `session list`, `--q`, saved queries, and ad-hoc queries return **root sessions only**. Sub-agents are hidden by default.
+
+**How to discover children of a session:**
+
+```bash
+# session show returns direct-child sub-agent metadata
+superdense session show <session-id>
+
+# list direct children (id + relation by default; --full for metadata)
+superdense session children <session-id>
+superdense session children <session-id> --full
+
+# recursive tree (default depth=1; use --depth N for deeper)
+superdense session tree <session-id>
+superdense session tree <session-id> --depth 3
+```
+
+**How to include sub-agents in search:**
+
+```bash
+# session list with --include-subagents
+superdense session list --include-subagents
+
+# query DSL: isSubagent param (default false = root-only)
+superdense query --query '{"filters":{"filter":{"name":"session","params":{"isSubagent":true}}}}'
+
+# find children of a specific parent via parent: param
+superdense query --query '{"filters":{"filter":{"name":"session","params":{"isSubagent":true,"parent":"claude-code:<parent-id>"}}}}'
+
+# find level-1 sub-agents that spawned their own sub-agents
+superdense query --query '{"filters":{"filter":{"name":"session","params":{"isSubagent":true,"hasSubagents":true,"subagentDepth":{"op":"=","value":1}}}}}'
+
+# find every indexed session in one root/sub-agent tree
+superdense query --query '{"filters":{"filter":{"name":"session","params":{"rootSession":"codex:<root-id>"}}}}'
+```
+
+**Direct access works unchanged** — `session show <child-id>`, `session path <child-id>`, and `compactor run <name> <child-id>` all work on sub-agent sessions directly.
+
+**System enrichment:** every indexed session, including sub-agent sessions, gets an always-on `subagent_summary` enrichment. It contains direct-child fields (`hasSubagents`, `subagentCount`, `subagentIds`) plus recursive/tree fields (`descendantSubagentCount`, `subagentDepth`, `rootSessionId`, `ancestorSessionIds`). Inspect it with:
+
+```bash
+superdense session enrichments <session-id> --name subagent_summary
+```
 
 ## Workflow
 
@@ -23,7 +71,7 @@ Use the CLI as a staged inspection pipeline: candidate discovery → metadata tr
 superdense index
 ```
 
-1. Find candidate sessions. Pick the discovery path that matches the search:
+1. Find candidate sessions. Root sessions are searched by default; use `session children`/`session tree` or `isSubagent: true` to follow up on delegated work after picking a root candidate. Pick the discovery path that matches the search:
    - `superdense session list --q "text"` — substring search across **first prompt, summary, and working directory** only (case-insensitive `LIKE`). Use for quick keyword/topic/pwd hits.
 
      ```bash
@@ -66,7 +114,7 @@ superdense index
 
 ## Metadata Guidance
 
-Use metadata to decide whether a session is worth compacting. Useful signals include the user's prompt, working directory, project key, tools or commands used, errors, touched paths, and plan-mode fields.
+Use metadata to decide whether a session is worth compacting. Useful signals include the user's prompt, working directory, project key, tools or commands used, errors, touched paths, plan-mode fields, and `subagent_summary` fields.
 
 ## Query Guidance
 
@@ -99,6 +147,36 @@ Specific workspace/path example:
     "filter": {
       "name": "session",
       "params": { "pwdContains": "casablanca", "hasErrors": true }
+    }
+  }
+}
+```
+
+Sub-agent fields:
+
+```json
+{
+  "filters": {
+    "filter": {
+      "name": "session",
+      "params": { "isSubagent": true, "parent": "claude-code:<parent-id>" }
+    }
+  }
+}
+```
+
+Nested sub-agent fields:
+
+```json
+{
+  "filters": {
+    "filter": {
+      "name": "session",
+      "params": {
+        "isSubagent": true,
+        "hasSubagents": true,
+        "subagentDepth": { "op": "=", "value": 1 }
+      }
     }
   }
 }

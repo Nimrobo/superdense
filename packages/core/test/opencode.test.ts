@@ -160,6 +160,66 @@ describe('openCodeAdapter', () => {
     });
   });
 
+  it('keeps OpenCode parent_id rows out of root discovery and returns them as sub-agents', async () => {
+    const dir = await makeTempDir();
+    const dbPath = join(dir, 'opencode.db');
+    writeOpenCodeDb(dbPath);
+    const db = new Database(dbPath);
+    db.prepare(
+      `
+      INSERT INTO session (
+        id, project_id, parent_id, slug, directory, title, version,
+        time_created, time_updated, workspace_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    ).run(
+      'ses_child',
+      'project-1',
+      'ses_1',
+      'child',
+      '/repo',
+      'OpenCode child',
+      '1',
+      2100,
+      2200,
+      'workspace-1',
+    );
+    db.prepare(
+      'INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?)',
+    ).run('msg_child_user', 'ses_child', 2110, 2110, JSON.stringify({ role: 'user' }));
+    db.prepare(
+      'INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run(
+      'part_child_user',
+      'msg_child_user',
+      'ses_child',
+      2111,
+      2111,
+      JSON.stringify({ type: 'text', text: 'Inspect OpenCode child' }),
+    );
+    db.close();
+    process.env.OPENCODE_DB = dbPath;
+
+    const roots = await openCodeAdapter.discover();
+    const children = await openCodeAdapter.discoverSubAgentSessions('ses_1');
+
+    expect(roots.map((s) => s.sessionId)).toEqual(['ses_1']);
+    expect(roots[0].isSidechain).toBeUndefined();
+    expect(children).toHaveLength(1);
+    expect(children[0]).toMatchObject({
+      relation: 'subagent',
+      metadata: undefined,
+      session: {
+        sessionId: 'ses_child',
+        logPath: `opencode:${dbPath}#ses_child`,
+        pwd: '/repo',
+        firstPrompt: 'Inspect OpenCode child',
+        summary: 'OpenCode child',
+        gitBranch: 'feature/opencode',
+      },
+    });
+  });
+
   it('skips setup text parts when discovering the first prompt', async () => {
     const dir = await makeTempDir();
     const dbPath = join(dir, 'opencode.db');

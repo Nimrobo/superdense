@@ -129,6 +129,10 @@ function migrate(db: Database.Database): void {
     runDataMigrationV3(db);
     db.pragma('user_version = 3');
   }
+  if (currentVersion < 4) {
+    runDataMigrationV4(db);
+    db.pragma('user_version = 4');
+  }
 
   ensureSystemRun(db);
 }
@@ -239,6 +243,32 @@ function runDataMigrationV3(db: Database.Database): void {
   tx();
 }
 
+function runDataMigrationV4(db: Database.Database): void {
+  const tx = db.transaction(() => {
+    if (!columnExists(db, 'sessions', 'is_subagent')) {
+      db.exec('ALTER TABLE sessions ADD COLUMN is_subagent INTEGER NOT NULL DEFAULT 0;');
+    }
+    if (!columnExists(db, 'sessions', 'parent_session_id')) {
+      db.exec('ALTER TABLE sessions ADD COLUMN parent_session_id TEXT;');
+    }
+    if (!tableExists(db, 'session_links')) {
+      db.exec(`
+        CREATE TABLE session_links (
+          parent_id  TEXT NOT NULL,
+          child_id   TEXT NOT NULL,
+          relation   TEXT NOT NULL,
+          metadata   TEXT,
+          created_at INTEGER NOT NULL,
+          PRIMARY KEY (parent_id, child_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_session_links_child ON session_links(child_id);
+        CREATE INDEX IF NOT EXISTS idx_session_links_parent ON session_links(parent_id);
+      `);
+    }
+  });
+  tx();
+}
+
 function ensureSystemRun(db: Database.Database): void {
   const now = Date.now();
   db.prepare(
@@ -265,6 +295,8 @@ interface SessionRow {
   created_at: number | null;
   modified_at: number | null;
   is_sidechain: number;
+  is_subagent: number;
+  parent_session_id: string | null;
   file_mtime: number | null;
   last_indexed_at: number | null;
 }
@@ -284,6 +316,8 @@ function rowToSession(r: SessionRow): Session {
     createdAt: r.created_at,
     modifiedAt: r.modified_at,
     isSidechain: !!r.is_sidechain,
+    isSubagent: !!r.is_subagent,
+    parentSessionId: r.parent_session_id ?? null,
     fileMtime: r.file_mtime,
     lastIndexedAt: r.last_indexed_at,
   };
@@ -296,11 +330,11 @@ export function upsertSession(s: Session): void {
     INSERT INTO sessions (
       id, agent, session_id, log_path, pwd, project_key, first_prompt, summary,
       message_count, git_branch, created_at, modified_at, is_sidechain,
-      file_mtime, last_indexed_at
+      is_subagent, parent_session_id, file_mtime, last_indexed_at
     ) VALUES (
       @id, @agent, @sessionId, @logPath, @pwd, @projectKey, @firstPrompt, @summary,
       @messageCount, @gitBranch, @createdAt, @modifiedAt, @isSidechain,
-      @fileMtime, @lastIndexedAt
+      @isSubagent, @parentSessionId, @fileMtime, @lastIndexedAt
     )
     ON CONFLICT(id) DO UPDATE SET
       agent=excluded.agent,
@@ -315,6 +349,8 @@ export function upsertSession(s: Session): void {
       created_at=excluded.created_at,
       modified_at=excluded.modified_at,
       is_sidechain=excluded.is_sidechain,
+      is_subagent=excluded.is_subagent,
+      parent_session_id=excluded.parent_session_id,
       file_mtime=excluded.file_mtime,
       last_indexed_at=excluded.last_indexed_at
   `,
@@ -332,6 +368,8 @@ export function upsertSession(s: Session): void {
     createdAt: s.createdAt ?? null,
     modifiedAt: s.modifiedAt ?? null,
     isSidechain: s.isSidechain ? 1 : 0,
+    isSubagent: s.isSubagent ? 1 : 0,
+    parentSessionId: s.parentSessionId ?? null,
     fileMtime: s.fileMtime ?? null,
     lastIndexedAt: s.lastIndexedAt ?? null,
   });
@@ -343,12 +381,16 @@ export interface SessionFilter {
   q?: string;
   limit?: number;
   offset?: number;
+  includeSubagents?: boolean;
 }
 
 export function listSessions(filter: SessionFilter = {}): Session[] {
   const db = getDb();
   const where: string[] = [];
   const params: Record<string, unknown> = {};
+  if (!filter.includeSubagents) {
+    where.push('is_subagent = 0');
+  }
   if (filter.agent) {
     where.push('agent = @agent');
     params.agent = filter.agent;
@@ -379,6 +421,9 @@ export function countSessions(filter: SessionFilter = {}): number {
   const db = getDb();
   const where: string[] = [];
   const params: Record<string, unknown> = {};
+  if (!filter.includeSubagents) {
+    where.push('is_subagent = 0');
+  }
   if (filter.agent) {
     where.push('agent = @agent');
     params.agent = filter.agent;
@@ -416,6 +461,145 @@ export function getDirtySessions(): Session[] {
 
 export function markIndexed(sessionId: string, now: number): void {
   getDb().prepare('UPDATE sessions SET last_indexed_at = ? WHERE id = ?').run(now, sessionId);
+}
+
+// ---- session links
+
+export function upsertSessionLink(
+  parentId: string,
+  childId: string,
+  relation: string,
+  metadata: Record<string, unknown> | null,
+  createdAt: number,
+): void {
+  const db = getDb();
+  const metadataJson = metadata ? JSON.stringify(metadata) : null;
+  const tx = db.transaction(() => {
+    db.prepare('DELETE FROM session_links WHERE child_id = ? AND parent_id != ?').run(
+      childId,
+      parentId,
+    );
+    db.prepare(
+      `INSERT INTO session_links (parent_id, child_id, relation, metadata, created_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(parent_id, child_id) DO UPDATE SET
+         relation=excluded.relation,
+         metadata=excluded.metadata`,
+    ).run(parentId, childId, relation, metadataJson, createdAt);
+  });
+  tx();
+}
+
+export interface SessionLinkRow {
+  childId: string;
+  parentId: string;
+  relation: string;
+  metadata: Record<string, unknown> | null;
+}
+
+export function getSessionChildren(parentId: string): SessionLinkRow[] {
+  const rows = getDb()
+    .prepare('SELECT child_id, relation, metadata FROM session_links WHERE parent_id = ?')
+    .all(parentId) as Array<{ child_id: string; relation: string; metadata: string | null }>;
+  return rows.map((r) => ({
+    childId: r.child_id,
+    parentId,
+    relation: r.relation,
+    metadata: r.metadata ? (JSON.parse(r.metadata) as Record<string, unknown>) : null,
+  }));
+}
+
+export function getSessionParent(childId: string): SessionLinkRow | null {
+  const row = getDb()
+    .prepare('SELECT parent_id, relation, metadata FROM session_links WHERE child_id = ? LIMIT 1')
+    .get(childId) as { parent_id: string; relation: string; metadata: string | null } | undefined;
+  if (!row) return null;
+  return {
+    childId,
+    parentId: row.parent_id,
+    relation: row.relation,
+    metadata: row.metadata ? (JSON.parse(row.metadata) as Record<string, unknown>) : null,
+  };
+}
+
+export interface SessionTreeNode {
+  id: string;
+  relation: string;
+  children: SessionTreeNode[];
+}
+
+export function getSessionTree(rootId: string, maxDepth = 1): SessionTreeNode {
+  function build(id: string, relation: string, depth: number): SessionTreeNode {
+    const children: SessionTreeNode[] =
+      depth < maxDepth
+        ? getSessionChildren(id).map((c) => build(c.childId, c.relation, depth + 1))
+        : [];
+    return { id, relation, children };
+  }
+  return build(rootId, 'root', 0);
+}
+
+export interface SessionSubagentSummary {
+  v: 1;
+  hasSubagents: boolean;
+  subagentCount: number;
+  subagentIds: string[];
+  descendantSubagentCount: number;
+  subagentDepth: number;
+  rootSessionId: string;
+  ancestorSessionIds: string[];
+}
+
+function getDirectSubagentChildIds(parentId: string): string[] {
+  const out = new Set<string>();
+  for (const child of getSessionChildren(parentId)) out.add(child.childId);
+  const rows = getDb()
+    .prepare('SELECT id FROM sessions WHERE parent_session_id = ? ORDER BY id ASC')
+    .all(parentId) as Array<{ id: string }>;
+  for (const row of rows) out.add(row.id);
+  return [...out];
+}
+
+function getParentSessionIdForSummary(childId: string): string | null {
+  const link = getSessionParent(childId);
+  if (link) return link.parentId;
+  return getSession(childId)?.parentSessionId ?? null;
+}
+
+export function getSessionSubagentSummary(sessionId: string): SessionSubagentSummary {
+  const subagentIds = getDirectSubagentChildIds(sessionId);
+  const visitedDescendants = new Set<string>([sessionId]);
+  const stack = [...subagentIds];
+  let descendantSubagentCount = 0;
+
+  while (stack.length > 0) {
+    const id = stack.pop()!;
+    if (visitedDescendants.has(id)) continue;
+    visitedDescendants.add(id);
+    descendantSubagentCount += 1;
+    stack.push(...getDirectSubagentChildIds(id));
+  }
+
+  const ancestorsFromParent: string[] = [];
+  const visitedAncestors = new Set<string>([sessionId]);
+  let parentId = getParentSessionIdForSummary(sessionId);
+  while (parentId && !visitedAncestors.has(parentId)) {
+    visitedAncestors.add(parentId);
+    ancestorsFromParent.push(parentId);
+    parentId = getParentSessionIdForSummary(parentId);
+  }
+
+  const ancestorSessionIds = ancestorsFromParent.reverse();
+  return {
+    v: 1,
+    hasSubagents: subagentIds.length > 0,
+    subagentCount: subagentIds.length,
+    subagentIds,
+    descendantSubagentCount,
+    subagentDepth: ancestorSessionIds.length,
+    rootSessionId: ancestorSessionIds[0] ?? sessionId,
+    ancestorSessionIds,
+  };
 }
 
 // ---- queries
