@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
 import { DB_PATH, ensureSuperdenseDirs } from './paths.js';
 import { normalizeQueryDefinition, type QueryDefinition } from './query/types.js';
+import { rowToSession, type SessionRow } from './session-row.js';
 import type { Query, QueryMatch, Session } from './types.js';
 import { resolveProjectKey } from './util/project-key.js';
 
@@ -279,48 +280,6 @@ function ensureSystemRun(db: Database.Database): void {
 
 export function _migrateForTests(db: Database.Database): void {
   migrate(db);
-}
-
-interface SessionRow {
-  id: string;
-  agent: string;
-  session_id: string;
-  log_path: string;
-  pwd: string;
-  project_key: string;
-  first_prompt: string | null;
-  summary: string | null;
-  message_count: number | null;
-  git_branch: string | null;
-  created_at: number | null;
-  modified_at: number | null;
-  is_sidechain: number;
-  is_subagent: number;
-  parent_session_id: string | null;
-  file_mtime: number | null;
-  last_indexed_at: number | null;
-}
-
-function rowToSession(r: SessionRow): Session {
-  return {
-    id: r.id,
-    agent: r.agent,
-    sessionId: r.session_id,
-    logPath: r.log_path,
-    pwd: r.pwd,
-    projectKey: r.project_key || resolveProjectKey(r.pwd),
-    firstPrompt: r.first_prompt,
-    summary: r.summary,
-    messageCount: r.message_count,
-    gitBranch: r.git_branch,
-    createdAt: r.created_at,
-    modifiedAt: r.modified_at,
-    isSidechain: !!r.is_sidechain,
-    isSubagent: !!r.is_subagent,
-    parentSessionId: r.parent_session_id ?? null,
-    fileMtime: r.file_mtime,
-    lastIndexedAt: r.last_indexed_at,
-  };
 }
 
 export function upsertSession(s: Session): void {
@@ -1103,103 +1062,6 @@ export function listSessionEnrichments(
   });
 }
 
-// ---- stats / aggregates
-
-export interface StatsTotals {
-  sessions: number;
-  sessionsLast7d: number;
-  distinctPwds: number;
-  distinctAgents: number;
-  queries: number;
-}
-
-export function getStatsTotals(now: number = Date.now()): StatsTotals {
-  const db = getDb();
-  const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
-  const sessions = (db.prepare('SELECT COUNT(*) AS c FROM sessions').get() as { c: number }).c;
-  const sessionsLast7d = (
-    db
-      .prepare(
-        'SELECT COUNT(*) AS c FROM sessions WHERE modified_at IS NOT NULL AND modified_at >= ?',
-      )
-      .get(sevenDaysAgo) as { c: number }
-  ).c;
-  const distinctPwds = (
-    db
-      .prepare("SELECT COUNT(DISTINCT COALESCE(NULLIF(project_key, ''), pwd)) AS c FROM sessions")
-      .get() as { c: number }
-  ).c;
-  const distinctAgents = (
-    db.prepare('SELECT COUNT(DISTINCT agent) AS c FROM sessions').get() as { c: number }
-  ).c;
-  const queries = (db.prepare('SELECT COUNT(*) AS c FROM queries').get() as { c: number }).c;
-  return { sessions, sessionsLast7d, distinctPwds, distinctAgents, queries };
-}
-
-export function getMaxLastIndexedAt(): number | null {
-  const row = getDb().prepare('SELECT MAX(last_indexed_at) AS m FROM sessions').get() as {
-    m: number | null;
-  };
-  return row.m;
-}
-
-export function getSessionsPerDay(days: number): Array<{ date: string; count: number }> {
-  const db = getDb();
-  const rows = db
-    .prepare(
-      `
-    SELECT date(modified_at / 1000, 'unixepoch', 'localtime') AS d, COUNT(*) AS c
-      FROM sessions
-     WHERE modified_at IS NOT NULL
-     GROUP BY d
-     ORDER BY d DESC
-     LIMIT ?
-  `,
-    )
-    .all(days) as Array<{ d: string; c: number }>;
-  return rows.map((r) => ({ date: r.d, count: r.c })).reverse();
-}
-
-export function getTopPwds(limit: number): Array<{ pwd: string; count: number }> {
-  const rows = getDb()
-    .prepare(
-      `
-    SELECT COALESCE(NULLIF(project_key, ''), pwd) AS pwd, COUNT(*) AS c FROM sessions
-     GROUP BY COALESCE(NULLIF(project_key, ''), pwd)
-     ORDER BY c DESC LIMIT ?
-  `,
-    )
-    .all(limit) as Array<{ pwd: string; c: number }>;
-  return rows.map((r) => ({ pwd: r.pwd, count: r.c }));
-}
-
-export function getTopQueries(
-  limit: number,
-): Array<{ id: string; name: string; memberCount: number }> {
-  const rows = getDb()
-    .prepare(
-      `
-    SELECT q.id, q.name, ${LATEST_RUN_MEMBER_COUNT_SQL} AS member_count
-      FROM queries q
-     ORDER BY member_count DESC
-     LIMIT ?
-  `,
-    )
-    .all(limit) as Array<{ id: string; name: string; member_count: number }>;
-  return rows.map((r) => ({ id: r.id, name: r.name, memberCount: r.member_count }));
-}
-
-export function listRecentSessions(limit: number): Session[] {
-  const rows = getDb()
-    .prepare(
-      `
-    SELECT * FROM sessions ORDER BY COALESCE(modified_at, 0) DESC LIMIT ?
-  `,
-    )
-    .all(limit) as SessionRow[];
-  return rows.map(rowToSession);
-}
-
 export interface InsightRunRow {
   sessionId: string;
   insightName: string;
@@ -1249,21 +1111,4 @@ export function listInsightRuns(limit = 200): InsightRunRow[] {
     });
   }
   return out;
-}
-
-export function getTopTools(limit: number): Array<{ tool: string; count: number }> {
-  const rows = getDb()
-    .prepare(
-      `
-    SELECT je.key AS tool, SUM(CAST(je.value AS INTEGER)) AS c
-      FROM session_enrich se, json_each(se.value) je
-     WHERE se.name = 'tool_counts'
-       AND se.query_run_id = ?
-     GROUP BY je.key
-     ORDER BY c DESC
-     LIMIT ?
-  `,
-    )
-    .all(SYSTEM_RUN_ID, limit) as Array<{ tool: string; c: number }>;
-  return rows.map((r) => ({ tool: r.tool, count: r.c }));
 }
