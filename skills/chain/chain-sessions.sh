@@ -1,6 +1,6 @@
 #!/bin/bash
 # Outputs a <past_sessions> block for the current working directory.
-# Called via !`bash ...` in SKILL.md — runs before Claude sees the prompt.
+# Called by Claude shell injection or by Codex after reading the chain skill.
 
 set -euo pipefail
 

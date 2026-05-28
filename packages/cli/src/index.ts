@@ -7,6 +7,7 @@ import {
   readdirSync,
   readFileSync,
   realpathSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
@@ -61,6 +62,7 @@ import open from 'open';
 const CLI_PACKAGE_NAME = '@nimrobo/superdense';
 const NPM_REGISTRY_PACKAGE_URL = `https://registry.npmjs.org/${CLI_PACKAGE_NAME.replace('/', '%2f')}`;
 const SKIP_UPDATE_CHECK_ENV = 'SUPERDENSE_SKIP_UPDATE_CHECK';
+const REQUIRED_STUDIO_SKILLS = ['superdense', 'chain'];
 
 interface CliIo {
   stdout: Pick<typeof console, 'log'>;
@@ -701,11 +703,17 @@ function installSkills(
     const claudeDest = join(target.claudeRoot, name);
     mkdirSync(claudeDest, { recursive: true });
     cpSync(src, claudeDest, { recursive: true });
+    rmSync(join(claudeDest, 'SKILL.codex.md'), { force: true });
     writeInstallMarker(claudeDest, version, target.scope);
 
     const codexDest = join(target.codexRoot, name);
     mkdirSync(codexDest, { recursive: true });
     cpSync(src, codexDest, { recursive: true });
+    const codexSkillPath = join(codexDest, 'SKILL.codex.md');
+    if (existsSync(codexSkillPath)) {
+      cpSync(codexSkillPath, join(codexDest, 'SKILL.md'));
+      rmSync(codexSkillPath, { force: true });
+    }
     writeInstallMarker(codexDest, version, target.scope);
 
     installed.push({ name, claude: claudeDest, codex: codexDest });
@@ -786,6 +794,28 @@ function chooseStudioSkillAction(summary: ReturnType<typeof studioSkillSummary>)
   if (global.status === 'outdated')
     return { scope: 'global', status: 'outdated', version: global.version };
   return { scope: 'global', status: 'missing', version: null };
+}
+
+function chooseRequiredStudioSkillAction(
+  names: string[],
+  cwd: string,
+): {
+  scope: SkillScope;
+  status: Exclude<SkillInstallStatus, 'current'>;
+  names: string[];
+} | null {
+  const actions = names.flatMap((name) => {
+    const action = chooseStudioSkillAction(studioSkillSummary(name, cwd));
+    return action ? [{ name, ...action }] : [];
+  });
+  if (actions.length === 0) return null;
+
+  const scope: SkillScope = actions.some((action) => action.scope === 'local') ? 'local' : 'global';
+  return {
+    scope,
+    status: actions.some((action) => action.status === 'outdated') ? 'outdated' : 'missing',
+    names: actions.map((action) => action.name),
+  };
 }
 
 async function confirm(prompt: string): Promise<boolean> {
@@ -895,17 +925,13 @@ async function checkNpmUpdateForStudio(
 }
 
 async function checkSkillsForStudio(io: CliIo, opts: { cwd: string }): Promise<void> {
-  const name = 'superdense';
-  const summary = studioSkillSummary(name, opts.cwd);
-  const action = chooseStudioSkillAction(summary);
+  const action = chooseRequiredStudioSkillAction(REQUIRED_STUDIO_SKILLS, opts.cwd);
   if (!action) return;
 
   const scopeLabel = action.scope === 'global' ? 'globally' : 'locally';
   if (!io.isTty || !process.stdin.isTTY) {
     const detail =
-      action.status === 'outdated' && action.version
-        ? `skill outdated (${action.version} -> ${summary.sourceVersion})`
-        : `skill missing`;
+      action.status === 'outdated' ? 'required skills outdated' : 'required skills missing';
     const command =
       action.scope === 'local' ? 'superdense skill install --locally' : 'superdense skill install';
     io.stdout.log(`[superdense] hint: ${detail}. Run \`${command}\` to update.`);
@@ -913,13 +939,13 @@ async function checkSkillsForStudio(io: CliIo, opts: { cwd: string }): Promise<v
   }
 
   const prompt =
-    action.status === 'outdated' && action.version
-      ? `Update superdense skill ${scopeLabel} (${action.version} -> ${summary.sourceVersion})? [Y/n] `
-      : `Install superdense skill ${scopeLabel}? [Y/n] `;
+    action.status === 'outdated'
+      ? `Update Superdense skills ${scopeLabel}? [Y/n] `
+      : `Install Superdense skills ${scopeLabel}? [Y/n] `;
   if (await confirm(prompt)) {
-    installSkills([name], { scope: action.scope, cwd: opts.cwd });
+    installSkills(action.names, { scope: action.scope, cwd: opts.cwd });
     io.stdout.log(
-      `[superdense] ${action.status === 'outdated' ? 'updated' : 'installed'} superdense skill ${scopeLabel}.`,
+      `[superdense] ${action.status === 'outdated' ? 'updated' : 'installed'} Superdense skills ${scopeLabel}.`,
     );
   }
 }
