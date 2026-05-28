@@ -94,10 +94,14 @@ interface CursorHeader {
 
 interface ComposerData {
   composerId?: string;
-  createdAt?: number;
+  createdAt?: number | string;
   name?: string;
   text?: string;
   fullConversationHeadersOnly?: CursorHeader[];
+  subComposerIds?: unknown;
+  subagentComposerIds?: unknown;
+  isBestOfNSubcomposer?: boolean;
+  isSpecSubagentDone?: boolean;
 }
 
 interface ToolFormerData {
@@ -228,6 +232,73 @@ function parseComposerIdFromLogPath(logPath: string): {
   };
 }
 
+type CursorChildRelation = 'subagentComposerIds' | 'subComposerIds';
+
+interface CursorChildLink {
+  composerId: string;
+  cursorRelation: CursorChildRelation;
+}
+
+function childLinksFromComposer(composer: ComposerData | undefined): CursorChildLink[] {
+  const out: CursorChildLink[] = [];
+  const seen = new Set<string>();
+  for (const cursorRelation of ['subagentComposerIds', 'subComposerIds'] as const) {
+    const value = composer?.[cursorRelation];
+    if (!Array.isArray(value)) continue;
+    for (const childId of value) {
+      if (typeof childId !== 'string' || !childId || childId === composer?.composerId) continue;
+      if (seen.has(childId)) continue;
+      seen.add(childId);
+      out.push({ composerId: childId, cursorRelation });
+    }
+  }
+  return out;
+}
+
+function getComposer(
+  db: Database.Database,
+  composerId: string,
+): { composer: ComposerData; composerId: string } | undefined {
+  const row = db
+    .prepare(`SELECT value FROM cursorDiskKV WHERE key = ? LIMIT 1`)
+    .get(`composerData:${composerId}`) as { value?: string } | undefined;
+  const composer = safeJsonParse<ComposerData>(row?.value);
+  if (!composer) return undefined;
+  return { composer, composerId: composer.composerId ?? composerId };
+}
+
+function buildDiscoveredComposerSession(
+  db: Database.Database,
+  dbPath: string,
+  composerId: string,
+  composer: ComposerData,
+  pwd: string | undefined,
+): DiscoveredSession | undefined {
+  if (!pwd) return undefined;
+  const headers = composer.fullConversationHeadersOnly ?? [];
+  if (headers.length === 0) return undefined;
+
+  const firstPrompt = firstPromptFromHeaders(
+    db,
+    composerId,
+    headers,
+    composer.name ?? composer.text ?? undefined,
+  );
+  const createdAt = parseCreatedAtMs(composer.createdAt);
+  const modifiedAt = maxBubbleMtime(db, composerId, headers) ?? createdAt;
+
+  return {
+    sessionId: composerId,
+    logPath: `${dbPath}${LOGPATH_FRAGMENT}${composerId}`,
+    pwd,
+    firstPrompt,
+    messageCount: headers.length,
+    createdAt,
+    modifiedAt,
+    raw: { composer: { composerId, createdAt, name: composer.name } },
+  };
+}
+
 export const cursorAdapter: Adapter = {
   name: 'cursor',
 
@@ -242,35 +313,27 @@ export const cursorAdapter: Adapter = {
         .prepare(`SELECT key, value FROM cursorDiskKV WHERE key LIKE 'composerData:%'`)
         .all() as Array<{ key: string; value: string }>;
 
+      const parsedRows = rows
+        .map((row) => {
+          const composer = safeJsonParse<ComposerData>(row.value);
+          const composerId = composer?.composerId ?? row.key.slice('composerData:'.length);
+          return composer && composerId ? { composer, composerId } : undefined;
+        })
+        .filter((row): row is { composer: ComposerData; composerId: string } => !!row);
+
+      const childComposerIds = new Set<string>();
+      for (const { composer } of parsedRows) {
+        for (const child of childLinksFromComposer(composer)) {
+          childComposerIds.add(child.composerId);
+        }
+      }
+
       const out: DiscoveredSession[] = [];
-      for (const row of rows) {
-        const composer = safeJsonParse<ComposerData>(row.value);
-        const composerId = composer?.composerId ?? row.key.slice('composerData:'.length);
-        if (!composerId) continue;
-        const headers = composer?.fullConversationHeadersOnly ?? [];
-        if (headers.length === 0) continue;
+      for (const { composer, composerId } of parsedRows) {
+        if (childComposerIds.has(composerId)) continue;
         const pwd = pwdMap.get(composerId);
-        if (!pwd) continue;
-
-        const firstPrompt = firstPromptFromHeaders(
-          db,
-          composerId,
-          headers,
-          composer?.name ?? composer?.text ?? undefined,
-        );
-        const createdAt = parseCreatedAtMs(composer?.createdAt);
-        const modifiedAt = maxBubbleMtime(db, composerId, headers) ?? createdAt;
-
-        out.push({
-          sessionId: composerId,
-          logPath: `${dbPath}${LOGPATH_FRAGMENT}${composerId}`,
-          pwd,
-          firstPrompt,
-          messageCount: headers.length,
-          createdAt,
-          modifiedAt,
-          raw: { composer: { composerId, createdAt, name: composer?.name } },
-        });
+        const session = buildDiscoveredComposerSession(db, dbPath, composerId, composer, pwd);
+        if (session) out.push(session);
       }
       return out;
     } catch {
@@ -280,9 +343,51 @@ export const cursorAdapter: Adapter = {
     }
   },
 
-  // TODO: implement when Cursor adds sub-agent support
-  async discoverSubAgentSessions(_parentSessionId: string): Promise<DiscoveredSubAgent[]> {
-    return [];
+  async discoverSubAgentSessions(parentSessionId: string): Promise<DiscoveredSubAgent[]> {
+    const dbPath = globalDbPath();
+    const db = openReadonlyDb(dbPath);
+    if (!db) return [];
+
+    try {
+      const parent = getComposer(db, parentSessionId);
+      if (!parent) return [];
+
+      const pwdMap = await buildComposerPwdMap();
+      const parentPwd = pwdMap.get(parent.composerId) ?? pwdMap.get(parentSessionId);
+      const out: DiscoveredSubAgent[] = [];
+      for (const link of childLinksFromComposer(parent.composer)) {
+        const child = getComposer(db, link.composerId);
+        if (!child) continue;
+        const pwd = pwdMap.get(child.composerId) ?? pwdMap.get(link.composerId) ?? parentPwd;
+        const session = buildDiscoveredComposerSession(
+          db,
+          dbPath,
+          child.composerId,
+          child.composer,
+          pwd,
+        );
+        if (!session) continue;
+
+        const metadata: Record<string, unknown> = { cursorRelation: link.cursorRelation };
+        if (typeof child.composer.isBestOfNSubcomposer === 'boolean') {
+          metadata.isBestOfNSubcomposer = child.composer.isBestOfNSubcomposer;
+        }
+        if (typeof child.composer.isSpecSubagentDone === 'boolean') {
+          metadata.isSpecSubagentDone = child.composer.isSpecSubagentDone;
+        }
+
+        out.push({
+          session,
+          relation: 'subagent',
+          metadata,
+        });
+      }
+      return out;
+    } catch {
+      return [];
+    } finally {
+      db.close();
+    }
   },
 
   iterEvents(logPath: string): AsyncIterable<TranscriptEvent> {

@@ -154,6 +154,175 @@ describe('cursorAdapter', () => {
     expect(await cursorAdapter.discover()).toEqual([]);
   });
 
+  it('discovers local sub-agent composer links and hides children from root discovery', async () => {
+    const dir = await makeTempDir();
+    const dbPath = join(dir, 'state.vscdb');
+    const wsStorage = join(dir, 'workspaceStorage');
+    await writeWorkspace(wsStorage, 'ws-parent', '/repo/parent', ['parent']);
+    await writeWorkspace(wsStorage, 'ws-child-2', '/repo/child-2', ['child-2']);
+
+    writeGlobalDb(
+      dbPath,
+      [
+        {
+          key: 'composerData:parent',
+          value: {
+            composerId: 'parent',
+            createdAt: 1_700_000_000_000,
+            subagentComposerIds: ['child-1', 'child-1', 'missing-child'],
+            subComposerIds: ['child-1', 'child-2', 42, null, ''],
+            fullConversationHeadersOnly: [
+              { bubbleId: 'p1', type: 1 },
+              { bubbleId: 'p2', type: 2 },
+            ],
+          },
+        },
+        {
+          key: 'composerData:child-1',
+          value: {
+            composerId: 'child-1',
+            createdAt: 1_700_000_001_000,
+            isBestOfNSubcomposer: true,
+            isSpecSubagentDone: false,
+            fullConversationHeadersOnly: [
+              { bubbleId: 'c1-1', type: 1 },
+              { bubbleId: 'c1-2', type: 2 },
+            ],
+          },
+        },
+        {
+          key: 'composerData:child-2',
+          value: {
+            composerId: 'child-2',
+            createdAt: 1_700_000_002_000,
+            isBestOfNSubcomposer: false,
+            isSpecSubagentDone: true,
+            fullConversationHeadersOnly: [{ bubbleId: 'c2-1', type: 1 }],
+          },
+        },
+      ],
+      [
+        {
+          key: 'bubbleId:parent:p1',
+          value: {
+            bubbleId: 'p1',
+            type: 1,
+            text: 'Parent prompt',
+            createdAt: '2026-05-21T04:00:00.000Z',
+          },
+        },
+        {
+          key: 'bubbleId:parent:p2',
+          value: {
+            bubbleId: 'p2',
+            type: 2,
+            text: 'Parent response',
+            createdAt: '2026-05-21T04:00:10.000Z',
+          },
+        },
+        {
+          key: 'bubbleId:child-1:c1-1',
+          value: {
+            bubbleId: 'c1-1',
+            type: 1,
+            text: 'Child one prompt',
+            createdAt: '2026-05-21T04:01:00.000Z',
+          },
+        },
+        {
+          key: 'bubbleId:child-1:c1-2',
+          value: {
+            bubbleId: 'c1-2',
+            type: 2,
+            text: 'Child one response',
+            createdAt: '2026-05-21T04:01:10.000Z',
+          },
+        },
+        {
+          key: 'bubbleId:child-2:c2-1',
+          value: {
+            bubbleId: 'c2-1',
+            type: 1,
+            text: 'Child two prompt',
+            createdAt: '2026-05-21T04:02:00.000Z',
+          },
+        },
+      ],
+    );
+
+    process.env.CURSOR_GLOBAL_DB = dbPath;
+    process.env.CURSOR_WORKSPACE_STORAGE_DIR = wsStorage;
+
+    const roots = await cursorAdapter.discover();
+    expect(roots.map((s) => s.sessionId)).toEqual(['parent']);
+
+    const children = await cursorAdapter.discoverSubAgentSessions('parent');
+    expect(children).toHaveLength(2);
+    expect(children[0]).toMatchObject({
+      relation: 'subagent',
+      metadata: {
+        cursorRelation: 'subagentComposerIds',
+        isBestOfNSubcomposer: true,
+        isSpecSubagentDone: false,
+      },
+      session: {
+        sessionId: 'child-1',
+        pwd: '/repo/parent',
+        firstPrompt: 'Child one prompt',
+        messageCount: 2,
+        modifiedAt: Date.parse('2026-05-21T04:01:10.000Z'),
+      },
+    });
+    expect(children[1]).toMatchObject({
+      relation: 'subagent',
+      metadata: {
+        cursorRelation: 'subComposerIds',
+        isBestOfNSubcomposer: false,
+        isSpecSubagentDone: true,
+      },
+      session: {
+        sessionId: 'child-2',
+        pwd: '/repo/child-2',
+        firstPrompt: 'Child two prompt',
+        messageCount: 1,
+      },
+    });
+  });
+
+  it('returns no Cursor sub-agents for empty or malformed child-link fields', async () => {
+    const dir = await makeTempDir();
+    const dbPath = join(dir, 'state.vscdb');
+    const wsStorage = join(dir, 'workspaceStorage');
+    await writeWorkspace(wsStorage, 'ws-parent', '/repo/parent', ['parent']);
+
+    writeGlobalDb(
+      dbPath,
+      [
+        {
+          key: 'composerData:parent',
+          value: {
+            composerId: 'parent',
+            subagentComposerIds: 'child-1',
+            subComposerIds: [null, 42, '', 'parent'],
+            fullConversationHeadersOnly: [{ bubbleId: 'p1', type: 1 }],
+          },
+        },
+      ],
+      [
+        {
+          key: 'bubbleId:parent:p1',
+          value: { bubbleId: 'p1', type: 1, text: 'Parent prompt' },
+        },
+      ],
+    );
+
+    process.env.CURSOR_GLOBAL_DB = dbPath;
+    process.env.CURSOR_WORKSPACE_STORAGE_DIR = wsStorage;
+
+    expect(await cursorAdapter.discover()).toHaveLength(1);
+    expect(await cursorAdapter.discoverSubAgentSessions('parent')).toEqual([]);
+  });
+
   it('normalizes user text, assistant text, and tool call+result from one bubble', async () => {
     const dir = await makeTempDir();
     const dbPath = join(dir, 'state.vscdb');
