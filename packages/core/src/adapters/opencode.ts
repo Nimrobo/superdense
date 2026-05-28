@@ -176,7 +176,9 @@ export const openCodeAdapter: Adapter = {
     try {
       if (!tableExists(db, 'session')) return [];
       // Only discover root sessions (parent_id IS NULL).
-      const rows = db.prepare(openCodeSelect(db, 's.parent_id IS NULL')).all() as OpenCodeSessionRow[];
+      const rows = db
+        .prepare(openCodeSelect(db, 's.parent_id IS NULL'))
+        .all() as OpenCodeSessionRow[];
       return rows
         .filter((row) => !!row.id)
         .map((row) => {
