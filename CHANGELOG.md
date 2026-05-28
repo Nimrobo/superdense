@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.0](https://github.com/Nimrobo/superdense/compare/@nimrobo/superdense-v0.2.1...@nimrobo/superdense-v0.3.0) (2026-05-28)
+
+
+### Features
+
+* add query run history ([#49](https://github.com/Nimrobo/superdense/issues/49)) ([d59df44](https://github.com/Nimrobo/superdense/commit/d59df44f0d0dcfad8ee654792b1525d59a8a58f4))
+* index and query sub-agent sessions ([#51](https://github.com/Nimrobo/superdense/issues/51)) ([2d786d7](https://github.com/Nimrobo/superdense/commit/2d786d7f8bd9241ff2ea7f1c88b0cc6db9431399))
+* install chain skill for studio ([#52](https://github.com/Nimrobo/superdense/issues/52)) ([b55574a](https://github.com/Nimrobo/superdense/commit/b55574a89b4ce6021c2724353e376c7ef0b8f299))
+
 ## [0.2.1](https://github.com/Nimrobo/superdense/compare/@nimrobo/superdense-v0.2.0...@nimrobo/superdense-v0.2.1) (2026-05-26)
 
 
