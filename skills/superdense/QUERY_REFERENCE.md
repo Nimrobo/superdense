@@ -40,7 +40,7 @@ A query is filter JSON. `--query` accepts inline JSON or `@path/to/query.json`. 
 - `cliUsed` — CLI name plus optional minimum count.
 - `eventCount` — numeric comparison.
 - `isSubagent` — boolean. `false` (or omitted) matches root sessions only; `true` matches sub-agent sessions only. Omitting this param defaults to root-only, so existing queries are unaffected.
-- `parent` — exact parent session id (`adapter:sessionId`). Matches direct children of that parent. Requires `isSubagent: true`.
+- `parent` — exact parent session id (`adapter:sessionId`). Matches direct children of that parent and opts into sub-agent search.
 - `hasSubagents` — boolean. Matches sessions with direct child sub-agents using the always-on `subagent_summary` system enrichment.
 - `subagentCount` — numeric comparison over direct child count.
 - `descendantSubagentCount` — numeric comparison over recursive descendant count.
@@ -109,7 +109,7 @@ Sub-agent fields:
 { "rootSession": "codex:502c9379-..." }
 ```
 
-`parent` requires `isSubagent: true`. `isSubagent` omitted defaults to `false` (root-only), except `rootSession` searches the whole root/sub-agent tree unless `isSubagent` is explicitly set.
+`isSubagent` omitted defaults to `false` (root-only), except `parent` searches direct children and `rootSession` searches the whole root/sub-agent tree unless `isSubagent` is explicitly set.
 
 Find level-1 sub-agents that spawned their own sub-agents:
 
