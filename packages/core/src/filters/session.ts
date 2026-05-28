@@ -217,14 +217,16 @@ export const sessionFilter: Filter = {
   async run(ctx, params) {
     const session = ctx.session;
 
-    // Sub-agent filtering: default to root-only when param is omitted.
+    const parent = asString(params.parent);
+
+    // Sub-agent filtering: default to root-only when param is omitted, unless
+    // a parent is requested because parent filters necessarily target children.
     if (typeof params.isSubagent === 'boolean') {
       if (!!session.isSubagent !== params.isSubagent) return false;
-    } else {
+    } else if (!parent) {
       if (session.isSubagent === true) return false;
     }
 
-    const parent = asString(params.parent);
     if (parent && session.parentSessionId !== parent) return false;
 
     const agent = asString(params.agent);

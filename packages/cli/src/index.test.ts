@@ -42,6 +42,8 @@ vi.mock('@nimrobo/superdense-core', () => ({
   getEnrichment: vi.fn(),
   getQuery: vi.fn(),
   getSession: vi.fn(),
+  getSessionChildren: vi.fn(),
+  getSessionTree: vi.fn(),
   indexAll: vi.fn(),
   listCompactors: vi.fn(),
   listEnrichers: vi.fn(),
@@ -74,6 +76,15 @@ const cliPackageJson = JSON.parse(
   version: string;
 };
 const currentCliVersion = cliPackageJson.version;
+const currentSkillVersion = (() => {
+  const skill = readFileSync(
+    new URL('../../../skills/superdense/SKILL.md', import.meta.url),
+    'utf8',
+  );
+  const match = /^version:\s*(\S+)/m.exec(skill);
+  if (!match) throw new Error('could not read bundled superdense skill version');
+  return match[1]!;
+})();
 const newerCliVersion = (() => {
   const parts = currentCliVersion.split('.').map(Number);
   if (parts.length !== 3 || parts.some((part) => !Number.isInteger(part))) {
@@ -162,6 +173,12 @@ beforeEach(() => {
   delete process.env.CODEX_SKILLS_DIR;
   delete process.env.SUPERDENSE_SKIP_UPDATE_CHECK;
   vi.mocked(core.getSession).mockReturnValue(session);
+  vi.mocked(core.getSessionChildren).mockReturnValue([]);
+  vi.mocked(core.getSessionTree).mockReturnValue({
+    id: 'codex:abc123',
+    relation: 'root',
+    children: [],
+  });
   vi.mocked(core.listSessions).mockReturnValue([sessionTwo, session]);
   vi.mocked(core.countSessions).mockReturnValue(2);
   vi.mocked(core.listSessionEnrichments).mockReturnValue([
@@ -402,6 +419,7 @@ describe('superdense cli agent commands', () => {
       agent: 'codex',
       pwd: '/repo',
       q: 'tests',
+      includeSubagents: false,
       limit: 20,
       offset: 5,
     });
@@ -409,6 +427,7 @@ describe('superdense cli agent commands', () => {
       agent: 'codex',
       pwd: '/repo',
       q: 'tests',
+      includeSubagents: false,
       limit: 20,
       offset: 5,
     });
@@ -427,6 +446,113 @@ describe('superdense cli agent commands', () => {
       session: {
         id: 'codex:abc123',
         logPath: '/tmp/superdense/abc123.jsonl',
+      },
+    });
+  });
+
+  it('passes include-subagents through session list', async () => {
+    const out = io();
+
+    await runCli(['session', 'list', '--include-subagents'], out.io);
+
+    expect(core.listSessions).toHaveBeenCalledWith({
+      agent: undefined,
+      pwd: undefined,
+      q: undefined,
+      includeSubagents: true,
+      limit: 200,
+      offset: 0,
+    });
+    expect(core.countSessions).toHaveBeenCalledWith({
+      agent: undefined,
+      pwd: undefined,
+      q: undefined,
+      includeSubagents: true,
+      limit: 200,
+      offset: 0,
+    });
+  });
+
+  it('augments session show with sub-agent relationship fields', async () => {
+    const out = io();
+    vi.mocked(core.getSessionChildren).mockReturnValue([
+      { childId: 'codex:child', parentId: 'codex:abc123', relation: 'subagent', metadata: null },
+    ]);
+
+    await runCli(['session', 'show', 'codex:abc123'], out.io);
+
+    expect(core.getSessionChildren).toHaveBeenCalledWith('codex:abc123');
+    expect(json(out.stdout[0]!)).toMatchObject({
+      session: {
+        id: 'codex:abc123',
+        isSubagent: false,
+        parentSessionId: null,
+        hasSubagents: true,
+        subagentCount: 1,
+        subagentIds: ['codex:child'],
+      },
+    });
+  });
+
+  it('lists direct session children with optional full metadata', async () => {
+    vi.mocked(core.getSessionChildren).mockReturnValue([
+      {
+        childId: 'codex:child',
+        parentId: 'codex:abc123',
+        relation: 'subagent',
+        metadata: { agent_role: 'explorer' },
+      },
+    ]);
+    vi.mocked(core.getSession).mockImplementation((id: string) =>
+      id === 'codex:child'
+        ? {
+            ...session,
+            id: 'codex:child',
+            sessionId: 'child',
+            isSubagent: true,
+            parentSessionId: 'codex:abc123',
+          }
+        : session,
+    );
+    const compact = io();
+    const full = io();
+
+    await runCli(['session', 'children', 'codex:abc123'], compact.io);
+    await runCli(['session', 'children', 'codex:abc123', '--full'], full.io);
+
+    expect(json(compact.stdout[0]!)).toEqual({
+      parentId: 'codex:abc123',
+      items: [{ id: 'codex:child', relation: 'subagent' }],
+    });
+    expect(json(full.stdout[0]!)).toMatchObject({
+      parentId: 'codex:abc123',
+      items: [
+        {
+          id: 'codex:child',
+          relation: 'subagent',
+          metadata: { agent_role: 'explorer' },
+          session: { id: 'codex:child', isSubagent: true, parentSessionId: 'codex:abc123' },
+        },
+      ],
+    });
+  });
+
+  it('prints a capped session tree', async () => {
+    const out = io();
+    vi.mocked(core.getSessionTree).mockReturnValue({
+      id: 'codex:abc123',
+      relation: 'root',
+      children: [{ id: 'codex:child', relation: 'subagent', children: [] }],
+    });
+
+    await runCli(['session', 'tree', 'codex:abc123', '--depth', '2'], out.io);
+
+    expect(core.getSessionTree).toHaveBeenCalledWith('codex:abc123', 2);
+    expect(json(out.stdout[0]!)).toEqual({
+      tree: {
+        id: 'codex:abc123',
+        relation: 'root',
+        children: [{ id: 'codex:child', relation: 'subagent', children: [] }],
       },
     });
   });
@@ -678,12 +804,12 @@ describe('superdense cli agent commands', () => {
     expect(existsSync(join(codexSkill, 'agents', 'openai.yaml'))).toBe(true);
     expect(json(readFileSync(join(claudeSkill, '.superdense-install.json'), 'utf8'))).toMatchObject(
       {
-        version: '0.1.2',
+        version: currentSkillVersion,
         scope: 'global',
       },
     );
     expect(json(readFileSync(join(codexSkill, '.superdense-install.json'), 'utf8'))).toMatchObject({
-      version: '0.1.2',
+      version: currentSkillVersion,
       scope: 'global',
     });
     expect(json(out.stdout[0]!)).toEqual({
@@ -739,7 +865,7 @@ describe('superdense cli agent commands', () => {
     expect(existsSync(join(root, 'global-codex', 'superdense'))).toBe(false);
     expect(json(readFileSync(join(claudeSkill, '.superdense-install.json'), 'utf8'))).toMatchObject(
       {
-        version: '0.1.2',
+        version: currentSkillVersion,
         scope: 'local',
       },
     );
@@ -810,7 +936,7 @@ describe('superdense cli agent commands', () => {
     await runCli(['studio', '--no-open'], out.io);
 
     expect(out.stdout[0]).toBe(
-      '[superdense] hint: skill outdated (0.0.1 -> 0.1.2). Run `superdense skill install` to update.',
+      `[superdense] hint: skill outdated (0.0.1 -> ${currentSkillVersion}). Run \`superdense skill install\` to update.`,
     );
     expect(existsSync(join(claudeSkill, '.superdense-install.json'))).toBe(false);
     expect(existsSync(join(codexSkill, '.superdense-install.json'))).toBe(false);

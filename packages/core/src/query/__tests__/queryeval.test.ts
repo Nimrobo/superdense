@@ -182,4 +182,40 @@ describe('runAdHocQuery', () => {
     expect(result.items).toEqual([expect.objectContaining({ sessionId: 'codex:matched' })]);
     expect(result.enrichers).toEqual([]);
   });
+
+  it('defaults session filters to roots while allowing sub-agent and parent queries', async () => {
+    const rootLog = await writeCodexLog('root.jsonl', 'Root work');
+    const childLog = await writeCodexLog('child.jsonl', 'Child work');
+    upsertSession(session('root', rootLog));
+    upsertSession({
+      ...session('child', childLog),
+      isSubagent: true,
+      parentSessionId: 'codex:root',
+    });
+
+    await expect(
+      runAdHocQuery({ filters: { filter: { name: 'session', params: {} } } }),
+    ).resolves.toMatchObject({
+      items: [expect.objectContaining({ sessionId: 'codex:root' })],
+      matched: 1,
+    });
+
+    await expect(
+      runAdHocQuery({
+        filters: { filter: { name: 'session', params: { isSubagent: true } } },
+      }),
+    ).resolves.toMatchObject({
+      items: [expect.objectContaining({ sessionId: 'codex:child' })],
+      matched: 1,
+    });
+
+    await expect(
+      runAdHocQuery({
+        filters: { filter: { name: 'session', params: { parent: 'codex:root' } } },
+      }),
+    ).resolves.toMatchObject({
+      items: [expect.objectContaining({ sessionId: 'codex:child' })],
+      matched: 1,
+    });
+  });
 });
