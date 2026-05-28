@@ -823,6 +823,51 @@ describe('superdense cli agent commands', () => {
     });
   });
 
+  it('installs the chain skill with agent-specific Codex instructions', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'superdense-chain-skill-'));
+    tempRoots.push(root);
+    process.env.CLAUDE_SKILLS_DIR = join(root, 'claude');
+    process.env.CODEX_SKILLS_DIR = join(root, 'codex');
+    const out = io();
+
+    await runCli(['skill', 'install', 'chain'], out.io);
+
+    const claudeSkill = join(root, 'claude', 'chain');
+    const codexSkill = join(root, 'codex', 'chain');
+    expect(readFileSync(join(claudeSkill, 'SKILL.md'), 'utf8')).toContain(
+      '!`bash ~/.claude/skills/chain/chain-sessions.sh`',
+    );
+    expect(readFileSync(join(codexSkill, 'SKILL.md'), 'utf8')).toContain(
+      'bash ~/.codex/skills/chain/chain-sessions.sh',
+    );
+    expect(readFileSync(join(codexSkill, 'SKILL.md'), 'utf8')).not.toContain(
+      '~/.claude/skills/chain',
+    );
+    expect(existsSync(join(claudeSkill, 'SKILL.codex.md'))).toBe(false);
+    expect(existsSync(join(codexSkill, 'SKILL.codex.md'))).toBe(false);
+    expect(existsSync(join(claudeSkill, 'chain-sessions.sh'))).toBe(true);
+    expect(existsSync(join(codexSkill, 'chain-sessions.sh'))).toBe(true);
+    expect(json(readFileSync(join(claudeSkill, '.superdense-install.json'), 'utf8'))).toMatchObject(
+      {
+        version: '0.1.0',
+        scope: 'global',
+      },
+    );
+    expect(json(readFileSync(join(codexSkill, '.superdense-install.json'), 'utf8'))).toMatchObject({
+      version: '0.1.0',
+      scope: 'global',
+    });
+    expect(json(out.stdout[0]!)).toEqual({
+      installed: [
+        {
+          name: 'chain',
+          claude: claudeSkill,
+          codex: codexSkill,
+        },
+      ],
+    });
+  });
+
   it('installs all bundled skills when no skill name is provided', async () => {
     const root = mkdtempSync(join(tmpdir(), 'superdense-skills-'));
     tempRoots.push(root);
@@ -840,10 +885,17 @@ describe('superdense cli agent commands', () => {
           claude: join(root, 'claude', 'superdense'),
           codex: join(root, 'codex', 'superdense'),
         }),
+        expect.objectContaining({
+          name: 'chain',
+          claude: join(root, 'claude', 'chain'),
+          codex: join(root, 'codex', 'chain'),
+        }),
       ]),
     );
     expect(existsSync(join(root, 'claude', 'superdense', 'agents', 'openai.yaml'))).toBe(true);
     expect(existsSync(join(root, 'codex', 'superdense', 'agents', 'openai.yaml'))).toBe(true);
+    expect(existsSync(join(root, 'claude', 'chain', 'chain-sessions.sh'))).toBe(true);
+    expect(existsSync(join(root, 'codex', 'chain', 'chain-sessions.sh'))).toBe(true);
   });
 
   it('installs a skill locally under the current working directory', async () => {
@@ -891,15 +943,62 @@ describe('superdense cli agent commands', () => {
     await runCli(['studio', '--no-open'], out.io);
 
     expect(out.stdout[0]).toBe(
-      '[superdense] hint: skill missing. Run `superdense skill install` to update.',
+      '[superdense] hint: required skills missing. Run `superdense skill install` to update.',
     );
     expect(existsSync(join(root, 'global-claude', 'superdense'))).toBe(false);
     expect(existsSync(join(root, 'global-codex', 'superdense'))).toBe(false);
+    expect(existsSync(join(root, 'global-claude', 'chain'))).toBe(false);
+    expect(existsSync(join(root, 'global-codex', 'chain'))).toBe(false);
+    expect(startServer).toHaveBeenCalled();
+  });
+
+  it('installs required studio skills when a tty user confirms', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'superdense-studio-install-skills-'));
+    tempRoots.push(root);
+    process.chdir(root);
+    process.env.CLAUDE_SKILLS_DIR = join(root, 'global-claude');
+    process.env.CODEX_SKILLS_DIR = join(root, 'global-codex');
+    setStdinTty(true);
+    readlineMocks.question.mockResolvedValue('y');
+    const out = io({ isTty: true });
+
+    await runCli(['studio', '--no-open'], out.io);
+
+    expect(readlineMocks.question).toHaveBeenCalledWith(
+      'Install Superdense skills globally? [Y/n] ',
+    );
+    expect(readlineMocks.question).toHaveBeenCalledTimes(1);
+    expect(existsSync(join(root, 'global-claude', 'superdense', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, 'global-codex', 'superdense', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, 'global-claude', 'chain', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, 'global-codex', 'chain', 'SKILL.md'))).toBe(true);
+    expect(out.stdout).toContain('[superdense] installed Superdense skills globally.');
     expect(startServer).toHaveBeenCalled();
   });
 
   it('does not print a studio skill hint when the installed skill is current', async () => {
     const root = mkdtempSync(join(tmpdir(), 'superdense-studio-current-'));
+    tempRoots.push(root);
+    process.chdir(root);
+    process.env.CLAUDE_SKILLS_DIR = join(root, 'global-claude');
+    process.env.CODEX_SKILLS_DIR = join(root, 'global-codex');
+    await runCli(['skill', 'install'], io().io);
+    vi.clearAllMocks();
+    vi.mocked(core.runDiscovery).mockResolvedValue({ discovered: 2 });
+    vi.mocked(core.runQueryEvaluation).mockResolvedValue({ evaluated: 0 });
+    vi.mocked(startServer).mockResolvedValue({ url: 'http://127.0.0.1:4242', close: vi.fn() });
+    vi.mocked(open).mockResolvedValue({} as Awaited<ReturnType<typeof open>>);
+    const out = io();
+
+    await runCli(['studio', '--no-open'], out.io);
+
+    expect(out.stdout[0]).toBe('[superdense] discovering sessions...');
+    expect(out.stdout.some((line) => line.includes('hint: skill'))).toBe(false);
+    expect(startServer).toHaveBeenCalled();
+  });
+
+  it('prints a studio skill hint when only one required skill is installed', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'superdense-studio-partial-'));
     tempRoots.push(root);
     process.chdir(root);
     process.env.CLAUDE_SKILLS_DIR = join(root, 'global-claude');
@@ -914,8 +1013,9 @@ describe('superdense cli agent commands', () => {
 
     await runCli(['studio', '--no-open'], out.io);
 
-    expect(out.stdout[0]).toBe('[superdense] discovering sessions...');
-    expect(out.stdout.some((line) => line.includes('hint: skill'))).toBe(false);
+    expect(out.stdout[0]).toBe(
+      '[superdense] hint: required skills missing. Run `superdense skill install` to update.',
+    );
     expect(startServer).toHaveBeenCalled();
   });
 
@@ -936,7 +1036,7 @@ describe('superdense cli agent commands', () => {
     await runCli(['studio', '--no-open'], out.io);
 
     expect(out.stdout[0]).toBe(
-      `[superdense] hint: skill outdated (0.0.1 -> ${currentSkillVersion}). Run \`superdense skill install\` to update.`,
+      '[superdense] hint: required skills outdated. Run `superdense skill install` to update.',
     );
     expect(existsSync(join(claudeSkill, '.superdense-install.json'))).toBe(false);
     expect(existsSync(join(codexSkill, '.superdense-install.json'))).toBe(false);
