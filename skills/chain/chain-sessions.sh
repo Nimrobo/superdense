@@ -6,19 +6,41 @@ set -euo pipefail
 
 cwd="$PWD"
 
+exclude_ids=()
+[ -n "${CODEX_THREAD_ID:-}" ] && exclude_ids+=("codex:$CODEX_THREAD_ID")
+[ -n "${CLAUDE_CODE_SESSION_ID:-}" ] && exclude_ids+=("claude-code:$CLAUDE_CODE_SESSION_ID")
+[ -n "${CLAUDE_CODE_REMOTE_SESSION_ID:-}" ] && exclude_ids+=("claude-code:$CLAUDE_CODE_REMOTE_SESSION_ID")
+[ -n "${SUPERDENSE_CURRENT_SESSION_ID:-}" ] && exclude_ids+=("$SUPERDENSE_CURRENT_SESSION_ID")
+if [ -n "${SUPERDENSE_EXCLUDE_SESSION_IDS:-}" ]; then
+  IFS=',' read -r -a extra_exclude_ids <<< "$SUPERDENSE_EXCLUDE_SESSION_IDS"
+  for id in "${extra_exclude_ids[@]}"; do
+    [ -n "$id" ] && exclude_ids+=("$id")
+  done
+fi
+
+exclude_json=$(printf '%s\n' "${exclude_ids[@]}" | jq -R 'select(length > 0)' | jq -s '.')
+
 fetch_sessions() {
-  superdense session list --pwd "$1" --limit 3 2>/dev/null || echo '{"items":[],"total":0}'
+  superdense session list --pwd "$1" --limit 25 2>/dev/null || echo '{"items":[],"total":0}'
 }
 
-sessions_json=$(fetch_sessions "$cwd")
-count=$(echo "$sessions_json" | jq '.items | length')
+filter_sessions() {
+  jq \
+    --argjson excludeIds "$exclude_json" \
+    '
+      .items = [
+        (.items // [])[]
+        | . as $session
+        | select(($excludeIds | index($session.id // "")) | not)
+      ][:3]
+      | .total = (.items | length)
+    '
+}
 
-# Auto-index on fresh worktree (no sessions yet), then retry once
-if [ "$count" -eq 0 ]; then
-  superdense index 2>/dev/null || true
-  sessions_json=$(fetch_sessions "$cwd")
-  count=$(echo "$sessions_json" | jq '.items | length')
-fi
+superdense index 2>/dev/null || true
+raw_sessions_json=$(fetch_sessions "$cwd")
+sessions_json=$(echo "$raw_sessions_json" | filter_sessions)
+count=$(echo "$sessions_json" | jq '.items | length')
 
 echo '<past_sessions>'
 
