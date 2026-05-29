@@ -37,6 +37,14 @@ Requires Node 20+. The single `superdense` binary ships everything — the index
 /superdense find why this architecture decision was made
 ```
 
+**`/chain` — give your agent recent session context.** Prefix any task with `/chain` and the agent automatically receives the 3 most recent session IDs for the current workspace. The agent can then call `superdense compactor run salience <id>` on those IDs to read what happened in prior sessions — without you having to dig up IDs or paste in history.
+
+```text
+/chain fix the auth bug
+```
+
+If no sessions exist yet, `/chain` triggers an incremental index automatically. Use it at the start of any session where the agent should be aware of prior work.
+
 ## How Superdense works
 
 1. **Index** sessions from Claude Code, Codex, OpenCode, and similar tools.
