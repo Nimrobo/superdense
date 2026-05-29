@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.1](https://github.com/Nimrobo/superdense/compare/@nimrobo/superdense-v0.3.0...@nimrobo/superdense-v0.3.1) (2026-05-29)
+
+
+### Bug Fixes
+
+* exclude current session from chain output ([#56](https://github.com/Nimrobo/superdense/issues/56)) ([fd8a2b9](https://github.com/Nimrobo/superdense/commit/fd8a2b9790119fff7d289c9223d56f5edd93198a))
+* exclude sub-agent sessions from dashboard stats ([#54](https://github.com/Nimrobo/superdense/issues/54)) ([4a753f4](https://github.com/Nimrobo/superdense/commit/4a753f479253c24de7941b0999fc4ccbd0419c80))
+* improve session query search behavior ([#55](https://github.com/Nimrobo/superdense/issues/55)) ([de2e07d](https://github.com/Nimrobo/superdense/commit/de2e07de011ef252b30dc80855de41fe5ecc1f3b))
+
+
+### Documentation
+
+* document the /chain skill in README ([#57](https://github.com/Nimrobo/superdense/issues/57)) ([92e5b13](https://github.com/Nimrobo/superdense/commit/92e5b13175a1747cae5e6f62017ef41a099bfc91))
+
 ## [0.3.0](https://github.com/Nimrobo/superdense/compare/@nimrobo/superdense-v0.2.1...@nimrobo/superdense-v0.3.0) (2026-05-28)
 
 
