@@ -343,6 +343,37 @@ export interface SessionFilter {
   includeSubagents?: boolean;
 }
 
+function tokenizeQuery(q: string): string[] {
+  const tokens: string[] = [];
+  const re = /"([^"]*)"|(\S+)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(q)) !== null) {
+    const tok = (m[1] ?? m[2] ?? '').trim();
+    if (tok) tokens.push(tok);
+  }
+  return tokens;
+}
+
+function escapeLike(s: string): string {
+  return s.replace(/[\\%_]/g, (c) => '\\' + c);
+}
+
+function applyQFilter(
+  q: string | undefined,
+  where: string[],
+  params: Record<string, unknown>,
+): void {
+  if (!q) return;
+  const tokens = tokenizeQuery(q);
+  tokens.forEach((tok, i) => {
+    const key = `q${i}`;
+    params[key] = `%${escapeLike(tok.toLowerCase())}%`;
+    where.push(
+      `(LOWER(first_prompt) LIKE @${key} ESCAPE '\\' OR LOWER(summary) LIKE @${key} ESCAPE '\\' OR LOWER(pwd) LIKE @${key} ESCAPE '\\')`,
+    );
+  });
+}
+
 export function listSessions(filter: SessionFilter = {}): Session[] {
   const db = getDb();
   const where: string[] = [];
@@ -358,10 +389,7 @@ export function listSessions(filter: SessionFilter = {}): Session[] {
     where.push('pwd = @pwd');
     params.pwd = filter.pwd;
   }
-  if (filter.q) {
-    where.push('(first_prompt LIKE @q OR summary LIKE @q OR pwd LIKE @q)');
-    params.q = `%${filter.q}%`;
-  }
+  applyQFilter(filter.q, where, params);
   const sql = `
     SELECT * FROM sessions
     ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
@@ -391,10 +419,7 @@ export function countSessions(filter: SessionFilter = {}): number {
     where.push('pwd = @pwd');
     params.pwd = filter.pwd;
   }
-  if (filter.q) {
-    where.push('(first_prompt LIKE @q OR summary LIKE @q OR pwd LIKE @q)');
-    params.q = `%${filter.q}%`;
-  }
+  applyQFilter(filter.q, where, params);
   const sql = `SELECT COUNT(*) AS c FROM sessions ${where.length ? 'WHERE ' + where.join(' AND ') : ''}`;
   return (db.prepare(sql).get(params) as { c: number }).c;
 }

@@ -487,6 +487,52 @@ describe('sessions', () => {
     expect(listSessions({ q: 'feature' })[0].id).toBe('s2');
   });
 
+  it('listSessions q is multi-keyword AND, order-independent across fields', () => {
+    upsertSession({ ...BASE, id: 's1', firstPrompt: 'bug in the deploy script' });
+    upsertSession({ ...BASE, id: 's2', firstPrompt: 'unrelated work', summary: 'deploy notes' });
+    upsertSession({ ...BASE, id: 's3', firstPrompt: 'just a bug' });
+
+    // Tokens can match across different fields (firstPrompt + summary on s2).
+    const ids = listSessions({ q: 'deploy bug' })
+      .map((s) => s.id)
+      .sort();
+    expect(ids).toEqual(['s1']);
+    // Reversed order produces the same result.
+    expect(
+      listSessions({ q: 'bug deploy' })
+        .map((s) => s.id)
+        .sort(),
+    ).toEqual(['s1']);
+  });
+
+  it('listSessions q is case-insensitive', () => {
+    upsertSession({ ...BASE, id: 's1', firstPrompt: 'Deploy the thing' });
+    expect(listSessions({ q: 'DEPLOY' })).toHaveLength(1);
+    expect(listSessions({ q: 'deploy' })).toHaveLength(1);
+  });
+
+  it('listSessions q supports quoted phrases', () => {
+    upsertSession({ ...BASE, id: 's1', firstPrompt: 'bar baz happens here' });
+    upsertSession({ ...BASE, id: 's2', firstPrompt: 'bar and then baz separately' });
+    const ids = listSessions({ q: '"bar baz"' }).map((s) => s.id);
+    expect(ids).toEqual(['s1']);
+  });
+
+  it('listSessions q escapes SQL LIKE wildcards', () => {
+    upsertSession({ ...BASE, id: 's1', firstPrompt: 'discount is 50% off' });
+    upsertSession({ ...BASE, id: 's2', firstPrompt: 'fifty something off' });
+    // '%' must be treated literally, not as a wildcard that would match s2.
+    const ids = listSessions({ q: '50%' }).map((s) => s.id);
+    expect(ids).toEqual(['s1']);
+  });
+
+  it('listSessions empty or whitespace-only q matches everything', () => {
+    upsertSession({ ...BASE, id: 's1' });
+    upsertSession({ ...BASE, id: 's2' });
+    expect(listSessions({ q: '' })).toHaveLength(2);
+    expect(listSessions({ q: '   ' })).toHaveLength(2);
+  });
+
   it('listSessions respects limit', () => {
     for (let i = 0; i < 5; i++) upsertSession({ ...BASE, id: `s${i}` });
     expect(listSessions({ limit: 3 })).toHaveLength(3);
