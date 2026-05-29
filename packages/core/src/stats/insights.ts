@@ -37,7 +37,9 @@ export interface PersonalRecords {
 export function getHourDowHeatmap(now: number = Date.now()): HeatmapCell[] {
   const since = now - 90 * DAY_MS;
   const rows = getDb()
-    .prepare(`SELECT created_at FROM sessions WHERE created_at IS NOT NULL AND created_at >= ?`)
+    .prepare(
+      `SELECT created_at FROM sessions WHERE is_subagent = 0 AND created_at IS NOT NULL AND created_at >= ?`,
+    )
     .all(since) as Array<{ created_at: number }>;
   const grid: number[][] = Array.from({ length: 7 }, () => Array(24).fill(0));
   for (const r of rows) {
@@ -60,7 +62,8 @@ export function getWorkRhythm(now: number = Date.now()): WorkRhythm {
       `
       SELECT created_at
         FROM sessions
-       WHERE created_at IS NOT NULL AND created_at >= ?
+       WHERE is_subagent = 0
+         AND created_at IS NOT NULL AND created_at >= ?
     `,
     )
     .all(since) as Array<{ created_at: number }>;
@@ -118,7 +121,8 @@ export function getComebackProjects(now: number = Date.now()): ComebackProject[]
              MAX(CASE WHEN modified_at <  ? THEN modified_at END) AS prior_max,
              SUM(CASE WHEN modified_at >= ? THEN 1 ELSE 0 END)   AS recent_count
         FROM sessions
-       WHERE modified_at IS NOT NULL
+       WHERE is_subagent = 0
+         AND modified_at IS NOT NULL
        GROUP BY COALESCE(NULLIF(project_key, ''), pwd)
       HAVING recent_count > 0 AND prior_max IS NOT NULL
     `,
@@ -155,7 +159,8 @@ export function getDayKinds(now: number = Date.now(), days = 30): DayKind[] {
              COUNT(*) AS sessions,
              COUNT(DISTINCT COALESCE(NULLIF(project_key, ''), pwd)) AS pwds
         FROM sessions
-       WHERE modified_at IS NOT NULL AND modified_at >= ?
+       WHERE is_subagent = 0
+         AND modified_at IS NOT NULL AND modified_at >= ?
        GROUP BY d
        ORDER BY d ASC
     `,
@@ -176,7 +181,8 @@ export function getPersonalRecords(): PersonalRecords {
       `
       SELECT date(modified_at / 1000, 'unixepoch', 'localtime') AS d, COUNT(*) AS c
         FROM sessions
-       WHERE modified_at IS NOT NULL
+       WHERE is_subagent = 0
+         AND modified_at IS NOT NULL
        GROUP BY d
        ORDER BY c DESC
        LIMIT 1
@@ -191,8 +197,10 @@ export function getPersonalRecords(): PersonalRecords {
         SELECT SUM(CAST(je.value AS INTEGER)) FROM json_each(se.value) je
       ) AS total
         FROM session_enrich se
+        JOIN sessions s ON s.id = se.session_id
        WHERE se.name = 'bash_cli_counts'
          AND se.query_run_id = ?
+         AND s.is_subagent = 0
        ORDER BY total DESC
        LIMIT 1
     `,
@@ -207,8 +215,10 @@ export function getPersonalRecords(): PersonalRecords {
       SELECT se.session_id AS id,
              CAST(json_extract(se.value, '$.activeMs') AS INTEGER) AS dur
         FROM session_enrich se
+        JOIN sessions s ON s.id = se.session_id
        WHERE se.name = 'active_duration'
          AND se.query_run_id = ?
+         AND s.is_subagent = 0
          AND dur IS NOT NULL
          AND dur > 0
        ORDER BY dur DESC

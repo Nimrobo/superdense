@@ -229,4 +229,56 @@ describe('getWindowMetrics', () => {
       count: 2,
     });
   });
+
+  it('ignores sub-agent sessions across dashboard motivation metrics', () => {
+    const now = utcNoon(2026, 5, 21);
+    const rootTime = now - DAY;
+    upsertSession({
+      ...BASE,
+      id: 'root',
+      agent: 'root-agent',
+      pwd: '/root',
+      createdAt: rootTime,
+      modifiedAt: rootTime,
+    });
+    upsertEnrichment('root', SYSTEM_RUN_ID, 'bash_cli_counts', 1, { git: 1 }, now);
+
+    for (let i = 0; i < 3; i++) {
+      const childTime = now - i * DAY - 1000;
+      upsertSession({
+        ...BASE,
+        id: `child-${i}`,
+        agent: 'child-agent',
+        pwd: '/child',
+        createdAt: childTime,
+        modifiedAt: childTime,
+        isSubagent: true,
+        parentSessionId: 'root',
+      });
+      upsertEnrichment(`child-${i}`, SYSTEM_RUN_ID, 'bash_cli_counts', 1, { git: 10, gh: 9 }, now);
+    }
+
+    expect(getHeaderTotals()).toEqual({
+      sessions: 1,
+      distinctPwds: 1,
+      activeDays: 1,
+      distinctAgents: 1,
+    });
+    expect(getStreaks(now)).toMatchObject({ current: 1, longest: 1 });
+
+    const contributions = getContributions(now, 3);
+    expect(contributions[contributions.length - 1]).toMatchObject({ count: 0 });
+    expect(contributions[contributions.length - 2]).toMatchObject({ count: 1 });
+
+    const window = getWindowMetrics(7, now).window;
+    expect(window.sessions).toBe(1);
+    expect(window.projects).toBe(1);
+    expect(window.activeDays).toBe(1);
+    expect(window.adapterMix).toEqual([{ agent: 'root-agent', count: 1 }]);
+    expect(window.topClis).toEqual([{ cli: 'git', count: 1 }]);
+    expect(window.activeProjects).toEqual([
+      { pwd: '/root', count: 1, activeDays: 1, lastActiveAt: rootTime },
+    ]);
+    expect(window.repeatedReturnProjects).toEqual([]);
+  });
 });

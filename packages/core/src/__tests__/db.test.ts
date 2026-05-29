@@ -46,13 +46,6 @@ import {
   listQueryRunsForSavedQuery,
   listStandaloneRuns,
   getQueryRun,
-  getStatsTotals,
-  getMaxLastIndexedAt,
-  getSessionsPerDay,
-  getTopPwds,
-  getTopQueries,
-  getTopTools,
-  listRecentSessions,
   _migrateForTests,
 } from '../db.js';
 import type { Session, Query } from '../types.js';
@@ -492,6 +485,52 @@ describe('sessions', () => {
     upsertSession({ ...BASE, id: 's2', firstPrompt: 'add feature' });
     expect(listSessions({ q: 'bug' })).toHaveLength(1);
     expect(listSessions({ q: 'feature' })[0].id).toBe('s2');
+  });
+
+  it('listSessions q is multi-keyword AND, order-independent across fields', () => {
+    upsertSession({ ...BASE, id: 's1', firstPrompt: 'bug in the deploy script' });
+    upsertSession({ ...BASE, id: 's2', firstPrompt: 'unrelated work', summary: 'deploy notes' });
+    upsertSession({ ...BASE, id: 's3', firstPrompt: 'just a bug' });
+
+    // Tokens can match across different fields (firstPrompt + summary on s2).
+    const ids = listSessions({ q: 'deploy bug' })
+      .map((s) => s.id)
+      .sort();
+    expect(ids).toEqual(['s1']);
+    // Reversed order produces the same result.
+    expect(
+      listSessions({ q: 'bug deploy' })
+        .map((s) => s.id)
+        .sort(),
+    ).toEqual(['s1']);
+  });
+
+  it('listSessions q is case-insensitive', () => {
+    upsertSession({ ...BASE, id: 's1', firstPrompt: 'Deploy the thing' });
+    expect(listSessions({ q: 'DEPLOY' })).toHaveLength(1);
+    expect(listSessions({ q: 'deploy' })).toHaveLength(1);
+  });
+
+  it('listSessions q supports quoted phrases', () => {
+    upsertSession({ ...BASE, id: 's1', firstPrompt: 'bar baz happens here' });
+    upsertSession({ ...BASE, id: 's2', firstPrompt: 'bar and then baz separately' });
+    const ids = listSessions({ q: '"bar baz"' }).map((s) => s.id);
+    expect(ids).toEqual(['s1']);
+  });
+
+  it('listSessions q escapes SQL LIKE wildcards', () => {
+    upsertSession({ ...BASE, id: 's1', firstPrompt: 'discount is 50% off' });
+    upsertSession({ ...BASE, id: 's2', firstPrompt: 'fifty something off' });
+    // '%' must be treated literally, not as a wildcard that would match s2.
+    const ids = listSessions({ q: '50%' }).map((s) => s.id);
+    expect(ids).toEqual(['s1']);
+  });
+
+  it('listSessions empty or whitespace-only q matches everything', () => {
+    upsertSession({ ...BASE, id: 's1' });
+    upsertSession({ ...BASE, id: 's2' });
+    expect(listSessions({ q: '' })).toHaveLength(2);
+    expect(listSessions({ q: '   ' })).toHaveLength(2);
   });
 
   it('listSessions respects limit', () => {
@@ -955,139 +994,5 @@ describe('query runs', () => {
     const got = getQueryRun(id);
     expect(got!.finishedAt).toBe(500);
     expect(got!.matchedCount).toBe(3);
-  });
-});
-
-describe('stats aggregates', () => {
-  beforeEach(clearDb);
-
-  it('getStatsTotals returns zeros on empty db', () => {
-    const totals = getStatsTotals();
-    expect(totals.sessions).toBe(0);
-    expect(totals.sessionsLast7d).toBe(0);
-    expect(totals.distinctPwds).toBe(0);
-    expect(totals.distinctAgents).toBe(0);
-    expect(totals.queries).toBe(0);
-  });
-
-  it('getStatsTotals counts sessions, agents, pwds, and queries', () => {
-    upsertSession({ ...BASE, id: 's1', agent: 'a', pwd: '/x' });
-    upsertSession({ ...BASE, id: 's2', agent: 'b', pwd: '/y' });
-    createQuery(BASE_QUERY);
-    const totals = getStatsTotals();
-    expect(totals.sessions).toBe(2);
-    expect(totals.distinctAgents).toBe(2);
-    expect(totals.distinctPwds).toBe(2);
-    expect(totals.queries).toBe(1);
-  });
-
-  it('getStatsTotals counts Conductor sibling workspaces as one project', () => {
-    upsertSession({ ...BASE, id: 's1', pwd: '/Users/x/conductor/workspaces/superdense/provo-v1' });
-    upsertSession({
-      ...BASE,
-      id: 's2',
-      pwd: '/Users/x/conductor/workspaces/superdense/provo-v2/packages/core',
-    });
-    upsertSession({ ...BASE, id: 's3', pwd: '/Users/x/conductor/workspaces/other/provo-v1' });
-
-    expect(getStatsTotals().distinctPwds).toBe(2);
-  });
-
-  it('sessionsLast7d counts only sessions modified within 7 days', () => {
-    const now = Date.now();
-    upsertSession({ ...BASE, id: 's1', modifiedAt: now - 1000 });
-    upsertSession({ ...BASE, id: 's2', modifiedAt: now - 8 * 24 * 60 * 60 * 1000 });
-    const totals = getStatsTotals(now);
-    expect(totals.sessionsLast7d).toBe(1);
-  });
-
-  it('getMaxLastIndexedAt returns null for empty db', () => {
-    expect(getMaxLastIndexedAt()).toBeNull();
-  });
-
-  it('getMaxLastIndexedAt returns the highest value', () => {
-    upsertSession({ ...BASE, id: 's1', lastIndexedAt: 100 });
-    upsertSession({ ...BASE, id: 's2', lastIndexedAt: 999 });
-    upsertSession({ ...BASE, id: 's3' });
-    expect(getMaxLastIndexedAt()).toBe(999);
-  });
-
-  it('getTopPwds ranks by session count', () => {
-    upsertSession({ ...BASE, id: 's1', pwd: '/a' });
-    upsertSession({ ...BASE, id: 's2', pwd: '/a' });
-    upsertSession({ ...BASE, id: 's3', pwd: '/b' });
-    const tops = getTopPwds(5);
-    expect(tops[0]).toEqual({ pwd: '/a', count: 2 });
-    expect(tops[1]).toEqual({ pwd: '/b', count: 1 });
-  });
-
-  it('getTopPwds groups Conductor sibling workspaces by projectKey', () => {
-    upsertSession({ ...BASE, id: 's1', pwd: '/Users/x/conductor/workspaces/superdense/provo-v1' });
-    upsertSession({
-      ...BASE,
-      id: 's2',
-      pwd: '/Users/x/conductor/workspaces/superdense/provo-v2/packages/core',
-    });
-    upsertSession({ ...BASE, id: 's3', pwd: '/Users/x/conductor/workspaces/other/provo-v1' });
-
-    const tops = getTopPwds(5);
-
-    expect(tops[0]).toEqual({ pwd: '/Users/x/conductor/workspaces/superdense', count: 2 });
-    expect(tops[1]).toEqual({ pwd: '/Users/x/conductor/workspaces/other', count: 1 });
-  });
-
-  it('getTopPwds respects limit', () => {
-    for (let i = 0; i < 5; i++) upsertSession({ ...BASE, id: `s${i}`, pwd: `/p${i}` });
-    expect(getTopPwds(3)).toHaveLength(3);
-  });
-
-  it('listRecentSessions returns sessions ordered by modifiedAt desc', () => {
-    upsertSession({ ...BASE, id: 's1', modifiedAt: 100 });
-    upsertSession({ ...BASE, id: 's2', modifiedAt: 200 });
-    upsertSession({ ...BASE, id: 's3', modifiedAt: 300 });
-    const recent = listRecentSessions(2);
-    expect(recent).toHaveLength(2);
-    expect(recent[0].id).toBe('s3');
-    expect(recent[1].id).toBe('s2');
-  });
-
-  it('getTopQueries ranks by member count', () => {
-    createQuery({ ...BASE_QUERY, id: 'q1', name: 'Small' });
-    createQuery({ ...BASE_QUERY, id: 'q2', name: 'Large', createdAt: 2000 });
-    upsertSession({ ...BASE, id: 's1' });
-    upsertSession({ ...BASE, id: 's2' });
-    const q2Run = makeRunFor('q2');
-    upsertQueryMatch({ queryRunId: q2Run, sessionId: 's1', addedAt: 1 });
-    upsertQueryMatch({ queryRunId: q2Run, sessionId: 's2', addedAt: 2 });
-    const tops = getTopQueries(5);
-    expect(tops[0].name).toBe('Large');
-    expect(tops[0].memberCount).toBe(2);
-  });
-
-  it('getTopTools aggregates tool_counts enrichments across sessions', () => {
-    upsertSession({ ...BASE, id: 's1' });
-    upsertSession({ ...BASE, id: 's2' });
-    upsertEnrichment('s1', SYSTEM_RUN_ID, 'tool_counts', 1, { bash: 5, read: 2 }, 1000);
-    upsertEnrichment('s2', SYSTEM_RUN_ID, 'tool_counts', 1, { bash: 3, write: 1 }, 1000);
-    const tops = getTopTools(10);
-    const bash = tops.find((t) => t.tool === 'bash');
-    expect(bash?.count).toBe(8);
-    expect(tops.find((t) => t.tool === 'read')?.count).toBe(2);
-    expect(tops.find((t) => t.tool === 'write')?.count).toBe(1);
-  });
-
-  it('getTopTools respects limit', () => {
-    upsertSession(BASE);
-    upsertEnrichment('sess-1', SYSTEM_RUN_ID, 'tool_counts', 1, { a: 1, b: 2, c: 3, d: 4 }, 1000);
-    expect(getTopTools(2)).toHaveLength(2);
-  });
-
-  it('getSessionsPerDay groups sessions by date', () => {
-    const ts = new Date('2025-01-15').getTime();
-    upsertSession({ ...BASE, id: 's1', modifiedAt: ts });
-    upsertSession({ ...BASE, id: 's2', modifiedAt: ts + 1000 });
-    const perDay = getSessionsPerDay(30);
-    const day = perDay.find((d) => d.date === '2025-01-15');
-    expect(day?.count).toBe(2);
   });
 });
