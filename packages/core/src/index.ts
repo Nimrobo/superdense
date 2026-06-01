@@ -112,6 +112,23 @@ export {
   listProjectProfiles,
   setProjectAttention,
 } from './projects/index.js';
+export {
+  applyCurationBatch,
+  getCurationContext,
+  getWorkThread,
+  listCurationInbox,
+  listWorkThreads,
+  markSessionForCuration,
+  reconcileIndexedSession,
+  resolveRootSessionId,
+  sessionRevision,
+} from './curation/index.js';
+export type {
+  CurationStatus,
+  WorkThread,
+  WorkThreadRole,
+  WorkThreadSession,
+} from './curation/index.js';
 export type {
   ArtifactDetector,
   ArtifactShape,

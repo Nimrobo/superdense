@@ -24,7 +24,7 @@ function slugsInText(text: string | null | undefined): string[] {
  */
 export const planRefsEnricher: Enricher = {
   name: 'plan_refs',
-  version: 1,
+  version: 2,
   returns: 'json',
   alwaysRun: true,
   description:
@@ -47,7 +47,9 @@ export const planRefsEnricher: Enricher = {
         add(planSlugFromPath(extractPath(ev) ?? ''), 'wrote');
       }
       for (const slug of slugsInText(ev.inputText)) add(slug, 'referenced');
-      for (const slug of slugsInText(ev.text)) add(slug, 'referenced');
+      if (ev.kind === 'text' && ev.role === 'user') {
+        for (const slug of slugsInText(ev.text)) add(slug, 'referenced');
+      }
     }
 
     const refs: PlanRef[] = [];

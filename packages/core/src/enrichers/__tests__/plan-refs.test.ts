@@ -43,6 +43,24 @@ describe('planRefsEnricher', () => {
     expect(refs).toContainEqual({ slug: 'move-the-openclaw', kind: 'referenced' });
   });
 
+  it('does not collect plan references from tool results or assistant narration', async () => {
+    const { refs } = await run(
+      ctx([
+        {
+          kind: 'tool_result',
+          role: 'user',
+          text: 'generated output mentions ~/.claude/plans/false-positive.md',
+        },
+        {
+          kind: 'text',
+          role: 'assistant',
+          text: 'I read ~/.claude/plans/assistant-narration.md',
+        },
+      ]),
+    );
+    expect(refs).toEqual([]);
+  });
+
   it('returns nothing for non-claude-code agents', async () => {
     const { refs } = await run(
       ctx([{ kind: 'text', role: 'user', text: '~/.claude/plans/x.md' }], { agent: 'codex' }),

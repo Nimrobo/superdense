@@ -20,6 +20,7 @@ import { GROUPS_DIR } from './paths.js';
 import { runQueryEvaluation } from './queryeval.js';
 import type { Adapter, Session } from './types.js';
 import { resolveProjectKey } from './util/project-key.js';
+import { reconcileIndexedSession, sessionRevision } from './curation/index.js';
 
 export interface IndexProgress {
   phase: 'discover' | 'evaluate' | 'idle';
@@ -74,11 +75,13 @@ async function indexSubagentsRecursive(
       lastIndexedAt: null,
     };
     const existing = getSession(id);
+    const changed = !existing || sessionRevision(existing) !== sessionRevision(session);
     if (existing && fileMtime && existing.fileMtime && fileMtime <= existing.fileMtime) {
       session.lastIndexedAt = existing.lastIndexedAt ?? null;
     }
     upsertSession(session);
     upsertSessionLink(parentId, id, relation, metadata ?? null, now);
+    reconcileIndexedSession(id, changed);
     await runEnrichersForSession(session);
     markIndexed(session.id, Date.now());
     count++;
@@ -124,10 +127,12 @@ export async function runDiscovery(): Promise<{ discovered: number }> {
         lastIndexedAt: null,
       };
       const existing = getSession(id);
+      const changed = !existing || sessionRevision(existing) !== sessionRevision(session);
       if (existing && fileMtime && existing.fileMtime && fileMtime <= existing.fileMtime) {
         session.lastIndexedAt = existing.lastIndexedAt ?? null;
       }
       upsertSession(session);
+      reconcileIndexedSession(id, changed);
       await runEnrichersForSession(session);
       markIndexed(session.id, Date.now());
       count++;

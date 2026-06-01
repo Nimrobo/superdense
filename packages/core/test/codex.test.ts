@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { codexAdapter } from '../src/adapters/codex.js';
+import { collectFootprint } from '../src/enrichers/file-footprint.js';
 
 let tempDir: string | undefined;
 const originalDb = process.env.CODEX_STATE_DB;
@@ -447,6 +448,49 @@ describe('codexAdapter', () => {
       },
       { kind: 'tool_result', role: 'user', toolCallId: 'call_123', isError: false, text: 'ok' },
     ]);
+  });
+
+  it('normalizes native custom apply_patch calls so file footprints retain writes', async () => {
+    const dir = await makeTempDir();
+    const rolloutPath = join(dir, 'rollout.jsonl');
+    await writeFile(
+      rolloutPath,
+      [
+        JSON.stringify({
+          timestamp: '2026-05-21T04:00:00.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'custom_tool_call',
+            call_id: 'patch_1',
+            name: 'apply_patch',
+            input: '*** Begin Patch\n*** Add File: src/native.ts\n+export {};\n*** End Patch',
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-05-21T04:00:01.000Z',
+          type: 'response_item',
+          payload: { type: 'custom_tool_call_output', call_id: 'patch_1', output: 'Done!' },
+        }),
+      ].join('\n'),
+      'utf8',
+    );
+
+    const footprint = await collectFootprint({
+      session: {
+        id: 'codex:thread-1',
+        agent: 'codex',
+        sessionId: 'thread-1',
+        logPath: rolloutPath,
+        pwd: '/repo',
+        projectKey: '/repo',
+      },
+      logPath: rolloutPath,
+      iterEvents: () => codexAdapter.iterEvents(rolloutPath),
+    });
+
+    expect(footprint.files).toContainEqual(
+      expect.objectContaining({ pathRel: 'src/native.ts', writes: 1 }),
+    );
   });
 
   it('marks Codex tool outputs as errors only when command end status is nonzero', async () => {

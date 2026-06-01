@@ -18,6 +18,11 @@ export interface Session {
   parentSessionId?: string | null;
   fileMtime?: number | null;
   lastIndexedAt?: number | null;
+  curationStatus?: 'pending' | 'consumed' | 'skipped' | 'deferred';
+  curatedRevision?: string | null;
+  curatedAt?: number | null;
+  curationNote?: string | null;
+  curationPriorityAt?: number | null;
 }
 
 export interface DiscoveredSession {

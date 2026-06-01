@@ -108,7 +108,7 @@ export async function collectFootprint(ctx: EnricherContext): Promise<Footprint>
 
 export const fileFootprintEnricher: Enricher = {
   name: 'file_footprint',
-  version: 2,
+  version: 3,
   returns: 'json',
   alwaysRun: true,
   description:

@@ -140,6 +140,12 @@ function migrate(db: Database.Database): void {
   if (currentVersion < 5) {
     db.pragma('user_version = 5');
   }
+  // V6 is reconciled on every open for the same reason as V5: development
+  // databases may already carry user_version=6 while the shape is evolving.
+  runDataMigrationV6(db, currentVersion < 6);
+  if (currentVersion < 6) {
+    db.pragma('user_version = 6');
+  }
 
   ensureSystemRun(db);
 }
@@ -355,6 +361,68 @@ function runDataMigrationV5(db: Database.Database): void {
         WHERE project_key IS NOT NULL AND project_key != ''
         GROUP BY project_key`,
     ).run({ now });
+  });
+  tx();
+}
+
+function runDataMigrationV6(db: Database.Database, backfillHistoricalRevisions: boolean): void {
+  const tx = db.transaction(() => {
+    if (!columnExists(db, 'sessions', 'curation_status')) {
+      db.exec("ALTER TABLE sessions ADD COLUMN curation_status TEXT NOT NULL DEFAULT 'pending';");
+    }
+    if (!columnExists(db, 'sessions', 'curated_revision')) {
+      db.exec('ALTER TABLE sessions ADD COLUMN curated_revision TEXT;');
+    }
+    if (!columnExists(db, 'sessions', 'curated_at')) {
+      db.exec('ALTER TABLE sessions ADD COLUMN curated_at INTEGER;');
+    }
+    if (!columnExists(db, 'sessions', 'curation_note')) {
+      db.exec('ALTER TABLE sessions ADD COLUMN curation_note TEXT;');
+    }
+    if (!columnExists(db, 'sessions', 'curation_priority_at')) {
+      db.exec('ALTER TABLE sessions ADD COLUMN curation_priority_at INTEGER;');
+    }
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_sessions_curation
+        ON sessions(curation_status, curation_priority_at, modified_at);
+
+      CREATE TABLE IF NOT EXISTS pending_session_marker (
+        session_id TEXT PRIMARY KEY,
+        marked_at  INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS work_thread (
+        id                 TEXT PRIMARY KEY,
+        project_profile_id TEXT NOT NULL REFERENCES project_profile(id),
+        provisional_title  TEXT NOT NULL,
+        summary            TEXT,
+        status             TEXT NOT NULL DEFAULT 'open',
+        created_at         INTEGER NOT NULL,
+        updated_at         INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_work_thread_project
+        ON work_thread(project_profile_id, updated_at);
+
+      CREATE TABLE IF NOT EXISTS work_thread_session (
+        thread_id  TEXT NOT NULL REFERENCES work_thread(id) ON DELETE CASCADE,
+        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        role       TEXT NOT NULL,
+        rationale  TEXT,
+        PRIMARY KEY (thread_id, session_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_work_thread_session_session
+        ON work_thread_session(session_id);
+    `);
+
+    // Rows that predate the inbox are historical backlog. Recording a baseline
+    // revision lets inbox assembly place them after newly discovered sessions.
+    if (backfillHistoricalRevisions) {
+      db.exec(`
+        UPDATE sessions
+           SET curated_revision = json_array(file_mtime, modified_at, message_count)
+         WHERE curated_revision IS NULL
+      `);
+    }
   });
   tx();
 }

@@ -19,6 +19,7 @@ import { createInterface } from 'node:readline/promises';
 import semver from 'semver';
 import {
   assembleInsightPrompt,
+  applyCurationBatch,
   applyProjectProfilePatch,
   CLAUDE_SKILLS_DIR,
   compactSession,
@@ -29,6 +30,7 @@ import {
   deleteQuery,
   ensureSuperdenseDirs,
   getCompactor,
+  getCurationContext,
   getEnrichment,
   getProjectContext,
   getProjectProfileResolution,
@@ -37,8 +39,10 @@ import {
   getSession,
   getSessionChildren,
   getSessionTree,
+  getWorkThread,
   indexAll,
   listCompactors,
+  listCurationInbox,
   listEnrichers,
   listFilterCatalog,
   listFilters,
@@ -48,6 +52,7 @@ import {
   listQueryMatchDetails,
   listSessionEnrichments,
   listSessions,
+  listWorkThreads,
   loadUserEnrichers,
   localClaudeSkillsDir,
   localCodexSkillsDir,
@@ -56,6 +61,7 @@ import {
   runQueryEvaluation,
   runSavedQuery,
   setProjectAttention,
+  markSessionForCuration,
   validateQueryDefinition,
   type AdHocQueryResult,
   type Compactor,
@@ -69,7 +75,12 @@ import open from 'open';
 const CLI_PACKAGE_NAME = '@nimrobo/superdense';
 const NPM_REGISTRY_PACKAGE_URL = `https://registry.npmjs.org/${CLI_PACKAGE_NAME.replace('/', '%2f')}`;
 const SKIP_UPDATE_CHECK_ENV = 'SUPERDENSE_SKIP_UPDATE_CHECK';
-const REQUIRED_STUDIO_SKILLS = ['superdense', 'chain', 'superdense-project-profile'];
+const REQUIRED_STUDIO_SKILLS = [
+  'superdense',
+  'chain',
+  'superdense-project-profile',
+  'superdense-session-curate',
+];
 
 interface CliIo {
   stdout: Pick<typeof console, 'log'>;
@@ -171,6 +182,11 @@ function serializeSession(
     parentSessionId: session.parentSessionId ?? null,
     fileMtime: session.fileMtime ?? null,
     lastIndexedAt: session.lastIndexedAt ?? null,
+    curationStatus: session.curationStatus ?? 'pending',
+    curatedRevision: session.curatedRevision ?? null,
+    curatedAt: session.curatedAt ?? null,
+    curationNote: session.curationNote ?? null,
+    curationPriorityAt: session.curationPriorityAt ?? null,
   };
   if (opts.includePath) out.logPath = session.logPath;
   return out;
@@ -689,6 +705,89 @@ async function handleProject(
   throw new Error(`unknown project command: ${action}`);
 }
 
+function resolveCurrentSessionId(env: NodeJS.ProcessEnv = process.env): string {
+  if (env.SUPERDENSE_CURRENT_SESSION_ID) return env.SUPERDENSE_CURRENT_SESSION_ID;
+  if (env.CODEX_THREAD_ID) return `codex:${env.CODEX_THREAD_ID}`;
+  if (env.CLAUDE_CODE_SESSION_ID) return `claude-code:${env.CLAUDE_CODE_SESSION_ID}`;
+  if (env.CLAUDE_CODE_REMOTE_SESSION_ID) return `claude-code:${env.CLAUDE_CODE_REMOTE_SESSION_ID}`;
+  throw new Error(
+    'could not resolve the current session from the environment; use `superdense artifact mark --session <adapter:id>`',
+  );
+}
+
+function handleArtifact(
+  args: string[],
+  flags: Record<string, string | boolean>,
+  io: CliIo,
+): boolean {
+  const action = args[0];
+  if (action === 'mark-current') {
+    printJson({ marker: markSessionForCuration(resolveCurrentSessionId()) }, io);
+    return true;
+  }
+  if (action === 'mark') {
+    if (typeof flags.session !== 'string' || !flags.session.trim()) {
+      throw new Error('artifact mark requires --session <adapter:id>');
+    }
+    printJson({ marker: markSessionForCuration(flags.session.trim()) }, io);
+    return true;
+  }
+  throw new Error(`unknown artifact command: ${action ?? '(none)'}`);
+}
+
+async function handleCuration(
+  args: string[],
+  flags: Record<string, string | boolean>,
+  io: CliIo,
+): Promise<boolean> {
+  const action = args[0];
+  if (action === 'inbox') {
+    printJson(
+      listCurationInbox({
+        projectId: typeof flags.project === 'string' ? flags.project : undefined,
+        limit: intFlag(flags, 'limit', 10, 1000),
+      }),
+      io,
+    );
+    return true;
+  }
+  if (action === 'context') {
+    const sessionId = args[1];
+    if (!sessionId) throw new Error('curation context requires <root-session-id>');
+    printJson(getCurationContext(sessionId), io);
+    return true;
+  }
+  if (action === 'apply') {
+    printJson(applyCurationBatch(await readJsonObject(flags.input, 'input')), io);
+    return true;
+  }
+  throw new Error(`unknown curation command: ${action ?? '(none)'}`);
+}
+
+function handleThread(args: string[], flags: Record<string, string | boolean>, io: CliIo): boolean {
+  const action = args[0] ?? 'list';
+  if (action === 'list') {
+    printJson(
+      {
+        items: listWorkThreads({
+          projectId: typeof flags.project === 'string' ? flags.project : undefined,
+        }),
+      },
+      io,
+    );
+    return true;
+  }
+  if (action === 'show') {
+    const id = args[1];
+    if (!id) throw new Error('thread show requires <thread-id>');
+    const thread = getWorkThread(id);
+    if (!thread) throw new Error(`thread not found: ${id}`);
+    printJson({ thread }, io);
+    return true;
+  }
+  throw new Error(`unknown thread command: ${action}`);
+}
+
 function handleInsight(args: string[], io: CliIo): boolean {
   const action = args[0] ?? 'list';
   if (action === 'list') {
@@ -1127,6 +1226,21 @@ export async function runCli(
     return 0;
   }
 
+  if (cmd === 'artifact') {
+    handleArtifact(args, flags, io);
+    return 0;
+  }
+
+  if (cmd === 'curation') {
+    await handleCuration(args, flags, io);
+    return 0;
+  }
+
+  if (cmd === 'thread') {
+    handleThread(args, flags, io);
+    return 0;
+  }
+
   if (cmd === 'insight') {
     handleInsight(args, io);
     return 0;
@@ -1189,6 +1303,13 @@ export async function runCli(
         '  project context <id>  Gather bounded evidence for profiling',
         '  project apply <id>  Apply an atomic profile merge patch (--patch <json|@file>)',
         '  project attention <id>  Mark attention --needed [--reasons <json>] or --resolved',
+        '  artifact mark-current  Mark the current agent session for curation',
+        '  artifact mark --session <adapter:id>  Mark an explicit session for curation',
+        '  curation inbox      Get a bounded root-session review batch [--project <id>] [--limit N]',
+        '  curation context <root-session-id>  Load root and linked sub-agent review hints',
+        '  curation apply --input <json|@file>  Apply an atomic batch of reversible actions',
+        '  thread list         List mutable work threads [--project <id>]',
+        '  thread show <id>    Show a work thread and session memberships',
         '  skill install [n]   Install skills into Claude and Codex',
         '      --locally       Install skills into ./.claude and ./.codex for this cwd',
         '  index               Incremental session index',

@@ -31,6 +31,7 @@ vi.mock('@nimrobo/superdense-core', () => ({
   CLAUDE_SKILLS_DIR: '/unused/claude/skills',
   CODEX_SKILLS_DIR: '/unused/codex/skills',
   SYSTEM_RUN_ID: 'system',
+  applyCurationBatch: vi.fn(),
   applyProjectProfilePatch: vi.fn(),
   backfillQuery: vi.fn(),
   compactSession: vi.fn(),
@@ -40,6 +41,7 @@ vi.mock('@nimrobo/superdense-core', () => ({
   deleteQuery: vi.fn(),
   ensureSuperdenseDirs: vi.fn(),
   getCompactor: vi.fn(),
+  getCurationContext: vi.fn(),
   getEnrichment: vi.fn(),
   getProjectContext: vi.fn(),
   getProjectProfileResolution: vi.fn(),
@@ -47,8 +49,10 @@ vi.mock('@nimrobo/superdense-core', () => ({
   getSession: vi.fn(),
   getSessionChildren: vi.fn(),
   getSessionTree: vi.fn(),
+  getWorkThread: vi.fn(),
   indexAll: vi.fn(),
   listCompactors: vi.fn(),
+  listCurationInbox: vi.fn(),
   listEnrichers: vi.fn(),
   listFilterCatalog: vi.fn(),
   listFilters: vi.fn(),
@@ -58,7 +62,9 @@ vi.mock('@nimrobo/superdense-core', () => ({
   listQueryMatches: vi.fn(),
   listSessionEnrichments: vi.fn(),
   listSessions: vi.fn(),
+  listWorkThreads: vi.fn(),
   loadUserEnrichers: vi.fn(),
+  markSessionForCuration: vi.fn(),
   localClaudeSkillsDir: (cwd: string) => join(cwd, '.claude', 'skills'),
   localCodexSkillsDir: (cwd: string) => join(cwd, '.codex', 'skills'),
   previewQuery: vi.fn(),
@@ -293,6 +299,39 @@ beforeEach(() => {
     },
   });
   vi.mocked(core.applyProjectProfilePatch).mockReturnValue(project);
+  vi.mocked(core.markSessionForCuration).mockImplementation((sessionId) => ({
+    sessionId,
+    buffered: false,
+    markedAt: 1,
+  }));
+  vi.mocked(core.listCurationInbox).mockReturnValue({
+    items: [],
+    limit: 10,
+    remaining: 0,
+    counts: { pending: 0, consumed: 0, skipped: 0, deferred: 0 },
+  });
+  vi.mocked(core.getCurationContext).mockReturnValue({
+    requestedSessionId: 'codex:abc123',
+    rootSessionId: 'codex:abc123',
+    tree: { id: 'codex:abc123', relation: 'root', children: [] },
+    sessions: [],
+  });
+  vi.mocked(core.applyCurationBatch).mockReturnValue({
+    ok: true,
+    createdThreadIds: [],
+    resolvedSessions: [],
+  });
+  vi.mocked(core.listWorkThreads).mockReturnValue([]);
+  vi.mocked(core.getWorkThread).mockReturnValue({
+    id: 't1',
+    projectProfileId: 'p1',
+    provisionalTitle: 'Thread',
+    summary: null,
+    status: 'open',
+    createdAt: 1,
+    updatedAt: 1,
+    sessions: [],
+  });
   vi.mocked(core.setProjectAttention).mockReturnValue(project);
   vi.mocked(startServer).mockResolvedValue({ url: 'http://127.0.0.1:4242', close: vi.fn() });
   vi.mocked(open).mockResolvedValue({} as Awaited<ReturnType<typeof open>>);
@@ -839,6 +878,79 @@ describe('superdense cli agent commands', () => {
     const attention = io();
     await runCli(['project', 'attention', 'p1', '--resolved'], attention.io);
     expect(core.setProjectAttention).toHaveBeenCalledWith('p1', { needed: false });
+  });
+
+  it('marks the current session from supported environment ids without guessing', async () => {
+    const keys = [
+      'SUPERDENSE_CURRENT_SESSION_ID',
+      'CODEX_THREAD_ID',
+      'CLAUDE_CODE_SESSION_ID',
+      'CLAUDE_CODE_REMOTE_SESSION_ID',
+    ] as const;
+    const original = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+    try {
+      for (const key of keys) delete process.env[key];
+      process.env.SUPERDENSE_CURRENT_SESSION_ID = 'claude-code:override';
+      process.env.CODEX_THREAD_ID = 'ignored';
+      await runCli(['artifact', 'mark-current'], io().io);
+      expect(core.markSessionForCuration).toHaveBeenLastCalledWith('claude-code:override');
+
+      delete process.env.SUPERDENSE_CURRENT_SESSION_ID;
+      await runCli(['artifact', 'mark-current'], io().io);
+      expect(core.markSessionForCuration).toHaveBeenLastCalledWith('codex:ignored');
+
+      delete process.env.CODEX_THREAD_ID;
+      process.env.CLAUDE_CODE_SESSION_ID = 'local';
+      await runCli(['artifact', 'mark-current'], io().io);
+      expect(core.markSessionForCuration).toHaveBeenLastCalledWith('claude-code:local');
+
+      delete process.env.CLAUDE_CODE_SESSION_ID;
+      process.env.CLAUDE_CODE_REMOTE_SESSION_ID = 'remote';
+      await runCli(['artifact', 'mark-current'], io().io);
+      expect(core.markSessionForCuration).toHaveBeenLastCalledWith('claude-code:remote');
+
+      delete process.env.CLAUDE_CODE_REMOTE_SESSION_ID;
+      await expect(runCli(['artifact', 'mark-current'], io().io)).rejects.toThrow(
+        'artifact mark --session',
+      );
+    } finally {
+      for (const key of keys) {
+        const value = original[key];
+        if (value == null) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
+
+  it('marks an explicit session id', async () => {
+    await runCli(['artifact', 'mark', '--session', 'codex:explicit'], io().io);
+    expect(core.markSessionForCuration).toHaveBeenCalledWith('codex:explicit');
+  });
+
+  it('exposes curation inbox, apply, and mutable thread reads', async () => {
+    await runCli(['curation', 'inbox', '--project', 'p1', '--limit', '7'], io().io);
+    expect(core.listCurationInbox).toHaveBeenCalledWith({ projectId: 'p1', limit: 7 });
+
+    await runCli(['curation', 'context', 'codex:abc123'], io().io);
+    expect(core.getCurationContext).toHaveBeenCalledWith('codex:abc123');
+
+    await runCli(
+      [
+        'curation',
+        'apply',
+        '--input',
+        '{"actions":[{"type":"session.defer","sessionId":"codex:abc123"}]}',
+      ],
+      io().io,
+    );
+    expect(core.applyCurationBatch).toHaveBeenCalledWith({
+      actions: [{ type: 'session.defer', sessionId: 'codex:abc123' }],
+    });
+
+    await runCli(['thread', 'list', '--project', 'p1'], io().io);
+    expect(core.listWorkThreads).toHaveBeenCalledWith({ projectId: 'p1' });
+    await runCli(['thread', 'show', 't1'], io().io);
+    expect(core.getWorkThread).toHaveBeenCalledWith('t1');
   });
 
   it('throws intended errors for missing query, session, and compactor', async () => {
