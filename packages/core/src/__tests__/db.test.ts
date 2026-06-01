@@ -38,6 +38,10 @@ import {
   upsertEnrichment,
   getEnrichment,
   listSessionEnrichments,
+  replaceSessionFiles,
+  replacePlanRefs,
+  sessionsByPathRel,
+  sessionsByPlanSlug,
   SYSTEM_RUN_ID,
   createQueryRun,
   finishQueryRun,
@@ -162,7 +166,7 @@ describe('sessions', () => {
 
       _migrateForTests(db);
 
-      expect(db.pragma('user_version', { simple: true })).toBe(4);
+      expect(db.pragma('user_version', { simple: true })).toBe(5);
       expect(db.prepare('SELECT project_key FROM sessions WHERE id = ?').get('old')).toEqual({
         project_key: '/Users/x/conductor/workspaces/superdense',
       });
@@ -231,7 +235,7 @@ describe('sessions', () => {
 
       _migrateForTests(db);
 
-      expect(db.pragma('user_version', { simple: true })).toBe(4);
+      expect(db.pragma('user_version', { simple: true })).toBe(5);
 
       const tables = (
         db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{
@@ -321,7 +325,7 @@ describe('sessions', () => {
 
       _migrateForTests(db);
 
-      expect(db.pragma('user_version', { simple: true })).toBe(4);
+      expect(db.pragma('user_version', { simple: true })).toBe(5);
       const sessionCols = (
         db.prepare('PRAGMA table_info(sessions)').all() as Array<{
           name: string;
@@ -343,6 +347,84 @@ describe('sessions', () => {
     } finally {
       db.close();
     }
+  });
+
+  it('V5 migration: creates session_file and plan_refs tables with inverse indexes', () => {
+    const db = new Database(':memory:');
+    try {
+      db.exec(`
+        CREATE TABLE sessions (id TEXT PRIMARY KEY, agent TEXT NOT NULL, session_id TEXT NOT NULL,
+          log_path TEXT NOT NULL, pwd TEXT NOT NULL, project_key TEXT NOT NULL DEFAULT '',
+          first_prompt TEXT, summary TEXT, message_count INTEGER, git_branch TEXT,
+          created_at INTEGER, modified_at INTEGER, is_sidechain INTEGER DEFAULT 0,
+          is_subagent INTEGER NOT NULL DEFAULT 0, parent_session_id TEXT,
+          file_mtime INTEGER, last_indexed_at INTEGER);
+        CREATE TABLE queries (id TEXT PRIMARY KEY, name TEXT NOT NULL, predicate TEXT NOT NULL,
+          created_at INTEGER, last_run_at INTEGER);
+        CREATE TABLE query_run (id TEXT PRIMARY KEY, saved_query_id TEXT, dsl TEXT NOT NULL,
+          started_at INTEGER NOT NULL, finished_at INTEGER, matched_count INTEGER);
+        CREATE TABLE query_matches (query_run_id TEXT NOT NULL, session_id TEXT NOT NULL,
+          added_at INTEGER, evidence TEXT, PRIMARY KEY (query_run_id, session_id));
+        CREATE TABLE session_enrich (session_id TEXT NOT NULL, query_run_id TEXT NOT NULL,
+          name TEXT NOT NULL, version INTEGER NOT NULL, value TEXT NOT NULL,
+          computed_at INTEGER NOT NULL, PRIMARY KEY (session_id, query_run_id, name));
+        PRAGMA user_version = 4;
+      `);
+
+      _migrateForTests(db);
+
+      expect(db.pragma('user_version', { simple: true })).toBe(5);
+      const tables = (
+        db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{
+          name: string;
+        }>
+      ).map((t) => t.name);
+      expect(tables).toContain('session_file');
+      expect(tables).toContain('plan_refs');
+
+      const indexes = (
+        db.prepare("SELECT name FROM sqlite_master WHERE type='index'").all() as Array<{
+          name: string;
+        }>
+      ).map((i) => i.name);
+      expect(indexes).toContain('idx_session_file_path');
+      expect(indexes).toContain('idx_plan_refs_slug');
+    } finally {
+      db.close();
+    }
+  });
+
+  it('session_file / plan_refs: replace is idempotent and inverse lookups work', () => {
+    clearDb();
+    upsertSession(BASE);
+    const files = [
+      {
+        pathRel: 'src/db.ts',
+        pathAbs: '/home/user/project/src/db.ts',
+        role: 'deliverable',
+        writes: 2,
+        reads: 1,
+        ops: { Edit: 2, Read: 1 },
+        firstTs: 10,
+        lastTs: 20,
+      },
+    ];
+    replaceSessionFiles(BASE.id, files);
+    replaceSessionFiles(BASE.id, files); // second call must not duplicate
+    expect(sessionsByPathRel('src/db.ts')).toEqual([BASE.id]);
+
+    replacePlanRefs(BASE.id, [
+      { slug: 'swirling-bengio', kind: 'wrote' },
+      { slug: 'swirling-bengio', kind: 'referenced' },
+    ]);
+    replacePlanRefs(BASE.id, [{ slug: 'swirling-bengio', kind: 'wrote' }]);
+    expect(sessionsByPlanSlug('swirling-bengio')).toEqual([BASE.id]);
+
+    const db = getDb();
+    expect(
+      (db.prepare('SELECT COUNT(*) AS c FROM session_file').get() as { c: number }).c,
+    ).toBe(1);
+    expect((db.prepare('SELECT COUNT(*) AS c FROM plan_refs').get() as { c: number }).c).toBe(1);
   });
 
   it('V1 migration: preserves saved query definitions and drops legacy match/enrich tables', () => {
@@ -405,7 +487,7 @@ describe('sessions', () => {
 
       _migrateForTests(db);
 
-      expect(db.pragma('user_version', { simple: true })).toBe(4);
+      expect(db.pragma('user_version', { simple: true })).toBe(5);
 
       const tables = (
         db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{

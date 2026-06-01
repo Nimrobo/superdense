@@ -52,13 +52,27 @@ function isEmptySlashCommand(text: string): boolean {
   );
 }
 
-function compact(text: string, limit: number): string | undefined {
+/** A turn that, after cleaning, is just a file attachment / image reference with
+ *  no actual instruction — noise for intent, to be skipped. */
+export function isAttachmentOnly(text: string): boolean {
+  const t = text.trim();
+  if (!t) return true;
+  if (/^\[(image|attachment|file|screenshot|pasted)\b[^\]]*\]$/i.test(t)) return true;
+  // A single token (no whitespace) that looks like a path or @mention.
+  if (!/\s/.test(t) && (t.includes('/') || t.startsWith('@') || /\.[a-z0-9]+$/i.test(t))) {
+    return true;
+  }
+  return false;
+}
+
+function finalize(text: string, limit: number): string | undefined {
   const cleaned = text
     .replace(/\r\n/g, '\n')
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
   if (!cleaned) return undefined;
+  if (isAttachmentOnly(cleaned)) return undefined;
   return cleaned.slice(0, limit).trim() || undefined;
 }
 
@@ -67,17 +81,17 @@ export function extractMeaningfulPrompt(value?: string | null, limit = 500): str
   if (!text) return undefined;
 
   const args = tagContent(text, 'command-args');
-  if (args) return compact(args, limit);
+  if (args) return finalize(args, limit);
 
   const request = userRequest(text);
-  if (request) return compact(request, limit);
+  if (request) return finalize(request, limit);
 
   if (isEmptySlashCommand(text)) return undefined;
 
   const stripped = removeInternalLines(
     removeSimpleCommandTags(removeTagBlocks(text, WRAPPER_TAGS)),
   );
-  return compact(stripped, limit);
+  return finalize(stripped, limit);
 }
 
 export function extractFirstMeaningfulPrompt(

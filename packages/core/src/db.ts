@@ -134,6 +134,10 @@ function migrate(db: Database.Database): void {
     runDataMigrationV4(db);
     db.pragma('user_version = 4');
   }
+  if (currentVersion < 5) {
+    runDataMigrationV5(db);
+    db.pragma('user_version = 5');
+  }
 
   ensureSystemRun(db);
 }
@@ -264,6 +268,45 @@ function runDataMigrationV4(db: Database.Database): void {
         );
         CREATE INDEX IF NOT EXISTS idx_session_links_child ON session_links(child_id);
         CREATE INDEX IF NOT EXISTS idx_session_links_parent ON session_links(parent_id);
+      `);
+    }
+  });
+  tx();
+}
+
+function runDataMigrationV5(db: Database.Database): void {
+  const tx = db.transaction(() => {
+    // session_file: per-session write/read footprint. path_rel (pwd-relativized)
+    // is the clustering key and is indexed for inverse lookups (file -> sessions).
+    if (!tableExists(db, 'session_file')) {
+      db.exec(`
+        CREATE TABLE session_file (
+          session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+          path_rel   TEXT NOT NULL,
+          path_abs   TEXT NOT NULL,
+          role       TEXT NOT NULL,
+          writes     INTEGER NOT NULL DEFAULT 0,
+          reads      INTEGER NOT NULL DEFAULT 0,
+          ops        TEXT,
+          first_ts   INTEGER,
+          last_ts    INTEGER,
+          PRIMARY KEY (session_id, path_rel)
+        );
+        CREATE INDEX IF NOT EXISTS idx_session_file_path ON session_file(path_rel);
+        CREATE INDEX IF NOT EXISTS idx_session_file_session ON session_file(session_id);
+      `);
+    }
+    // plan_refs: named-plan anchor. plan_slug is indexed for inverse lookups
+    // (slug -> sessions sharing that plan = one artifact).
+    if (!tableExists(db, 'plan_refs')) {
+      db.exec(`
+        CREATE TABLE plan_refs (
+          session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+          plan_slug  TEXT NOT NULL,
+          kind       TEXT NOT NULL,
+          PRIMARY KEY (session_id, plan_slug, kind)
+        );
+        CREATE INDEX IF NOT EXISTS idx_plan_refs_slug ON plan_refs(plan_slug);
       `);
     }
   });
@@ -1085,6 +1128,82 @@ export function listSessionEnrichments(
       computedAt: row.computed_at,
     };
   });
+}
+
+// ---- session_file / plan_refs (the Layer-1 join surface, projected from enrichments)
+
+export interface SessionFileInput {
+  pathRel: string;
+  pathAbs: string;
+  role: string;
+  writes: number;
+  reads: number;
+  ops: Record<string, number>;
+  firstTs: number | null;
+  lastTs: number | null;
+}
+
+export interface PlanRefInput {
+  slug: string;
+  kind: string;
+}
+
+/** Replace a session's write/read footprint atomically (delete-then-insert). */
+export function replaceSessionFiles(sessionId: string, files: SessionFileInput[]): void {
+  const db = getDb();
+  const tx = db.transaction(() => {
+    db.prepare('DELETE FROM session_file WHERE session_id = ?').run(sessionId);
+    const insert = db.prepare(
+      `INSERT OR REPLACE INTO session_file
+         (session_id, path_rel, path_abs, role, writes, reads, ops, first_ts, last_ts)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    for (const f of files) {
+      insert.run(
+        sessionId,
+        f.pathRel,
+        f.pathAbs,
+        f.role,
+        f.writes,
+        f.reads,
+        JSON.stringify(f.ops ?? {}),
+        f.firstTs,
+        f.lastTs,
+      );
+    }
+  });
+  tx();
+}
+
+/** Replace a session's plan references atomically (delete-then-insert). */
+export function replacePlanRefs(sessionId: string, refs: PlanRefInput[]): void {
+  const db = getDb();
+  const tx = db.transaction(() => {
+    db.prepare('DELETE FROM plan_refs WHERE session_id = ?').run(sessionId);
+    const insert = db.prepare(
+      'INSERT OR IGNORE INTO plan_refs (session_id, plan_slug, kind) VALUES (?, ?, ?)',
+    );
+    for (const r of refs) insert.run(sessionId, r.slug, r.kind);
+  });
+  tx();
+}
+
+/** Inverse lookup: which sessions touched this pwd-relative path. */
+export function sessionsByPathRel(pathRel: string): string[] {
+  return (
+    getDb()
+      .prepare('SELECT session_id FROM session_file WHERE path_rel = ?')
+      .all(pathRel) as Array<{ session_id: string }>
+  ).map((r) => r.session_id);
+}
+
+/** Inverse lookup: which sessions reference this plan slug. */
+export function sessionsByPlanSlug(slug: string): string[] {
+  return (
+    getDb()
+      .prepare('SELECT DISTINCT session_id FROM plan_refs WHERE plan_slug = ?')
+      .all(slug) as Array<{ session_id: string }>
+  ).map((r) => r.session_id);
 }
 
 export interface InsightRunRow {

@@ -1,5 +1,31 @@
 import { describe, expect, it } from 'vitest';
-import { extractFirstMeaningfulPrompt, extractMeaningfulPrompt } from '../prompt.js';
+import {
+  extractFirstMeaningfulPrompt,
+  extractMeaningfulPrompt,
+  isAttachmentOnly,
+} from '../prompt.js';
+
+describe('isAttachmentOnly', () => {
+  it('treats a bare file path as attachment-only', () => {
+    expect(isAttachmentOnly('.context/attachments/aB/plan.md')).toBe(true);
+  });
+
+  it('treats a bracketed image marker as attachment-only', () => {
+    expect(isAttachmentOnly('[Image #1]')).toBe(true);
+  });
+
+  it('treats an @mention-only turn as attachment-only', () => {
+    expect(isAttachmentOnly('@src/file.ts')).toBe(true);
+  });
+
+  it('keeps a real instruction', () => {
+    expect(isAttachmentOnly('add a reward layer')).toBe(false);
+  });
+
+  it('makes extractMeaningfulPrompt skip attachment-only turns', () => {
+    expect(extractMeaningfulPrompt('docs/spec.md')).toBeUndefined();
+  });
+});
 
 describe('prompt extraction', () => {
   it('extracts the real ask after Conductor system wrappers', () => {

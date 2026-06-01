@@ -18,7 +18,7 @@ interface Fingerprint {
   turns: number;
 }
 
-function extractPath(ev: TranscriptEvent): string | null {
+export function extractPath(ev: TranscriptEvent): string | null {
   if (!ev.inputText) return null;
   try {
     const parsed = JSON.parse(ev.inputText) as Record<string, unknown>;
