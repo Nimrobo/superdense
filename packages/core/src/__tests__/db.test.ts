@@ -52,6 +52,13 @@ import {
   getQueryRun,
   _migrateForTests,
 } from '../db.js';
+import {
+  applyProjectProfilePatch,
+  getProjectContext,
+  getProjectProfileResolution,
+  listProjectProfiles,
+  setProjectAttention,
+} from '../projects/index.js';
 import type { Session, Query } from '../types.js';
 import type { QueryFilter } from '../query/types.js';
 
@@ -77,7 +84,7 @@ const BASE_QUERY: Omit<Query, 'memberCount' | 'lastRunAt'> = {
 function clearDb() {
   const db = getDb();
   db.exec(
-    "DELETE FROM query_matches; DELETE FROM session_enrich; DELETE FROM session_links; DELETE FROM sessions; DELETE FROM queries; DELETE FROM query_run WHERE id != 'system';",
+    "DELETE FROM query_matches; DELETE FROM session_enrich; DELETE FROM session_links; DELETE FROM sessions; DELETE FROM project_profile; DELETE FROM queries; DELETE FROM query_run WHERE id != 'system';",
   );
 }
 
@@ -349,7 +356,7 @@ describe('sessions', () => {
     }
   });
 
-  it('V5 migration: creates session_file and plan_refs tables with inverse indexes', () => {
+  it('V5 migration: creates Layer 1 and project profile tables with inverse indexes', () => {
     const db = new Database(':memory:');
     try {
       db.exec(`
@@ -381,6 +388,7 @@ describe('sessions', () => {
       ).map((t) => t.name);
       expect(tables).toContain('session_file');
       expect(tables).toContain('plan_refs');
+      expect(tables).toContain('project_profile');
 
       const indexes = (
         db.prepare("SELECT name FROM sqlite_master WHERE type='index'").all() as Array<{
@@ -392,6 +400,210 @@ describe('sessions', () => {
     } finally {
       db.close();
     }
+  });
+
+  it('V5 reconciliation: adds project profiles to an already-versioned pre-release database', () => {
+    const db = new Database(':memory:');
+    try {
+      db.exec(`
+        CREATE TABLE sessions (id TEXT PRIMARY KEY, agent TEXT NOT NULL, session_id TEXT NOT NULL,
+          log_path TEXT NOT NULL, pwd TEXT NOT NULL, project_key TEXT NOT NULL DEFAULT '',
+          first_prompt TEXT, summary TEXT, message_count INTEGER, git_branch TEXT,
+          created_at INTEGER, modified_at INTEGER, is_sidechain INTEGER DEFAULT 0,
+          is_subagent INTEGER NOT NULL DEFAULT 0, parent_session_id TEXT,
+          file_mtime INTEGER, last_indexed_at INTEGER);
+        CREATE TABLE queries (id TEXT PRIMARY KEY, name TEXT NOT NULL, predicate TEXT NOT NULL,
+          created_at INTEGER, last_run_at INTEGER);
+        CREATE TABLE query_run (id TEXT PRIMARY KEY, saved_query_id TEXT, dsl TEXT NOT NULL,
+          started_at INTEGER NOT NULL, finished_at INTEGER, matched_count INTEGER);
+        CREATE TABLE query_matches (query_run_id TEXT NOT NULL, session_id TEXT NOT NULL,
+          added_at INTEGER, evidence TEXT, PRIMARY KEY (query_run_id, session_id));
+        CREATE TABLE session_enrich (session_id TEXT NOT NULL, query_run_id TEXT NOT NULL,
+          name TEXT NOT NULL, version INTEGER NOT NULL, value TEXT NOT NULL,
+          computed_at INTEGER NOT NULL, PRIMARY KEY (session_id, query_run_id, name));
+        CREATE TABLE session_file (session_id TEXT NOT NULL, path_rel TEXT NOT NULL,
+          path_abs TEXT NOT NULL, role TEXT NOT NULL, writes INTEGER NOT NULL DEFAULT 0,
+          reads INTEGER NOT NULL DEFAULT 0, ops TEXT, first_ts INTEGER, last_ts INTEGER,
+          PRIMARY KEY (session_id, path_rel));
+        CREATE TABLE plan_refs (session_id TEXT NOT NULL, plan_slug TEXT NOT NULL,
+          kind TEXT NOT NULL, PRIMARY KEY (session_id, plan_slug, kind));
+        INSERT INTO sessions (id, agent, session_id, log_path, pwd, project_key, modified_at)
+          VALUES ('s1', 'codex', 'native', '/tmp/s1', '/repo', '/repo', 2000);
+        PRAGMA user_version = 5;
+      `);
+
+      _migrateForTests(db);
+
+      expect(db.pragma('user_version', { simple: true })).toBe(5);
+      expect(
+        db.prepare('SELECT project_key, status, last_seen_at FROM project_profile').all(),
+      ).toEqual([{ project_key: '/repo', status: 'unprofiled', last_seen_at: 2000 }]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('project profiles: session indexing registers blanks and safe patches preserve omitted fields', () => {
+    clearDb();
+    upsertSession({ ...BASE, modifiedAt: 1000 });
+    const blank = listProjectProfiles()[0]!;
+    expect(blank).toMatchObject({
+      projectKey: '/home/user/project',
+      status: 'unprofiled',
+      lastSeenAt: 1000,
+    });
+
+    const profiled = applyProjectProfilePatch(blank.id, {
+      name: 'Project',
+      description: 'A software project',
+      roots: ['/home/user/project'],
+      artifactShapes: [{ type: 'feature', detector: { kind: 'branch' } }],
+      evidenceSummary: ['Branches and source files indicate software work'],
+      notes: 'Keep this note',
+      needsHumanAttention: false,
+      attentionReasons: [],
+    });
+    expect(profiled).toMatchObject({
+      status: 'profiled',
+      name: 'Project',
+      notes: 'Keep this note',
+    });
+
+    const revised = applyProjectProfilePatch(blank.id, { description: 'Updated description' });
+    expect(revised).toMatchObject({
+      name: 'Project',
+      description: 'Updated description',
+      notes: 'Keep this note',
+      artifactShapes: [{ type: 'feature', detector: { kind: 'branch' } }],
+    });
+  });
+
+  it('project profiles: validation rejects malformed detector configs and unexplained attention', () => {
+    clearDb();
+    upsertSession(BASE);
+    const id = listProjectProfiles()[0]!.id;
+    expect(() =>
+      applyProjectProfilePatch(id, {
+        artifactShapes: [{ type: 'feature', detector: { kind: 'branch', include: ['src'] } }],
+      }),
+    ).toThrow('artifactShapes[0].detector does not accept extra fields');
+    expect(() =>
+      applyProjectProfilePatch(id, { needsHumanAttention: true, attentionReasons: [] }),
+    ).toThrow('attentionReasons must not be empty');
+  });
+
+  it('project profiles: canonical coverage hides aliases and covered ids resolve to the canonical profile', () => {
+    clearDb();
+    upsertSession({ ...BASE, id: 'main', pwd: '/repo/main' });
+    upsertSession({ ...BASE, id: 'nested', pwd: '/repo/main/packages/cli' });
+    const profiles = listProjectProfiles();
+    const canonical = profiles.find((profile) => profile.projectKey === '/repo/main')!;
+    const alias = profiles.find((profile) => profile.projectKey === '/repo/main/packages/cli')!;
+
+    applyProjectProfilePatch(canonical.id, {
+      roots: ['/repo/main'],
+      artifactShapes: [],
+      evidenceSummary: ['One repository with a nested package'],
+      coveredProjectIds: [alias.id],
+    });
+
+    expect(listProjectProfiles()).toHaveLength(1);
+    expect(getProjectProfileResolution(alias.id)).toMatchObject({
+      redirectedFrom: alias.id,
+      project: { id: canonical.id, coveredProjects: [{ id: alias.id }] },
+    });
+    expect(() =>
+      applyProjectProfilePatch(canonical.id, { coveredProjectIds: [canonical.id] }),
+    ).toThrow('a project cannot cover itself');
+  });
+
+  it('project profiles: canonical coverage rolls up alias history and later observations', () => {
+    clearDb();
+    upsertSession({ ...BASE, id: 'main', pwd: '/repo/main', modifiedAt: 2000 });
+    upsertSession({ ...BASE, id: 'nested', pwd: '/repo/main/packages/cli', modifiedAt: 1000 });
+    const profiles = listProjectProfiles();
+    const canonical = profiles.find((profile) => profile.projectKey === '/repo/main')!;
+    const alias = profiles.find((profile) => profile.projectKey === '/repo/main/packages/cli')!;
+
+    applyProjectProfilePatch(canonical.id, {
+      coveredProjectIds: [alias.id],
+    });
+    expect(getProjectProfileResolution(canonical.id)?.project).toMatchObject({
+      firstSeenAt: 1000,
+      lastSeenAt: 2000,
+    });
+
+    upsertSession({ ...BASE, id: 'nested-new', pwd: '/repo/main/packages/cli', modifiedAt: 3000 });
+    expect(listProjectProfiles()).toEqual([
+      expect.objectContaining({
+        id: canonical.id,
+        firstSeenAt: 1000,
+        lastSeenAt: 3000,
+      }),
+    ]);
+  });
+
+  it('project profiles: attention is advisory and can be resolved', () => {
+    clearDb();
+    upsertSession(BASE);
+    const id = listProjectProfiles()[0]!.id;
+    applyProjectProfilePatch(id, { artifactShapes: [], evidenceSummary: [] });
+    expect(setProjectAttention(id, { needed: true, reasons: ['Review roots'] })).toMatchObject({
+      needsHumanAttention: true,
+      attentionReasons: ['Review roots'],
+    });
+    expect(listProjectProfiles({ needsAction: true })).toHaveLength(1);
+    expect(setProjectAttention(id, { needed: false })).toMatchObject({
+      needsHumanAttention: false,
+      attentionReasons: [],
+    });
+  });
+
+  it('project profiles: context reports indexed paths and bounded evidence for the profiling skill', () => {
+    clearDb();
+    upsertSession({ ...BASE, modifiedAt: 3000 });
+    upsertEnrichment(BASE.id, SYSTEM_RUN_ID, 'first_intent', 1, { v: 1, intent: 'Build it' }, 1);
+    upsertEnrichment(BASE.id, SYSTEM_RUN_ID, 'tool_counts', 1, { Bash: 2 }, 1);
+    upsertEnrichment(BASE.id, SYSTEM_RUN_ID, 'bash_cli_counts', 1, { git: 3 }, 1);
+    const queryRunId = createQueryRun({
+      savedQueryId: null,
+      dsl: { filters: { and: [] }, enrichers: [] },
+      startedAt: 2,
+    });
+    upsertEnrichment(
+      BASE.id,
+      queryRunId,
+      'first_intent',
+      1,
+      { v: 1, intent: 'Ignore query copy' },
+      2,
+    );
+    upsertEnrichment(BASE.id, queryRunId, 'tool_counts', 1, { Bash: 20 }, 2);
+    upsertEnrichment(BASE.id, queryRunId, 'bash_cli_counts', 1, { git: 30 }, 2);
+    replaceSessionFiles(BASE.id, [
+      {
+        pathRel: 'src/index.ts',
+        pathAbs: '/home/user/project/src/index.ts',
+        role: 'deliverable',
+        writes: 2,
+        reads: 0,
+        ops: { Edit: 2 },
+        firstTs: 1,
+        lastTs: 2,
+      },
+    ]);
+    const context = getProjectContext(listProjectProfiles()[0]!.id);
+    expect(context).toMatchObject({
+      observed: {
+        projectKeys: ['/home/user/project'],
+        paths: [{ pwd: '/home/user/project', sessions: 1, lastSeenAt: 3000 }],
+        sessionCount: 1,
+        firstIntents: ['Build it'],
+        touchedFiles: [{ path: 'src/index.ts', sessions: 1, writes: 2 }],
+        tools: [{ name: 'Bash', count: 2 }],
+        clis: [{ name: 'git', count: 3 }],
+      },
+    });
   });
 
   it('session_file / plan_refs: replace is idempotent and inverse lookups work', () => {
@@ -421,9 +633,7 @@ describe('sessions', () => {
     expect(sessionsByPlanSlug('swirling-bengio')).toEqual([BASE.id]);
 
     const db = getDb();
-    expect(
-      (db.prepare('SELECT COUNT(*) AS c FROM session_file').get() as { c: number }).c,
-    ).toBe(1);
+    expect((db.prepare('SELECT COUNT(*) AS c FROM session_file').get() as { c: number }).c).toBe(1);
     expect((db.prepare('SELECT COUNT(*) AS c FROM plan_refs').get() as { c: number }).c).toBe(1);
   });
 

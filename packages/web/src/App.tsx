@@ -7,11 +7,15 @@ import { QueryView } from './components/QueryView.js';
 import { QueryBuilder } from './components/QueryBuilder.js';
 import { DashboardView } from './components/DashboardView.js';
 import { InsightsView } from './components/InsightsView.js';
+import { ProjectsView } from './components/ProjectsView.js';
+import { ProjectView } from './components/ProjectView.js';
 
 export type View =
   | { type: 'dashboard' }
   | { type: 'insights' }
   | { type: 'sessions' }
+  | { type: 'projects' }
+  | { type: 'project'; id: string }
   | { type: 'session'; id: string }
   | { type: 'query-builder' }
   | { type: 'query'; id: string };
@@ -96,6 +100,7 @@ export function App() {
             onReindex={doReindex}
             onOpenSession={(id) => pushView({ type: 'session', id })}
             onOpenSessions={() => pushView({ type: 'sessions' })}
+            onOpenProject={(id) => pushView({ type: 'project', id })}
           />
         )}
         {view.type === 'insights' && (
@@ -103,6 +108,12 @@ export function App() {
         )}
         {view.type === 'sessions' && (
           <SessionsView search={search} onOpen={(id) => pushView({ type: 'session', id })} />
+        )}
+        {view.type === 'projects' && (
+          <ProjectsView onOpen={(id) => pushView({ type: 'project', id })} />
+        )}
+        {view.type === 'project' && (
+          <ProjectView id={view.id} onBack={() => window.history.back()} />
         )}
         {view.type === 'session' && (
           <SessionReader id={view.id} onBack={() => window.history.back()} />

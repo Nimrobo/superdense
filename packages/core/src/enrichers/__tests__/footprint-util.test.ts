@@ -1,9 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  classifyRole,
-  resolveFilePath,
-  writePathsFromShell,
-} from '../footprint-util.js';
+import { classifyRole, resolveFilePath, writePathsFromShell } from '../footprint-util.js';
 
 const PWD = '/home/user/project';
 
@@ -16,8 +12,14 @@ describe('resolveFilePath', () => {
   });
 
   it('collapses worktree copies to the same rel path', () => {
-    const a = resolveFilePath('/cdr/workspaces/superdense/las-vegas/src/a.ts', '/cdr/workspaces/superdense/las-vegas');
-    const b = resolveFilePath('/cdr/workspaces/superdense/casablanca/src/a.ts', '/cdr/workspaces/superdense/casablanca');
+    const a = resolveFilePath(
+      '/cdr/workspaces/superdense/las-vegas/src/a.ts',
+      '/cdr/workspaces/superdense/las-vegas',
+    );
+    const b = resolveFilePath(
+      '/cdr/workspaces/superdense/casablanca/src/a.ts',
+      '/cdr/workspaces/superdense/casablanca',
+    );
     expect(a.pathRel).toBe('src/a.ts');
     expect(b.pathRel).toBe('src/a.ts');
   });

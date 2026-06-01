@@ -15,8 +15,7 @@ export const CODEX_SKILLS_DIR = process.env.CODEX_SKILLS_DIR ?? join(homedir(), 
 
 /** Where Claude Code persists named plan files (`<slug>.md`). The slug is a free,
  *  human-readable artifact anchor — sessions citing the same slug are the same work. */
-export const CLAUDE_PLANS_DIR =
-  process.env.CLAUDE_PLANS_DIR ?? join(homedir(), '.claude', 'plans');
+export const CLAUDE_PLANS_DIR = process.env.CLAUDE_PLANS_DIR ?? join(homedir(), '.claude', 'plans');
 
 /** Extract the plan slug from a `~/.claude/plans/<slug>.md` path, else null.
  *  Matches the plans dir anywhere in the string so it works on both absolute

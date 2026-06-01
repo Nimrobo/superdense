@@ -45,10 +45,7 @@ describe('planRefsEnricher', () => {
 
   it('returns nothing for non-claude-code agents', async () => {
     const { refs } = await run(
-      ctx(
-        [{ kind: 'text', role: 'user', text: '~/.claude/plans/x.md' }],
-        { agent: 'codex' },
-      ),
+      ctx([{ kind: 'text', role: 'user', text: '~/.claude/plans/x.md' }], { agent: 'codex' }),
     );
     expect(refs).toEqual([]);
   });

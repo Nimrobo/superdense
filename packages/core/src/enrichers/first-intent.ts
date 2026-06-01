@@ -23,8 +23,7 @@ export const firstIntentEnricher: Enricher = {
         if (turns.length >= MAX_USER_TURNS) break;
       }
     }
-    const intent =
-      extractFirstMeaningfulPrompt(turns) ?? ctx.session.firstPrompt ?? null;
+    const intent = extractFirstMeaningfulPrompt(turns) ?? ctx.session.firstPrompt ?? null;
     return { v: 1, intent };
   },
 };

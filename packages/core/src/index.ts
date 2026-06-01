@@ -104,3 +104,20 @@ export {
   INSIGHT_MARKER_VERSION,
 } from './insights/index.js';
 export type { InsightRecipe, InsightMarker } from './insights/index.js';
+export {
+  applyProjectProfilePatch,
+  getProjectContext,
+  getProjectProfile,
+  getProjectProfileResolution,
+  listProjectProfiles,
+  setProjectAttention,
+} from './projects/index.js';
+export type {
+  ArtifactDetector,
+  ArtifactShape,
+  ProjectContext,
+  ProjectProfile,
+  ProjectProfileResolution,
+  ProjectProfileStatus,
+  ProjectProfileSummary,
+} from './projects/index.js';

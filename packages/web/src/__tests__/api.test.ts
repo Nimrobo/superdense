@@ -166,6 +166,30 @@ describe('api.progress', () => {
   });
 });
 
+describe('api projects', () => {
+  it('lists action-needed projects', async () => {
+    mockOk({ items: [] });
+    await api.listProjects({ needsAction: true });
+    expect(mockFetch).toHaveBeenCalledWith('/api/projects?needsAction=true', expect.anything());
+  });
+
+  it('loads a project and updates attention', async () => {
+    mockOk({ project: { id: 'p1' }, redirectedFrom: null });
+    await api.getProject('project/id');
+    expect(mockFetch).toHaveBeenCalledWith('/api/projects/project%2Fid', expect.anything());
+
+    mockOk({ project: { id: 'p1' } });
+    await api.setProjectAttention('p1', true, ['review roots']);
+    expect(mockFetch).toHaveBeenCalledWith(
+      '/api/projects/p1/attention',
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({ needed: true, reasons: ['review roots'] }),
+      }),
+    );
+  });
+});
+
 describe('error handling', () => {
   it('throws on non-ok response with status and statusText', async () => {
     mockErr(500, 'Internal Server Error');

@@ -50,7 +50,8 @@ export function classifyRole(pathAbs: string, pathRel: string, pwd: string): Fil
   if (/(^|\/)\.claude\//.test(pathAbs)) return 'scaffold';
   const cleanPwd = pwd ? normalize(pwd).replace(/\/+$/, '') : '';
   const insidePwd =
-    !isAbsolute(pathRel) && (!cleanPwd || pathAbs === cleanPwd || pathAbs.startsWith(cleanPwd + '/'));
+    !isAbsolute(pathRel) &&
+    (!cleanPwd || pathAbs === cleanPwd || pathAbs.startsWith(cleanPwd + '/'));
   if (!insidePwd) return 'external';
   const segments = pathRel.split('/');
   if (segments.some((s) => GENERATED_SEGMENTS.has(s))) return 'generated';
@@ -72,7 +73,10 @@ function sanitizeWritePath(raw: string): string | null {
   if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
     s = s.slice(1, -1);
   }
-  s = s.replace(/^[('"`]+/, '').replace(/[)'"`;,]+$/, '').trim();
+  s = s
+    .replace(/^[('"`]+/, '')
+    .replace(/[)'"`;,]+$/, '')
+    .trim();
   if (!s) return null;
   if (s === '-' || s.startsWith('-') || s.startsWith('&')) return null;
   if (s.includes('$')) return null; // unexpanded variable

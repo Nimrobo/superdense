@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { api, type HeaderStats, type Insights, type WindowBundle } from '../api.js';
+import {
+  api,
+  type HeaderStats,
+  type Insights,
+  type ProjectSummary,
+  type WindowBundle,
+} from '../api.js';
 import { projectLabel, sessionTitle } from '../sessionDisplay.js';
 
 type WindowDays = 7 | 14 | 30;
@@ -10,6 +16,7 @@ interface Props {
   onReindex: () => void;
   onOpenSession: (id: string) => void;
   onOpenSessions: () => void;
+  onOpenProject: (id: string) => void;
 }
 
 const DOWS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -48,19 +55,32 @@ function ymdToLabel(ymd: string): string {
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-export function DashboardView({ progress, onReindex, onOpenSession, onOpenSessions }: Props) {
+export function DashboardView({
+  progress,
+  onReindex,
+  onOpenSession,
+  onOpenSessions,
+  onOpenProject,
+}: Props) {
   const [header, setHeader] = useState<HeaderStats | null>(null);
   const [windowDays, setWindowDays] = useState<WindowDays>(7);
   const [windowData, setWindowData] = useState<WindowBundle | null>(null);
   const [insights, setInsights] = useState<Insights | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [projectActions, setProjectActions] = useState<ProjectSummary[]>([]);
 
   const refreshAll = () => {
-    Promise.all([api.statsHeader(), api.statsWindow(windowDays), api.statsInsights()])
-      .then(([h, w, i]) => {
+    Promise.all([
+      api.statsHeader(),
+      api.statsWindow(windowDays),
+      api.statsInsights(),
+      api.listProjects({ needsAction: true }),
+    ])
+      .then(([h, w, i, projects]) => {
         setHeader(h);
         setWindowData(w);
         setInsights(i);
+        setProjectActions(projects.items);
         setError(null);
       })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
@@ -124,6 +144,8 @@ export function DashboardView({ progress, onReindex, onOpenSession, onOpenSessio
 
       <TotalsRow totals={header.totals} />
 
+      <ProjectAttentionCard items={projectActions} onOpenProject={onOpenProject} />
+
       <MomentumHero streaks={header.streaks} records={insights?.personalRecords ?? null} />
 
       <div className="activity-rhythm-row">
@@ -159,6 +181,40 @@ export function DashboardView({ progress, onReindex, onOpenSession, onOpenSessio
         onOpenSession={onOpenSession}
         onOpenSessions={onOpenSessions}
       />
+    </div>
+  );
+}
+
+function ProjectAttentionCard({
+  items,
+  onOpenProject,
+}: {
+  items: ProjectSummary[];
+  onOpenProject: (id: string) => void;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <div className="card project-attention-card">
+      <div>
+        <div className="card-title">Projects need action</div>
+        <div className="muted small">
+          Profile newly detected projects or review unresolved attention reasons.
+        </div>
+      </div>
+      <ul className="list project-attention-list">
+        {items.slice(0, 5).map((project) => (
+          <li
+            key={project.id}
+            className="list-row clickable"
+            onClick={() => onOpenProject(project.id)}
+          >
+            <span className="ellipsis">{project.name ?? basename(project.projectKey)}</span>
+            <span className="muted small">
+              {project.status === 'unprofiled' ? 'profile project' : 'review attention'}
+            </span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

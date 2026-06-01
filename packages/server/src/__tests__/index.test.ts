@@ -18,6 +18,9 @@ vi.mock('../routes/stats.js', () => ({
 vi.mock('../routes/insights.js', () => ({
   registerInsightsRoutes: vi.fn(async () => {}),
 }));
+vi.mock('../routes/projects.js', () => ({
+  registerProjectsRoutes: vi.fn(async () => {}),
+}));
 
 import { startServer } from '../index.js';
 

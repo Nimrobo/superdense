@@ -31,6 +31,7 @@ vi.mock('@nimrobo/superdense-core', () => ({
   CLAUDE_SKILLS_DIR: '/unused/claude/skills',
   CODEX_SKILLS_DIR: '/unused/codex/skills',
   SYSTEM_RUN_ID: 'system',
+  applyProjectProfilePatch: vi.fn(),
   backfillQuery: vi.fn(),
   compactSession: vi.fn(),
   countQueryMatches: vi.fn(),
@@ -40,6 +41,8 @@ vi.mock('@nimrobo/superdense-core', () => ({
   ensureSuperdenseDirs: vi.fn(),
   getCompactor: vi.fn(),
   getEnrichment: vi.fn(),
+  getProjectContext: vi.fn(),
+  getProjectProfileResolution: vi.fn(),
   getQuery: vi.fn(),
   getSession: vi.fn(),
   getSessionChildren: vi.fn(),
@@ -50,6 +53,7 @@ vi.mock('@nimrobo/superdense-core', () => ({
   listFilterCatalog: vi.fn(),
   listFilters: vi.fn(),
   listQueries: vi.fn(),
+  listProjectProfiles: vi.fn(),
   listQueryMatchDetails: vi.fn(),
   listQueryMatches: vi.fn(),
   listSessionEnrichments: vi.fn(),
@@ -62,6 +66,7 @@ vi.mock('@nimrobo/superdense-core', () => ({
   runDiscovery: vi.fn(),
   runQueryEvaluation: vi.fn(),
   runSavedQuery: vi.fn(),
+  setProjectAttention: vi.fn(),
   validateQueryDefinition: vi.fn(),
 }));
 
@@ -111,6 +116,25 @@ const sessionTwo = {
   logPath: '/tmp/superdense/def456.jsonl',
   summary: 'Review code',
   modifiedAt: 1779322000000,
+};
+const project = {
+  id: 'p1',
+  projectKey: '/repo',
+  status: 'profiled' as const,
+  coveredBy: null,
+  name: 'Repo',
+  description: 'Software project',
+  roots: ['/repo'],
+  artifactShapes: [{ type: 'feature', detector: { kind: 'branch' as const } }],
+  evidenceSummary: ['branch-shaped software work'],
+  notes: null,
+  needsHumanAttention: false,
+  attentionReasons: [],
+  firstSeenAt: 1,
+  lastSeenAt: 2,
+  profiledAt: 2,
+  updatedAt: 2,
+  coveredProjects: [],
 };
 
 const originalClaudeSkillsDir = process.env.CLAUDE_SKILLS_DIR;
@@ -244,6 +268,32 @@ beforeEach(() => {
   }));
   vi.mocked(core.runDiscovery).mockResolvedValue({ discovered: 2 });
   vi.mocked(core.runQueryEvaluation).mockResolvedValue({ evaluated: 0 });
+  vi.mocked(core.listProjectProfiles).mockReturnValue([project]);
+  vi.mocked(core.getProjectProfileResolution).mockReturnValue({ project, redirectedFrom: null });
+  vi.mocked(core.getProjectContext).mockReturnValue({
+    project,
+    observed: {
+      projectKeys: ['/repo'],
+      paths: [{ pwd: '/repo', sessions: 2, lastSeenAt: 2 }],
+      sessionCount: 2,
+      firstIntents: [],
+      touchedFiles: [],
+      tools: [],
+      clis: [],
+    },
+    siblingCandidates: [],
+    fileCensus: {
+      root: '/repo',
+      filesScanned: 0,
+      directoriesScanned: 0,
+      extensions: [],
+      sampleFiles: [],
+      truncated: false,
+      warnings: [],
+    },
+  });
+  vi.mocked(core.applyProjectProfilePatch).mockReturnValue(project);
+  vi.mocked(core.setProjectAttention).mockReturnValue(project);
   vi.mocked(startServer).mockResolvedValue({ url: 'http://127.0.0.1:4242', close: vi.fn() });
   vi.mocked(open).mockResolvedValue({} as Awaited<ReturnType<typeof open>>);
 });
@@ -766,6 +816,31 @@ describe('superdense cli agent commands', () => {
     });
   });
 
+  it('lists project work needing action and applies a merge patch', async () => {
+    const list = io();
+    await runCli(['project', 'list', '--needs-action'], list.io);
+    expect(core.listProjectProfiles).toHaveBeenCalledWith({ needsAction: true });
+    expect(json(list.stdout[0]!)).toMatchObject({ items: [{ id: 'p1' }] });
+
+    const apply = io();
+    await runCli(['project', 'apply', 'p1', '--patch', '{"description":"Updated"}'], apply.io);
+    expect(core.applyProjectProfilePatch).toHaveBeenCalledWith('p1', {
+      description: 'Updated',
+    });
+    expect(json(apply.stdout[0]!)).toMatchObject({ project: { id: 'p1' } });
+  });
+
+  it('shows project profiling context and resolves attention', async () => {
+    const context = io();
+    await runCli(['project', 'context', 'p1'], context.io);
+    expect(core.getProjectContext).toHaveBeenCalledWith('p1');
+    expect(json(context.stdout[0]!)).toMatchObject({ project: { id: 'p1' } });
+
+    const attention = io();
+    await runCli(['project', 'attention', 'p1', '--resolved'], attention.io);
+    expect(core.setProjectAttention).toHaveBeenCalledWith('p1', { needed: false });
+  });
+
   it('throws intended errors for missing query, session, and compactor', async () => {
     vi.mocked(core.getQuery).mockReturnValue(null);
     await expect(runCli(['query', 'show', 'missing'], io().io)).rejects.toThrow(
@@ -896,6 +971,8 @@ describe('superdense cli agent commands', () => {
     expect(existsSync(join(root, 'codex', 'superdense', 'agents', 'openai.yaml'))).toBe(true);
     expect(existsSync(join(root, 'claude', 'chain', 'chain-sessions.sh'))).toBe(true);
     expect(existsSync(join(root, 'codex', 'chain', 'chain-sessions.sh'))).toBe(true);
+    expect(existsSync(join(root, 'claude', 'superdense-project-profile', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, 'codex', 'superdense-project-profile', 'SKILL.md'))).toBe(true);
   });
 
   it('installs a skill locally under the current working directory', async () => {
@@ -972,6 +1049,12 @@ describe('superdense cli agent commands', () => {
     expect(existsSync(join(root, 'global-codex', 'superdense', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(root, 'global-claude', 'chain', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(root, 'global-codex', 'chain', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, 'global-claude', 'superdense-project-profile', 'SKILL.md'))).toBe(
+      true,
+    );
+    expect(existsSync(join(root, 'global-codex', 'superdense-project-profile', 'SKILL.md'))).toBe(
+      true,
+    );
     expect(out.stdout).toContain('[superdense] installed Superdense skills globally.');
     expect(startServer).toHaveBeenCalled();
   });

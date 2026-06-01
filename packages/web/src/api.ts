@@ -155,6 +155,43 @@ export interface Stats {
   recentSessions: Session[];
 }
 
+export type ProjectStatus = 'unprofiled' | 'profiled' | 'covered';
+
+export type ArtifactDetector =
+  | { kind: 'folder-leaf'; include: string[]; exclude?: string[] }
+  | { kind: 'file-glob'; include: string[]; exclude?: string[] }
+  | { kind: 'branch' }
+  | { kind: 'whole-surface' };
+
+export interface ArtifactShape {
+  type: string;
+  detector: ArtifactDetector;
+  outputHint?: { globs: string[]; note?: string };
+}
+
+export interface ProjectSummary {
+  id: string;
+  projectKey: string;
+  status: ProjectStatus;
+  coveredBy: string | null;
+  name: string | null;
+  description: string | null;
+  roots: string[];
+  artifactShapes: ArtifactShape[];
+  evidenceSummary: string[];
+  notes: string | null;
+  needsHumanAttention: boolean;
+  attentionReasons: string[];
+  firstSeenAt: number;
+  lastSeenAt: number;
+  profiledAt: number | null;
+  updatedAt: number;
+}
+
+export interface Project extends ProjectSummary {
+  coveredProjects: ProjectSummary[];
+}
+
 async function j<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     ...init,
@@ -244,6 +281,17 @@ export const api = {
     return { prompt, runId: res.headers.get('x-superdense-run-id') };
   },
   insightsRuns: () => j<{ items: InsightRun[] }>('/api/insights/runs'),
+  listProjects: (opts: { needsAction?: boolean } = {}) =>
+    j<{ items: ProjectSummary[] }>(`/api/projects${opts.needsAction ? '?needsAction=true' : ''}`),
+  getProject: (id: string) =>
+    j<{ project: Project; redirectedFrom: string | null }>(
+      `/api/projects/${encodeURIComponent(id)}`,
+    ),
+  setProjectAttention: (id: string, needed: boolean, reasons?: string[]) =>
+    j<{ project: Project }>(`/api/projects/${encodeURIComponent(id)}/attention`, {
+      method: 'PATCH',
+      body: JSON.stringify({ needed, ...(reasons ? { reasons } : {}) }),
+    }),
 };
 
 export interface InsightRecipe {

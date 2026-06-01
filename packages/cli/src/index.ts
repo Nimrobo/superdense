@@ -19,6 +19,7 @@ import { createInterface } from 'node:readline/promises';
 import semver from 'semver';
 import {
   assembleInsightPrompt,
+  applyProjectProfilePatch,
   CLAUDE_SKILLS_DIR,
   compactSession,
   CODEX_SKILLS_DIR,
@@ -29,6 +30,8 @@ import {
   ensureSuperdenseDirs,
   getCompactor,
   getEnrichment,
+  getProjectContext,
+  getProjectProfileResolution,
   getQuery,
   SYSTEM_RUN_ID,
   getSession,
@@ -41,6 +44,7 @@ import {
   listFilters,
   listInsightRecipes,
   listQueries,
+  listProjectProfiles,
   listQueryMatchDetails,
   listSessionEnrichments,
   listSessions,
@@ -51,6 +55,7 @@ import {
   runDiscovery,
   runQueryEvaluation,
   runSavedQuery,
+  setProjectAttention,
   validateQueryDefinition,
   type AdHocQueryResult,
   type Compactor,
@@ -64,7 +69,7 @@ import open from 'open';
 const CLI_PACKAGE_NAME = '@nimrobo/superdense';
 const NPM_REGISTRY_PACKAGE_URL = `https://registry.npmjs.org/${CLI_PACKAGE_NAME.replace('/', '%2f')}`;
 const SKIP_UPDATE_CHECK_ENV = 'SUPERDENSE_SKIP_UPDATE_CHECK';
-const REQUIRED_STUDIO_SKILLS = ['superdense', 'chain'];
+const REQUIRED_STUDIO_SKILLS = ['superdense', 'chain', 'superdense-project-profile'];
 
 interface CliIo {
   stdout: Pick<typeof console, 'log'>;
@@ -196,6 +201,19 @@ async function readQueryDefinition(input: string | boolean | undefined): Promise
   if (typeof input !== 'string' || !input.trim()) throw new Error('--query is required');
   const raw = input.startsWith('@') ? await readFile(input.slice(1), 'utf8') : input;
   return JSON.parse(raw) as QueryDefinition;
+}
+
+async function readJsonObject(
+  input: string | boolean | undefined,
+  flag: string,
+): Promise<Record<string, unknown>> {
+  if (typeof input !== 'string' || !input.trim()) throw new Error(`--${flag} is required`);
+  const raw = input.startsWith('@') ? await readFile(input.slice(1), 'utf8') : input;
+  const parsed = JSON.parse(raw) as unknown;
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(`--${flag} must contain a JSON object`);
+  }
+  return parsed as Record<string, unknown>;
 }
 
 async function validateCliQueryDefinition(definition: QueryDefinition): Promise<void> {
@@ -614,6 +632,61 @@ async function handleEnricher(args: string[], io: CliIo): Promise<boolean> {
     return true;
   }
   throw new Error(`unknown enricher command: ${action}`);
+}
+
+async function handleProject(
+  args: string[],
+  flags: Record<string, string | boolean>,
+  io: CliIo,
+): Promise<boolean> {
+  const action = args[0] ?? 'list';
+  if (action === 'list') {
+    printJson(
+      {
+        items: listProjectProfiles({ needsAction: flags['needs-action'] === true }),
+      },
+      io,
+    );
+    return true;
+  }
+  const id = args[1];
+  if (!id) throw new Error(`project ${action} requires <id>`);
+  if (action === 'show') {
+    const result = getProjectProfileResolution(id);
+    if (!result) throw new Error(`project not found: ${id}`);
+    printJson(result, io);
+    return true;
+  }
+  if (action === 'context') {
+    const context = getProjectContext(id);
+    if (!context) throw new Error(`project not found: ${id}`);
+    printJson(context, io);
+    return true;
+  }
+  if (action === 'apply') {
+    const patch = await readJsonObject(flags.patch, 'patch');
+    printJson({ project: applyProjectProfilePatch(id, patch) }, io);
+    return true;
+  }
+  if (action === 'attention') {
+    if (flags.needed === true) {
+      const reasons =
+        typeof flags.reasons === 'string'
+          ? (JSON.parse(flags.reasons) as unknown)
+          : ['Marked for human attention'];
+      if (!Array.isArray(reasons) || reasons.some((reason) => typeof reason !== 'string')) {
+        throw new Error('--reasons must be a JSON array of strings');
+      }
+      printJson({ project: setProjectAttention(id, { needed: true, reasons }) }, io);
+      return true;
+    }
+    if (flags.resolved === true) {
+      printJson({ project: setProjectAttention(id, { needed: false }) }, io);
+      return true;
+    }
+    throw new Error('project attention requires --needed or --resolved');
+  }
+  throw new Error(`unknown project command: ${action}`);
 }
 
 function handleInsight(args: string[], io: CliIo): boolean {
@@ -1049,6 +1122,11 @@ export async function runCli(
     return 0;
   }
 
+  if (cmd === 'project') {
+    await handleProject(args, flags, io);
+    return 0;
+  }
+
   if (cmd === 'insight') {
     handleInsight(args, io);
     return 0;
@@ -1105,6 +1183,12 @@ export async function runCli(
         '  enricher show <n>   Show enricher details',
         '  insight list        List available insight recipes',
         '  insight prompt <n>  Print a copy-pasteable insight prompt for your coding agent',
+        '  project list        List detected projects',
+        '      --needs-action  Show unprofiled and human-attention projects only',
+        '  project show <id>   Show a canonical project profile',
+        '  project context <id>  Gather bounded evidence for profiling',
+        '  project apply <id>  Apply an atomic profile merge patch (--patch <json|@file>)',
+        '  project attention <id>  Mark attention --needed [--reasons <json>] or --resolved',
         '  skill install [n]   Install skills into Claude and Codex',
         '      --locally       Install skills into ./.claude and ./.codex for this cwd',
         '  index               Incremental session index',

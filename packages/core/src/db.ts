@@ -134,8 +134,10 @@ function migrate(db: Database.Database): void {
     runDataMigrationV4(db);
     db.pragma('user_version = 4');
   }
+  // V5 is still under development. Reconcile its schema on every open so
+  // pre-release databases already marked as V5 receive later V5 additions.
+  runDataMigrationV5(db);
   if (currentVersion < 5) {
-    runDataMigrationV5(db);
     db.pragma('user_version = 5');
   }
 
@@ -292,10 +294,12 @@ function runDataMigrationV5(db: Database.Database): void {
           last_ts    INTEGER,
           PRIMARY KEY (session_id, path_rel)
         );
-        CREATE INDEX IF NOT EXISTS idx_session_file_path ON session_file(path_rel);
-        CREATE INDEX IF NOT EXISTS idx_session_file_session ON session_file(session_id);
       `);
     }
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_session_file_path ON session_file(path_rel);
+      CREATE INDEX IF NOT EXISTS idx_session_file_session ON session_file(session_id);
+    `);
     // plan_refs: named-plan anchor. plan_slug is indexed for inverse lookups
     // (slug -> sessions sharing that plan = one artifact).
     if (!tableExists(db, 'plan_refs')) {
@@ -306,9 +310,51 @@ function runDataMigrationV5(db: Database.Database): void {
           kind       TEXT NOT NULL,
           PRIMARY KEY (session_id, plan_slug, kind)
         );
-        CREATE INDEX IF NOT EXISTS idx_plan_refs_slug ON plan_refs(plan_slug);
       `);
     }
+    db.exec('CREATE INDEX IF NOT EXISTS idx_plan_refs_slug ON plan_refs(plan_slug);');
+    if (!tableExists(db, 'project_profile')) {
+      db.exec(`
+        CREATE TABLE project_profile (
+          id                    TEXT PRIMARY KEY,
+          project_key           TEXT UNIQUE NOT NULL,
+          status                TEXT NOT NULL,
+          covered_by            TEXT REFERENCES project_profile(id),
+          name                  TEXT,
+          description           TEXT,
+          roots                 TEXT NOT NULL DEFAULT '[]',
+          artifact_shapes       TEXT NOT NULL DEFAULT '[]',
+          evidence_summary      TEXT NOT NULL DEFAULT '[]',
+          notes                 TEXT,
+          needs_human_attention INTEGER NOT NULL DEFAULT 0,
+          attention_reasons     TEXT NOT NULL DEFAULT '[]',
+          first_seen_at         INTEGER NOT NULL,
+          last_seen_at          INTEGER NOT NULL,
+          profiled_at           INTEGER,
+          updated_at            INTEGER NOT NULL
+        );
+      `);
+    }
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_project_profile_status
+        ON project_profile(status, needs_human_attention, last_seen_at);
+      CREATE INDEX IF NOT EXISTS idx_project_profile_covered_by
+        ON project_profile(covered_by);
+    `);
+
+    const now = Date.now();
+    db.prepare(
+      `INSERT OR IGNORE INTO project_profile (
+         id, project_key, status, first_seen_at, last_seen_at, updated_at
+       )
+       SELECT lower(hex(randomblob(16))), project_key, 'unprofiled',
+              COALESCE(MIN(created_at), MIN(modified_at), @now),
+              COALESCE(MAX(modified_at), MAX(created_at), @now),
+              @now
+         FROM sessions
+        WHERE project_key IS NOT NULL AND project_key != ''
+        GROUP BY project_key`,
+    ).run({ now });
   });
   tx();
 }
@@ -327,6 +373,7 @@ export function _migrateForTests(db: Database.Database): void {
 
 export function upsertSession(s: Session): void {
   const db = getDb();
+  const projectKey = resolveProjectKey(s.pwd);
   db.prepare(
     `
     INSERT INTO sessions (
@@ -362,7 +409,7 @@ export function upsertSession(s: Session): void {
     sessionId: s.sessionId,
     logPath: s.logPath,
     pwd: s.pwd,
-    projectKey: resolveProjectKey(s.pwd),
+    projectKey,
     firstPrompt: s.firstPrompt ?? null,
     summary: s.summary ?? null,
     messageCount: s.messageCount ?? null,
@@ -375,6 +422,39 @@ export function upsertSession(s: Session): void {
     fileMtime: s.fileMtime ?? null,
     lastIndexedAt: s.lastIndexedAt ?? null,
   });
+  registerObservedProject(projectKey, s.modifiedAt ?? s.createdAt ?? Date.now());
+}
+
+/** Register a conservatively detected project without overwriting agent profile data. */
+export function registerObservedProject(projectKey: string, observedAt = Date.now()): string {
+  if (!projectKey) throw new Error('project key is required');
+  const db = getDb();
+  const existing = db
+    .prepare('SELECT id FROM project_profile WHERE project_key = ?')
+    .get(projectKey) as { id: string } | undefined;
+  if (existing) {
+    const update = db.prepare(
+      `UPDATE project_profile
+          SET last_seen_at = MAX(last_seen_at, ?)
+        WHERE id = ?`,
+    );
+    const parent = db.prepare('SELECT covered_by FROM project_profile WHERE id = ?');
+    const visited = new Set<string>();
+    let id: string | null = existing.id;
+    while (id && !visited.has(id)) {
+      visited.add(id);
+      update.run(observedAt, id);
+      id = (parent.get(id) as { covered_by: string | null } | undefined)?.covered_by ?? null;
+    }
+    return existing.id;
+  }
+  const id = randomUUID();
+  db.prepare(
+    `INSERT INTO project_profile (
+       id, project_key, status, first_seen_at, last_seen_at, updated_at
+     ) VALUES (?, ?, 'unprofiled', ?, ?, ?)`,
+  ).run(id, projectKey, observedAt, observedAt, Date.now());
+  return id;
 }
 
 export interface SessionFilter {
