@@ -11,6 +11,7 @@ import type { Session } from '../types.js';
 
 export type CurationStatus = 'pending' | 'consumed' | 'skipped' | 'deferred';
 export type WorkThreadRole = 'contributor' | 'evidence';
+export type ThreadExternalizationStatus = 'not_external' | 'external';
 
 // Layer 3B lifecycle, derived from the folded work_thread row:
 //   open      -> still being curated (L3A)
@@ -36,6 +37,9 @@ export interface WorkThread {
   artifactType: string | null;
   payload: Record<string, unknown> | null;
   artifactFinalizedAt: number | null;
+  externalizationStatus: ThreadExternalizationStatus | null;
+  externalizationEvidence: string | null;
+  externalizationUpdatedAt: number | null;
   lifecycle: ThreadLifecycle;
   headSessionId?: string | null;
   sessions?: WorkThreadSession[];
@@ -52,6 +56,9 @@ interface WorkThreadRow {
   artifact_type: string | null;
   payload: string | null;
   artifact_finalized_at: number | null;
+  externalization_status: ThreadExternalizationStatus | null;
+  externalization_evidence: string | null;
+  externalization_updated_at: number | null;
 }
 
 interface WorkThreadSessionRow {
@@ -95,6 +102,9 @@ function rowToThread(row: WorkThreadRow): WorkThread {
     artifactType,
     payload: parsePayload(row.payload),
     artifactFinalizedAt: row.artifact_finalized_at ?? null,
+    externalizationStatus: row.externalization_status ?? null,
+    externalizationEvidence: row.externalization_evidence ?? null,
+    externalizationUpdatedAt: row.externalization_updated_at ?? null,
     lifecycle,
   };
 }

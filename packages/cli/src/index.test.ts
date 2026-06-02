@@ -32,6 +32,7 @@ vi.mock('@nimrobo/superdense-core', () => ({
   CODEX_SKILLS_DIR: '/unused/codex/skills',
   SYSTEM_RUN_ID: 'system',
   applyCurationBatch: vi.fn(),
+  assessExternalization: vi.fn(),
   applyProjectProfilePatch: vi.fn(),
   backfillQuery: vi.fn(),
   compactSession: vi.fn(),
@@ -43,6 +44,7 @@ vi.mock('@nimrobo/superdense-core', () => ({
   getCompactor: vi.fn(),
   getCurationContext: vi.fn(),
   getEnrichment: vi.fn(),
+  getExternalization: vi.fn(),
   getProjectContext: vi.fn(),
   getProjectProfileResolution: vi.fn(),
   getQuery: vi.fn(),
@@ -54,6 +56,9 @@ vi.mock('@nimrobo/superdense-core', () => ({
   listCompactors: vi.fn(),
   listCurationInbox: vi.fn(),
   listEnrichers: vi.fn(),
+  listExternalizationConnectors: vi.fn(),
+  listExternalizationInbox: vi.fn(),
+  listExternalizations: vi.fn(),
   listFilterCatalog: vi.fn(),
   listFilters: vi.fn(),
   listQueries: vi.fn(),
@@ -141,6 +146,29 @@ const project = {
   profiledAt: 2,
   updatedAt: 2,
   coveredProjects: [],
+};
+const externalization = {
+  artifactId: 't1',
+  artifactType: 'launch',
+  title: 'Launch',
+  summary: null,
+  artifactFinalizedAt: 1,
+  status: 'blocked' as const,
+  conclusion: 'external' as const,
+  evidence: 'Published launch',
+  updatedAt: 2,
+  targets: [
+    {
+      id: 'target-1',
+      artifactId: 't1',
+      connector: 'x',
+      status: 'needs_connector' as const,
+      locator: '187123456789',
+      evidence: 'X connector is not installed',
+      createdAt: 2,
+      updatedAt: 2,
+    },
+  ],
 };
 
 const originalClaudeSkillsDir = process.env.CLAUDE_SKILLS_DIR;
@@ -333,10 +361,28 @@ beforeEach(() => {
     artifactType: null,
     payload: null,
     artifactFinalizedAt: null,
+    externalizationStatus: null,
+    externalizationEvidence: null,
+    externalizationUpdatedAt: null,
     lifecycle: 'open',
     headSessionId: null,
     sessions: [],
   });
+  vi.mocked(core.listExternalizationInbox).mockReturnValue({
+    items: [externalization],
+    limit: 10,
+    remaining: 1,
+    counts: { unprocessed: 0, blocked: 1 },
+    nextCursor: 'next-page',
+  });
+  vi.mocked(core.listExternalizations).mockReturnValue([externalization]);
+  vi.mocked(core.getExternalization).mockReturnValue(externalization);
+  vi.mocked(core.assessExternalization).mockReturnValue({
+    ok: true,
+    artifactId: 't1',
+    externalization,
+  });
+  vi.mocked(core.listExternalizationConnectors).mockReturnValue([]);
   vi.mocked(core.setProjectAttention).mockReturnValue(project);
   vi.mocked(startServer).mockResolvedValue({ url: 'http://127.0.0.1:4242', close: vi.fn() });
   vi.mocked(open).mockResolvedValue({} as Awaited<ReturnType<typeof open>>);
@@ -958,6 +1004,50 @@ describe('superdense cli agent commands', () => {
     expect(core.getWorkThread).toHaveBeenCalledWith('t1');
   });
 
+  it('exposes externalization inbox, reads, assessment writes, and connector listing', async () => {
+    const inbox = io();
+    await runCli(
+      ['externalization', 'inbox', '--limit', '7', '--cursor', 'current-page'],
+      inbox.io,
+    );
+    expect(core.listExternalizationInbox).toHaveBeenCalledWith({
+      limit: 7,
+      cursor: 'current-page',
+    });
+    expect(json(inbox.stdout[0]!)).toMatchObject({
+      items: [{ artifactId: 't1', status: 'blocked' }],
+      remaining: 1,
+      nextCursor: 'next-page',
+    });
+
+    await runCli(['externalization', 'list', '--status', 'blocked'], io().io);
+    expect(core.listExternalizations).toHaveBeenCalledWith({ status: 'blocked' });
+
+    await runCli(['externalization', 'show', 't1'], io().io);
+    expect(core.getExternalization).toHaveBeenCalledWith('t1');
+
+    await runCli(
+      [
+        'externalization',
+        'assess',
+        '--input',
+        '{"artifactId":"t1","status":"not_external","evidence":"internal","targets":[]}',
+      ],
+      io().io,
+    );
+    expect(core.assessExternalization).toHaveBeenCalledWith({
+      artifactId: 't1',
+      status: 'not_external',
+      evidence: 'internal',
+      targets: [],
+    });
+
+    const connectors = io();
+    await runCli(['externalization', 'connector', 'list'], connectors.io);
+    expect(core.listExternalizationConnectors).toHaveBeenCalled();
+    expect(json(connectors.stdout[0]!)).toEqual({ items: [] });
+  });
+
   it('throws intended errors for missing query, session, and compactor', async () => {
     vi.mocked(core.getQuery).mockReturnValue(null);
     await expect(runCli(['query', 'show', 'missing'], io().io)).rejects.toThrow(
@@ -1090,6 +1180,21 @@ describe('superdense cli agent commands', () => {
     expect(existsSync(join(root, 'codex', 'chain', 'chain-sessions.sh'))).toBe(true);
     expect(existsSync(join(root, 'claude', 'superdense-project-profile', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(root, 'codex', 'superdense-project-profile', 'SKILL.md'))).toBe(true);
+    expect(
+      existsSync(join(root, 'claude', 'superdense-externalization-reconcile', 'SKILL.md')),
+    ).toBe(true);
+    expect(
+      existsSync(join(root, 'codex', 'superdense-externalization-reconcile', 'SKILL.md')),
+    ).toBe(true);
+    expect(
+      readFileSync(
+        join(root, 'claude', 'superdense-externalization-reconcile', 'SKILL.md'),
+        'utf8',
+      ),
+    ).toContain('--cursor <opaque>');
+    expect(
+      readFileSync(join(root, 'codex', 'superdense-externalization-reconcile', 'SKILL.md'), 'utf8'),
+    ).toContain('--cursor <opaque>');
   });
 
   it('installs a skill locally under the current working directory', async () => {
@@ -1172,6 +1277,12 @@ describe('superdense cli agent commands', () => {
     expect(existsSync(join(root, 'global-codex', 'superdense-project-profile', 'SKILL.md'))).toBe(
       true,
     );
+    expect(
+      existsSync(join(root, 'global-claude', 'superdense-externalization-reconcile', 'SKILL.md')),
+    ).toBe(true);
+    expect(
+      existsSync(join(root, 'global-codex', 'superdense-externalization-reconcile', 'SKILL.md')),
+    ).toBe(true);
     expect(out.stdout).toContain('[superdense] installed Superdense skills globally.');
     expect(startServer).toHaveBeenCalled();
   });

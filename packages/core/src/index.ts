@@ -128,11 +128,28 @@ export {
 } from './curation/index.js';
 export type {
   CurationStatus,
+  ThreadExternalizationStatus,
   ThreadLifecycle,
   WorkThread,
   WorkThreadRole,
   WorkThreadSession,
 } from './curation/index.js';
+export {
+  assessExternalization,
+  getExternalization,
+  listExternalizationConnectors,
+  listExternalizationInbox,
+  listExternalizations,
+} from './externalization/index.js';
+export type {
+  ArtifactExternalization,
+  ExternalizationConclusion,
+  ExternalizationConnector,
+  ExternalizationConnectorAvailability,
+  ExternalizationStatus,
+  ExternalizationTarget,
+  ExternalizationTargetStatus,
+} from './externalization/index.js';
 export type {
   ArtifactDetector,
   ArtifactShape,

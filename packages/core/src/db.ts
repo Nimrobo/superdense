@@ -152,6 +152,12 @@ function migrate(db: Database.Database): void {
   if (currentVersion < 7) {
     db.pragma('user_version = 7');
   }
+  // V8 adds Layer 4 externalization reconciliation. The assessment is folded
+  // onto work_thread while connector-specific targets remain child rows.
+  runDataMigrationV8(db);
+  if (currentVersion < 8) {
+    db.pragma('user_version = 8');
+  }
 
   ensureSystemRun(db);
 }
@@ -451,6 +457,42 @@ function runDataMigrationV7(db: Database.Database): void {
       `CREATE INDEX IF NOT EXISTS idx_work_thread_artifact
          ON work_thread(artifact_type, project_profile_id);`,
     );
+  });
+  tx();
+}
+
+function runDataMigrationV8(db: Database.Database): void {
+  const tx = db.transaction(() => {
+    if (!columnExists(db, 'work_thread', 'externalization_status')) {
+      db.exec('ALTER TABLE work_thread ADD COLUMN externalization_status TEXT;');
+    }
+    if (!columnExists(db, 'work_thread', 'externalization_evidence')) {
+      db.exec('ALTER TABLE work_thread ADD COLUMN externalization_evidence TEXT;');
+    }
+    if (!columnExists(db, 'work_thread', 'externalization_updated_at')) {
+      db.exec('ALTER TABLE work_thread ADD COLUMN externalization_updated_at INTEGER;');
+    }
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_work_thread_externalization
+        ON work_thread(externalization_status, artifact_finalized_at);
+
+      CREATE TABLE IF NOT EXISTS externalization_target (
+        id          TEXT PRIMARY KEY,
+        artifact_id TEXT NOT NULL REFERENCES work_thread(id) ON DELETE CASCADE,
+        connector   TEXT NOT NULL,
+        status      TEXT NOT NULL CHECK (
+          status IN ('linked', 'needs_connector', 'not_found', 'ambiguous')
+        ),
+        locator     TEXT,
+        evidence    TEXT,
+        created_at  INTEGER NOT NULL,
+        updated_at  INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_externalization_target_artifact
+        ON externalization_target(artifact_id, status);
+      CREATE INDEX IF NOT EXISTS idx_externalization_target_connector
+        ON externalization_target(connector, status);
+    `);
   });
   tx();
 }

@@ -20,6 +20,7 @@ import semver from 'semver';
 import {
   assembleInsightPrompt,
   applyCurationBatch,
+  assessExternalization,
   applyProjectProfilePatch,
   CLAUDE_SKILLS_DIR,
   compactSession,
@@ -34,6 +35,7 @@ import {
   getCompactor,
   getCurationContext,
   getEnrichment,
+  getExternalization,
   getProjectContext,
   getProjectProfileResolution,
   getQuery,
@@ -47,6 +49,9 @@ import {
   listCompactors,
   listCurationInbox,
   listEnrichers,
+  listExternalizationConnectors,
+  listExternalizationInbox,
+  listExternalizations,
   listFilterCatalog,
   listFilters,
   listInsightRecipes,
@@ -84,6 +89,7 @@ const REQUIRED_STUDIO_SKILLS = [
   'superdense-project-profile',
   'superdense-session-curate',
   'superdense-artifact-finalize',
+  'superdense-externalization-reconcile',
 ];
 
 interface CliIo {
@@ -816,6 +822,46 @@ function handleThread(args: string[], flags: Record<string, string | boolean>, i
   throw new Error(`unknown thread command: ${action}`);
 }
 
+async function handleExternalization(
+  args: string[],
+  flags: Record<string, string | boolean>,
+  io: CliIo,
+): Promise<boolean> {
+  const action = args[0];
+  if (action === 'inbox') {
+    printJson(
+      listExternalizationInbox({
+        limit: intFlag(flags, 'limit', 10, 1000),
+        cursor: typeof flags.cursor === 'string' ? flags.cursor : undefined,
+      }),
+      io,
+    );
+    return true;
+  }
+  if (action === 'list') {
+    const status = typeof flags.status === 'string' ? flags.status : undefined;
+    printJson({ items: listExternalizations({ status }) }, io);
+    return true;
+  }
+  if (action === 'show') {
+    const id = args[1];
+    if (!id) throw new Error('externalization show requires <artifact-id>');
+    const externalization = getExternalization(id);
+    if (!externalization) throw new Error(`artifact not found: ${id}`);
+    printJson({ externalization }, io);
+    return true;
+  }
+  if (action === 'assess') {
+    printJson(assessExternalization(await readJsonObject(flags.input, 'input')), io);
+    return true;
+  }
+  if (action === 'connector' && args[1] === 'list') {
+    printJson({ items: listExternalizationConnectors() }, io);
+    return true;
+  }
+  throw new Error(`unknown externalization command: ${args.join(' ') || '(none)'}`);
+}
+
 function handleInsight(args: string[], io: CliIo): boolean {
   const action = args[0] ?? 'list';
   if (action === 'list') {
@@ -1269,6 +1315,11 @@ export async function runCli(
     return 0;
   }
 
+  if (cmd === 'externalization') {
+    await handleExternalization(args, flags, io);
+    return 0;
+  }
+
   if (cmd === 'insight') {
     handleInsight(args, io);
     return 0;
@@ -1341,6 +1392,11 @@ export async function runCli(
         '  artifact finalize --input <json|@file>  Extract an immutable artifact from a finalized thread',
         '  artifact list       List finalized artifacts [--project <id>] [--type <t>]',
         '  artifact show <thread-id>  Show a finalized artifact and its frozen lineage',
+        '  externalization inbox  List unprocessed and blocked finalized artifacts [--limit N] [--cursor <opaque>]',
+        '  externalization list   List artifact externalization states [--status <s>]',
+        '  externalization show <artifact-id>  Show assessment and connector targets',
+        '  externalization assess --input <json|@file>  Replace one artifact assessment',
+        '  externalization connector list  List curated connector CLIs and availability',
         '  skill install [n]   Install skills into Claude and Codex',
         '      --locally       Install skills into ./.claude and ./.codex for this cwd',
         '  index               Incremental session index',
