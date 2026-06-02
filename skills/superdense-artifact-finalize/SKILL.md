@@ -39,6 +39,20 @@ Once finalized the thread and its lineage are frozen and can no longer be curate
    Decide which work is the deliverable and which is incidental. The deliverable may not be a
    file: a tweet, message, or note can live only in the session transcript.
 
+   If indexed context is insufficient, escalate narrowly for only the relevant sessions:
+
+   ```bash
+   superdense session show <session-id>
+   superdense session enrichments <session-id>
+   superdense compactor run salience <session-id>
+   superdense compactor run trace <session-id>
+   superdense session path <session-id> # raw source, last resort
+   ```
+
+   Prefer metadata first. Use `salience` for the gist, `trace` when ordering matters, and raw
+   source only when the compact views cannot answer the question accurately. Read the minimum raw
+   source needed. For session-only artifacts, inspect enough detail to preserve the exact payload.
+
 3. If the thread is still `open`, finalize it (step 1):
 
    ```bash

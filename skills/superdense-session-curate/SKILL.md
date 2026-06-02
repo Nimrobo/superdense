@@ -39,6 +39,20 @@ Arguments: `$ARGUMENTS`
    superdense thread show <thread-id>
    ```
 
+   If indexed context is insufficient, escalate narrowly for only the relevant sessions:
+
+   ```bash
+   superdense session show <session-id>
+   superdense session enrichments <session-id>
+   superdense compactor run salience <session-id>
+   superdense compactor run trace <session-id>
+   superdense session path <session-id> # raw source, last resort
+   ```
+
+   Prefer metadata first. Use `salience` for the gist, `trace` when ordering matters, and raw
+   source only when the compact views cannot answer the question accurately. Read the minimum raw
+   source needed.
+
 5. Use profile shapes, plan slugs, branches, intent, time, and distinctive files as retrieval
    hints. Create or revise mutable work threads with one atomic batch:
 
