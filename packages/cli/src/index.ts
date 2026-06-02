@@ -36,6 +36,7 @@ import {
   getCurationContext,
   getEnrichment,
   getExternalization,
+  getArtifactRewards,
   getProjectContext,
   getProjectProfileResolution,
   getQuery,
@@ -49,7 +50,6 @@ import {
   listCompactors,
   listCurationInbox,
   listEnrichers,
-  listExternalizationConnectors,
   listExternalizationInbox,
   listExternalizations,
   listFilterCatalog,
@@ -70,6 +70,7 @@ import {
   runSavedQuery,
   setProjectAttention,
   markSessionForCuration,
+  recordRewardSnapshot,
   validateQueryDefinition,
   type AdHocQueryResult,
   type Compactor,
@@ -90,6 +91,7 @@ const REQUIRED_STUDIO_SKILLS = [
   'superdense-session-curate',
   'superdense-artifact-finalize',
   'superdense-externalization-reconcile',
+  'superdense-reward-collect',
 ];
 
 interface CliIo {
@@ -855,11 +857,28 @@ async function handleExternalization(
     printJson(assessExternalization(await readJsonObject(flags.input, 'input')), io);
     return true;
   }
-  if (action === 'connector' && args[1] === 'list') {
-    printJson({ items: listExternalizationConnectors() }, io);
+  throw new Error(`unknown externalization command: ${args.join(' ') || '(none)'}`);
+}
+
+async function handleReward(
+  args: string[],
+  flags: Record<string, string | boolean>,
+  io: CliIo,
+): Promise<boolean> {
+  const action = args[0];
+  if (action === 'record') {
+    printJson(recordRewardSnapshot(await readJsonObject(flags.input, 'input')), io);
     return true;
   }
-  throw new Error(`unknown externalization command: ${args.join(' ') || '(none)'}`);
+  if (action === 'show') {
+    const id = args[1];
+    if (!id) throw new Error('reward show requires <artifact-id>');
+    const rewards = getArtifactRewards(id);
+    if (!rewards) throw new Error(`artifact not found: ${id}`);
+    printJson({ rewards }, io);
+    return true;
+  }
+  throw new Error(`unknown reward command: ${args.join(' ') || '(none)'}`);
 }
 
 function handleInsight(args: string[], io: CliIo): boolean {
@@ -1320,6 +1339,11 @@ export async function runCli(
     return 0;
   }
 
+  if (cmd === 'reward') {
+    await handleReward(args, flags, io);
+    return 0;
+  }
+
   if (cmd === 'insight') {
     handleInsight(args, io);
     return 0;
@@ -1396,7 +1420,8 @@ export async function runCli(
         '  externalization list   List artifact externalization states [--status <s>]',
         '  externalization show <artifact-id>  Show assessment and connector targets',
         '  externalization assess --input <json|@file>  Replace one artifact assessment',
-        '  externalization connector list  List curated connector CLIs and availability',
+        '  reward record --input <json|@file>  Record one multidimensional reward snapshot for a linked target',
+        '  reward show <artifact-id>  Show latest reward snapshot and series per linked target',
         '  skill install [n]   Install skills into Claude and Codex',
         '      --locally       Install skills into ./.claude and ./.codex for this cwd',
         '  index               Incremental session index',

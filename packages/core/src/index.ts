@@ -137,19 +137,22 @@ export type {
 export {
   assessExternalization,
   getExternalization,
-  listExternalizationConnectors,
   listExternalizationInbox,
   listExternalizations,
 } from './externalization/index.js';
 export type {
   ArtifactExternalization,
   ExternalizationConclusion,
-  ExternalizationConnector,
-  ExternalizationConnectorAvailability,
   ExternalizationStatus,
   ExternalizationTarget,
   ExternalizationTargetStatus,
 } from './externalization/index.js';
+export {
+  getArtifactRewards,
+  listRewardSnapshots,
+  recordRewardSnapshot,
+} from './rewards/index.js';
+export type { ArtifactRewards, RewardSnapshot, RewardTargetSeries } from './rewards/index.js';
 export type {
   ArtifactDetector,
   ArtifactShape,

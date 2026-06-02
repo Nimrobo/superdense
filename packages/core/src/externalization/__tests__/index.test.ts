@@ -1,7 +1,4 @@
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../paths.js', () => ({
   DB_PATH: ':memory:',
@@ -19,13 +16,10 @@ import { applyCurationBatch, finalizeArtifact } from '../../curation/index.js';
 import {
   assessExternalization,
   getExternalization,
-  listExternalizationConnectors,
   listExternalizationInbox,
   listExternalizations,
 } from '../index.js';
 import type { Session } from '../../types.js';
-
-const tempDirs: string[] = [];
 
 function session(id: string): Session {
   return {
@@ -78,14 +72,10 @@ beforeEach(() => {
   _resetDbForTests();
 });
 
-afterEach(() => {
-  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
-});
-
 describe('externalization reconciliation (Layer 4)', () => {
   it('adds V8 folded assessment columns and the target table', () => {
     const db = getDb();
-    expect(db.pragma('user_version', { simple: true })).toBe(8);
+    expect(db.pragma('user_version', { simple: true })).toBe(9);
     const columns = (
       db.prepare('PRAGMA table_info(work_thread)').all() as Array<{ name: string }>
     ).map((row) => row.name);
@@ -111,7 +101,7 @@ describe('externalization reconciliation (Layer 4)', () => {
 
     _migrateForTests(db);
 
-    expect(db.pragma('user_version', { simple: true })).toBe(8);
+    expect(db.pragma('user_version', { simple: true })).toBe(9);
     expect(
       db
         .prepare(
@@ -329,49 +319,5 @@ describe('externalization reconciliation (Layer 4)', () => {
         targets: [{ connector: 'x', status: 'linked' }],
       }),
     ).toThrow('linked targets must include a non-empty locator');
-  });
-
-  it('reports curated connector executable availability from PATH', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'superdense-connectors-'));
-    tempDirs.push(dir);
-    const executable = join(dir, 'superdense-externalize-x');
-    writeFileSync(executable, '#!/bin/sh\n');
-    chmodSync(executable, 0o755);
-
-    expect(
-      listExternalizationConnectors(
-        [
-          {
-            name: 'x',
-            executable: 'superdense-externalize-x',
-            repository: 'https://github.com/nimrobo/superdense-externalize-x',
-            description: 'Resolve X posts',
-          },
-          {
-            name: 'youtube',
-            executable: 'superdense-externalize-youtube',
-            repository: 'https://github.com/nimrobo/superdense-externalize-youtube',
-            description: 'Resolve YouTube videos',
-          },
-        ],
-        dir,
-      ),
-    ).toEqual([
-      expect.objectContaining({ name: 'x', installed: true }),
-      expect.objectContaining({ name: 'youtube', installed: false }),
-    ]);
-  });
-
-  it('enforces the connector executable naming convention', () => {
-    expect(() =>
-      listExternalizationConnectors([
-        {
-          name: 'x',
-          executable: 'custom-x',
-          repository: 'https://github.com/nimrobo/superdense-externalize-x',
-          description: 'Resolve X posts',
-        },
-      ]),
-    ).toThrow('connector x executable must be superdense-externalize-x');
   });
 });

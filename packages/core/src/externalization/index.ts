@@ -1,9 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { getDb } from '../db.js';
 
-export { listExternalizationConnectors } from './catalog.js';
-export type { ExternalizationConnector, ExternalizationConnectorAvailability } from './catalog.js';
-
 export type ExternalizationConclusion = 'not_external' | 'external';
 export type ExternalizationTargetStatus = 'linked' | 'needs_connector' | 'not_found' | 'ambiguous';
 export type ExternalizationStatus = 'unprocessed' | 'not_external' | 'linked' | 'blocked';

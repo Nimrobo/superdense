@@ -158,6 +158,13 @@ function migrate(db: Database.Database): void {
   if (currentVersion < 8) {
     db.pragma('user_version = 8');
   }
+  // V9 adds Layer 4 reward collection: an append-only multidimensional reward
+  // snapshot time series anchored on linked externalization targets. Superdense
+  // never runs connectors; agents report snapshots.
+  runDataMigrationV9(db);
+  if (currentVersion < 9) {
+    db.pragma('user_version = 9');
+  }
 
   ensureSystemRun(db);
 }
@@ -492,6 +499,26 @@ function runDataMigrationV8(db: Database.Database): void {
         ON externalization_target(artifact_id, status);
       CREATE INDEX IF NOT EXISTS idx_externalization_target_connector
         ON externalization_target(connector, status);
+    `);
+  });
+  tx();
+}
+
+function runDataMigrationV9(db: Database.Database): void {
+  const tx = db.transaction(() => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS reward_snapshot (
+        id          TEXT PRIMARY KEY,
+        target_id   TEXT NOT NULL REFERENCES externalization_target(id) ON DELETE CASCADE,
+        captured_at INTEGER NOT NULL,
+        metrics     TEXT NOT NULL,
+        primary_dim TEXT,
+        source      TEXT,
+        evidence    TEXT,
+        created_at  INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_reward_snapshot_target
+        ON reward_snapshot(target_id, captured_at);
     `);
   });
   tx();

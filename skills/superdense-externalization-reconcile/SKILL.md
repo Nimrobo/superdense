@@ -2,7 +2,7 @@
 name: superdense-externalization-reconcile
 version: 0.1.0
 description: Reconcile finalized Superdense artifacts with their real-world external identities through user-installed connector CLIs.
-allowed-tools: Bash(superdense *), Bash(superdense-externalize-*)
+allowed-tools: Bash(superdense *)
 ---
 
 # Superdense Externalization Reconcile
@@ -27,19 +27,12 @@ then attach connector-specific locators. This skill does not fetch reward metric
    superdense curation context <root-session-id>
    ```
 
-   Decide whether the artifact remained internal or infer each external connector it needs.
+   Decide whether the artifact remained internal or infer each external connector it needs. The
+   `connector` value is a free-text platform label you choose (e.g. `x`, `youtube`, `substack`); it
+   is not tied to any installed CLI. Do not mutate an external service, and do not attach matches
+   found only through general web browsing.
 
-3. Check the curated connector catalog:
-
-   ```bash
-   superdense externalization connector list
-   ```
-
-   Connector CLIs are installed and configured by the user. Their repositories define their own
-   read-only search commands and locator formats. Do not install, configure, or mutate an external
-   service. Do not attach matches found only through general web browsing.
-
-4. Replace the current assessment:
+3. Replace the current assessment:
 
    ```bash
    # Intentionally internal
@@ -49,19 +42,19 @@ then attach connector-specific locators. This skill does not fetch reward metric
    superdense externalization assess --input '{"artifactId":"<id>","status":"external","evidence":"<why>","targets":[{"connector":"x","status":"linked","locator":"<opaque connector locator>","evidence":"<why this match is clear>"}]}'
 
    # External identity cannot yet be resolved
-   superdense externalization assess --input '{"artifactId":"<id>","status":"external","evidence":"<why>","targets":[{"connector":"x","status":"needs_connector","locator":null,"evidence":"<missing CLI or catalog entry>"}]}'
+   superdense externalization assess --input '{"artifactId":"<id>","status":"external","evidence":"<why>","targets":[{"connector":"x","status":"needs_connector","locator":null,"evidence":"<external identity not yet resolved>"}]}'
    ```
 
    Valid target statuses are `linked`, `needs_connector`, `not_found`, and `ambiguous`. Preserve a
    known locator on a blocked target when it will help a later retry.
 
-5. Confirm the saved result:
+4. Confirm the saved result:
 
    ```bash
    superdense externalization show <artifact-id>
    ```
 
-6. Stop after the current page. Report the returned `nextCursor`. When it is non-null, print the
+5. Stop after the current page. Report the returned `nextCursor`. When it is non-null, print the
    exact continuation command:
 
    ```bash

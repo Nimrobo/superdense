@@ -56,7 +56,6 @@ vi.mock('@nimrobo/superdense-core', () => ({
   listCompactors: vi.fn(),
   listCurationInbox: vi.fn(),
   listEnrichers: vi.fn(),
-  listExternalizationConnectors: vi.fn(),
   listExternalizationInbox: vi.fn(),
   listExternalizations: vi.fn(),
   listFilterCatalog: vi.fn(),
@@ -382,7 +381,6 @@ beforeEach(() => {
     artifactId: 't1',
     externalization,
   });
-  vi.mocked(core.listExternalizationConnectors).mockReturnValue([]);
   vi.mocked(core.setProjectAttention).mockReturnValue(project);
   vi.mocked(startServer).mockResolvedValue({ url: 'http://127.0.0.1:4242', close: vi.fn() });
   vi.mocked(open).mockResolvedValue({} as Awaited<ReturnType<typeof open>>);
@@ -1004,7 +1002,7 @@ describe('superdense cli agent commands', () => {
     expect(core.getWorkThread).toHaveBeenCalledWith('t1');
   });
 
-  it('exposes externalization inbox, reads, assessment writes, and connector listing', async () => {
+  it('exposes externalization inbox, reads, and assessment writes', async () => {
     const inbox = io();
     await runCli(
       ['externalization', 'inbox', '--limit', '7', '--cursor', 'current-page'],
@@ -1041,11 +1039,6 @@ describe('superdense cli agent commands', () => {
       evidence: 'internal',
       targets: [],
     });
-
-    const connectors = io();
-    await runCli(['externalization', 'connector', 'list'], connectors.io);
-    expect(core.listExternalizationConnectors).toHaveBeenCalled();
-    expect(json(connectors.stdout[0]!)).toEqual({ items: [] });
   });
 
   it('throws intended errors for missing query, session, and compactor', async () => {
