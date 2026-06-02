@@ -84,7 +84,7 @@ const BASE_QUERY: Omit<Query, 'memberCount' | 'lastRunAt'> = {
 function clearDb() {
   const db = getDb();
   db.exec(
-    "DELETE FROM query_matches; DELETE FROM session_enrich; DELETE FROM work_thread_session; DELETE FROM work_thread; DELETE FROM pending_session_marker; DELETE FROM session_links; DELETE FROM sessions; DELETE FROM project_profile; DELETE FROM queries; DELETE FROM query_run WHERE id != 'system';",
+    "DELETE FROM query_matches; DELETE FROM session_enrich; DELETE FROM work_thread_lineage_event; DELETE FROM work_thread_session; DELETE FROM work_thread; DELETE FROM pending_session_marker; DELETE FROM session_links; DELETE FROM sessions; DELETE FROM project_profile; DELETE FROM queries; DELETE FROM query_run WHERE id != 'system';",
   );
 }
 
@@ -173,7 +173,7 @@ describe('sessions', () => {
 
       _migrateForTests(db);
 
-      expect(db.pragma('user_version', { simple: true })).toBe(9);
+      expect(db.pragma('user_version', { simple: true })).toBe(10);
       expect(db.prepare('SELECT project_key FROM sessions WHERE id = ?').get('old')).toEqual({
         project_key: '/Users/x/conductor/workspaces/superdense',
       });
@@ -242,7 +242,7 @@ describe('sessions', () => {
 
       _migrateForTests(db);
 
-      expect(db.pragma('user_version', { simple: true })).toBe(9);
+      expect(db.pragma('user_version', { simple: true })).toBe(10);
 
       const tables = (
         db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{
@@ -332,7 +332,7 @@ describe('sessions', () => {
 
       _migrateForTests(db);
 
-      expect(db.pragma('user_version', { simple: true })).toBe(9);
+      expect(db.pragma('user_version', { simple: true })).toBe(10);
       const sessionCols = (
         db.prepare('PRAGMA table_info(sessions)').all() as Array<{
           name: string;
@@ -380,7 +380,7 @@ describe('sessions', () => {
 
       _migrateForTests(db);
 
-      expect(db.pragma('user_version', { simple: true })).toBe(9);
+      expect(db.pragma('user_version', { simple: true })).toBe(10);
       const tables = (
         db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{
           name: string;
@@ -434,7 +434,7 @@ describe('sessions', () => {
 
       _migrateForTests(db);
 
-      expect(db.pragma('user_version', { simple: true })).toBe(9);
+      expect(db.pragma('user_version', { simple: true })).toBe(10);
       expect(
         db.prepare('SELECT project_key, status, last_seen_at FROM project_profile').all(),
       ).toEqual([{ project_key: '/repo', status: 'unprofiled', last_seen_at: 2000 }]);
@@ -712,7 +712,7 @@ describe('sessions', () => {
 
       _migrateForTests(db);
 
-      expect(db.pragma('user_version', { simple: true })).toBe(9);
+      expect(db.pragma('user_version', { simple: true })).toBe(10);
 
       const tables = (
         db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{

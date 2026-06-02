@@ -39,18 +39,21 @@ const thread = (
   projectProfileId: 'p1',
   provisionalTitle: title,
   summary: `${title} summary`,
-  status: lifecycle === 'open' ? 'open' : 'finalized',
+  status: lifecycle === 'open' ? 'open' : 'ready',
   createdAt: 1,
   updatedAt: 2,
   artifactType: lifecycle === 'artifact' ? 'video' : null,
   payload: lifecycle === 'artifact' ? { files: ['final.mp4'] } : null,
   artifactFinalizedAt: lifecycle === 'artifact' ? 3 : null,
+  readyAt: lifecycle === 'ready' ? 3 : null,
+  readinessRationale: lifecycle === 'ready' ? 'output is clear' : null,
+  predecessorArtifactId: null,
   lifecycle,
 });
 
 const threads = [
   thread('draft-1', 'open', 'Draft thread'),
-  thread('ready-1', 'finalized', 'Ready thread'),
+  thread('ready-1', 'ready', 'Ready thread'),
   thread('artifact-1', 'artifact', 'Artifact thread'),
 ];
 
@@ -80,15 +83,15 @@ describe('WorkThreadsView', () => {
 
     await waitFor(() => screen.getByText('Draft thread'));
     expect(screen.getByText('Drafts')).toBeDefined();
-    expect(screen.getByText('Ready to extract')).toBeDefined();
+    expect(screen.getByText('Ready to create artifacts')).toBeDefined();
     expect(screen.getByText('Artifacts')).toBeDefined();
     expect(screen.getAllByText('Videos').length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByText('Draft thread'));
     expect(onOpen).toHaveBeenCalledWith('draft-1');
 
-    fireEvent.click(screen.getByText('Copy finalize command'));
-    expect(writeText).toHaveBeenCalledWith('/superdense-artifact-finalize ready-1');
+    fireEvent.click(screen.getByText('Copy artifact queue command'));
+    expect(writeText).toHaveBeenCalledWith('/superdense-artifact-finalize');
 
     fireEvent.change(screen.getByLabelText('Project'), { target: { value: 'p1' } });
     await waitFor(() =>

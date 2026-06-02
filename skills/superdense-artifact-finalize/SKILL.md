@@ -1,45 +1,33 @@
 ---
 name: superdense-artifact-finalize
-version: 0.1.0
-description: Freeze a finalized Superdense work thread into one immutable Layer 3B artifact, extracting its type and durable payload.
-argument-hint: thread-id
+version: 0.2.0
+description: Process the Superdense ready queue and create stable local artifact records without requiring manual thread selection.
 allowed-tools: Bash(superdense *)
 ---
 
 # Superdense Artifact Finalize
 
-Turn one curated work thread into a single immutable artifact. This is Layer 3B: you read what
-the thread produced and **extract** the artifact. It does **not** bind external systems — no
-connectors, no published identity, no rewards (that is Layer 4).
-
-Arguments: `$ARGUMENTS` (a work-thread id)
-
-## Two steps
-
-1. **Work-thread finalize** locks the thread (curation is complete).
-2. **Artifact finalize** extracts the durable artifact from the locked thread.
-
-Once finalized the thread and its lineage are frozen and can no longer be curated.
+Process one bounded Layer 3B ready queue. Curation has already grouped sessions into clear outputs.
+This skill creates stable local artifact records. It does not bind external systems, publish
+anything, or collect rewards.
 
 ## Workflow
 
-1. Read the thread and its session memberships:
+1. Load up to ten ready threads:
+
+   ```bash
+   superdense artifact inbox --limit 10
+   ```
+
+2. For each item, inspect the thread and only the session evidence needed to understand what it
+   produced:
 
    ```bash
    superdense thread show <thread-id>
-   ```
-
-2. Understand **what was actually produced**. Load per-session evidence — files touched, plan
-   refs, and intent — for the thread's root sessions:
-
-   ```bash
    superdense curation context <root-session-id>
    ```
 
-   Decide which work is the deliverable and which is incidental. The deliverable may not be a
-   file: a tweet, message, or note can live only in the session transcript.
-
-   If indexed context is insufficient, escalate narrowly for only the relevant sessions:
+   If indexed context is insufficient, escalate narrowly:
 
    ```bash
    superdense session show <session-id>
@@ -49,39 +37,32 @@ Once finalized the thread and its lineage are frozen and can no longer be curate
    superdense session path <session-id> # raw source, last resort
    ```
 
-   Prefer metadata first. Use `salience` for the gist, `trace` when ordering matters, and raw
-   source only when the compact views cannot answer the question accurately. Read the minimum raw
-   source needed. For session-only artifacts, inspect enough detail to preserve the exact payload.
-
-3. If the thread is still `open`, finalize it (step 1):
+3. When the thread clearly represents one output, choose an open-vocabulary `type`, a `title`, and
+   a stable `payload`, then create the artifact:
 
    ```bash
-   superdense curation apply --input '{"actions":[{"type":"thread.finalize","threadId":"<thread-id>"}]}'
-   ```
-
-4. Extract the artifact (step 2). Choose an open-vocabulary `type`, a `title`, and a `payload`
-   that durably represents the deliverable:
-
-   ```bash
-   # file-backed deliverable
    superdense artifact finalize --input '{"threadId":"<id>","type":"feature","title":"…","payload":{"files":["src/x.ts"]}}'
-
-   # deliverable that lives only in the session (e.g. a tweet)
    superdense artifact finalize --input '{"threadId":"<id>","type":"tweet","title":"…","payload":{"text":"…"}}'
    ```
 
-5. Confirm and report:
+4. If the output remains ambiguous, reopen the thread for more curation:
+
+   ```bash
+   superdense curation apply --input '{"actions":[{"type":"thread.reopen","threadId":"<id>","rationale":"<why more curation is needed>"}]}'
+   ```
+
+5. Confirm created records and stop after the bounded queue:
 
    ```bash
    superdense artifact show <thread-id>
+   superdense artifact inbox --limit 10
    ```
 
 ## Rules
 
-- One artifact per thread. If the thread really produced more than one distinct artifact, the
-  Layer 3A grouping was wrong — fix the thread before it is finalized.
-- The artifact freezes a copy of the thread's lineage (its sessions). The head session is derived
-  as the latest contributor.
-- `payload` is open JSON: use `{ "files": [...] }`, `{ "text": "..." }`, or a mix. Lineage and
-  per-session evidence already live in the database; do not duplicate them into the payload.
-- Never claim deterministic artifact discovery. You are extracting the artifact, not detecting it.
+- Do not ask the user to select a thread ID. Process the ready queue.
+- Artifact identity and payload stay stable after creation. Lineage remains append-only and may
+  gain audited `lineage.attach` or `lineage.retract` events later.
+- If the produced output changes, create a successor thread and pass `predecessorArtifactId` while
+  creating its artifact. Do not inherit externalization targets automatically.
+- Never claim deterministic artifact discovery. The ready queue is agent-confirmed.

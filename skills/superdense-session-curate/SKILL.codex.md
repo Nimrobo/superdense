@@ -1,7 +1,7 @@
 ---
 name: superdense-session-curate
-version: 0.1.0
-description: Review a bounded Superdense session-curation inbox and maintain mutable work threads before artifact finalization.
+version: 0.2.0
+description: Review a bounded Superdense session-curation inbox, group related work, and queue clear work threads for artifact creation.
 ---
 
 # Superdense Session Curate
@@ -9,7 +9,9 @@ description: Review a bounded Superdense session-curation inbox and maintain mut
 Use this skill when the user invokes `/superdense-session-curate <project-id>`.
 
 1. Run `superdense index`.
-2. Run `superdense curation inbox --project <project-id> --limit 10`.
+2. Run `superdense curation inbox --project <project-id> --limit 10`. The inbox is universal:
+   every unhandled root is eventually reviewed. Marked sessions come first, followed by
+   deliverable sessions and the remaining backlog.
 3. Say exactly:
 
    > These sessions may be related. Review them together.
@@ -23,10 +25,17 @@ Use this skill when the user invokes `/superdense-session-curate <project-id>`.
    raw-source access only as a last resort, and read the minimum raw source needed. Prefer
    metadata first; use `salience` for the gist and `trace` when ordering matters.
 6. Use profile shapes, plan slugs, branches, intent, time, and distinctive files as retrieval
-   hints. Never claim deterministic artifact discovery.
-7. Apply mutable work-thread edits with `superdense curation apply --input '<json|@file>'`.
-8. Stop after the bounded batch and report applied actions plus remaining inbox counts.
+   hints. Never claim deterministic artifact discovery. For each session, attach it to an
+   existing thread, create a new thread, skip it, or defer it. Consume useful attached sessions
+   in the same batch.
+7. Apply work-thread edits with `superdense curation apply --input '<json|@file>'`. When a thread
+   has one identifiable output, queue it with `thread.mark-ready` and a concise rationale.
+8. Stop after the bounded batch. Report applied actions, remaining inbox counts, and any newly
+   ready threads. Tell the user to run `/superdense-artifact-finalize` when ready threads exist.
 
 Supported actions are `thread.create`, `thread.update`, `thread.attach`, `thread.detach`,
-`thread.merge`, `thread.split`, `session.consume`, `session.skip`, and `session.defer`.
+`thread.merge`, `thread.split`, `thread.mark-ready`, `thread.reopen`,
+`lineage.attach`, `lineage.retract`, `session.consume`, `session.skip`, and `session.defer`.
 A consumed session must belong to at least one thread. Roles are `contributor` and `evidence`.
+Artifact payloads are stable after creation, but lineage remains append-only and may receive
+audited attach or retract events later.

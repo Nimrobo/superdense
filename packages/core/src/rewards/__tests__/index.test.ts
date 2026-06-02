@@ -12,8 +12,8 @@ vi.mock('../../paths.js', () => ({
 
 import { _migrateForTests, _resetDbForTests, getDb, upsertSession } from '../../db.js';
 import { listProjectProfiles } from '../../projects/index.js';
-import { applyCurationBatch, finalizeArtifact } from '../../curation/index.js';
-import { assessExternalization } from '../../externalization/index.js';
+import { applyCurationBatch, finalizeArtifact, getArtifact } from '../../curation/index.js';
+import { assessExternalization, getExternalization } from '../../externalization/index.js';
 import { getArtifactRewards, listRewardSnapshots, recordRewardSnapshot } from '../index.js';
 import type { Session } from '../../types.js';
 
@@ -72,7 +72,7 @@ afterEach(() => {
 describe('reward collection (Layer 4)', () => {
   it('adds the V9 reward_snapshot table', () => {
     const db = getDb();
-    expect(db.pragma('user_version', { simple: true })).toBe(9);
+    expect(db.pragma('user_version', { simple: true })).toBe(10);
     expect(
       db
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'reward_snapshot'")
@@ -86,7 +86,7 @@ describe('reward collection (Layer 4)', () => {
 
     _migrateForTests(db);
 
-    expect(db.pragma('user_version', { simple: true })).toBe(9);
+    expect(db.pragma('user_version', { simple: true })).toBe(10);
     expect(
       db
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'reward_snapshot'")
@@ -155,6 +155,45 @@ describe('reward collection (Layer 4)', () => {
       ],
     });
     expect(rewards!.targets[0]!.snapshots).toHaveLength(3);
+  });
+
+  it('keeps externalization and reward history stable while late lineage is appended and retracted', () => {
+    const targetId = linkArtifact('t1');
+    recordRewardSnapshot({ targetId, capturedAt: 100, metrics: { views: 10 } });
+    upsertSession({ ...session('codex:older'), createdAt: 50, modifiedAt: 50 });
+
+    applyCurationBatch({
+      actions: [
+        {
+          type: 'lineage.attach',
+          threadId: 't1',
+          sessionId: 'codex:older',
+          role: 'evidence',
+          rationale: 'late historical evidence',
+        },
+        {
+          type: 'lineage.retract',
+          threadId: 't1',
+          sessionId: 'codex:older',
+          rationale: 'incorrect historical match',
+        },
+      ],
+    });
+
+    expect(getArtifact('t1')).toMatchObject({
+      id: 't1',
+      payload: { text: 't1' },
+      sessions: [{ sessionId: 'codex:t1', role: 'contributor' }],
+    });
+    expect(getExternalization('t1')).toMatchObject({
+      artifactId: 't1',
+      status: 'linked',
+      targets: [{ id: targetId, locator: '187123456789' }],
+    });
+    expect(getArtifactRewards('t1')).toMatchObject({
+      artifactId: 't1',
+      targets: [{ targetId, snapshots: [{ capturedAt: 100, metrics: { views: 10 } }] }],
+    });
   });
 
   it('only returns linked targets and reports none before collection', () => {

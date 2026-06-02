@@ -165,6 +165,12 @@ function migrate(db: Database.Database): void {
   if (currentVersion < 9) {
     db.pragma('user_version = 9');
   }
+  // V10 adds an explicit ready queue and makes lineage append-only evidence
+  // with a fast effective-membership projection.
+  runDataMigrationV10(db);
+  if (currentVersion < 10) {
+    db.pragma('user_version = 10');
+  }
 
   ensureSystemRun(db);
 }
@@ -519,6 +525,82 @@ function runDataMigrationV9(db: Database.Database): void {
       );
       CREATE INDEX IF NOT EXISTS idx_reward_snapshot_target
         ON reward_snapshot(target_id, captured_at);
+    `);
+  });
+  tx();
+}
+
+function runDataMigrationV10(db: Database.Database): void {
+  const tx = db.transaction(() => {
+    if (!columnExists(db, 'work_thread', 'ready_at')) {
+      db.exec('ALTER TABLE work_thread ADD COLUMN ready_at INTEGER;');
+    }
+    if (!columnExists(db, 'work_thread', 'readiness_rationale')) {
+      db.exec('ALTER TABLE work_thread ADD COLUMN readiness_rationale TEXT;');
+    }
+    if (!columnExists(db, 'work_thread', 'predecessor_artifact_id')) {
+      db.exec(
+        'ALTER TABLE work_thread ADD COLUMN predecessor_artifact_id TEXT REFERENCES work_thread(id);',
+      );
+    }
+    db.exec(`
+      UPDATE work_thread
+         SET status = 'ready',
+             ready_at = COALESCE(ready_at, updated_at),
+             readiness_rationale = COALESCE(
+               readiness_rationale,
+               CASE status
+                 WHEN 'finalized' THEN 'Migrated from pre-V10 finalized thread'
+                 ELSE 'Migrated from pre-release V10 ready thread'
+               END
+             )
+       WHERE status IN ('finalized', 'ready')
+         AND artifact_type IS NULL;
+
+      CREATE TABLE IF NOT EXISTS work_thread_lineage_event (
+        id          TEXT PRIMARY KEY,
+        thread_id   TEXT NOT NULL REFERENCES work_thread(id) ON DELETE CASCADE,
+        session_id  TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        event_type  TEXT NOT NULL CHECK (event_type IN ('attach', 'retract')),
+        role        TEXT NOT NULL CHECK (role IN ('contributor', 'evidence')),
+        rationale   TEXT,
+        created_at  INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_work_thread_lineage_event_thread
+        ON work_thread_lineage_event(thread_id, created_at, id);
+      CREATE INDEX IF NOT EXISTS idx_work_thread_lineage_event_session
+        ON work_thread_lineage_event(session_id, created_at);
+
+      DROP TABLE IF EXISTS work_thread_frontier;
+    `);
+
+    // Existing memberships predate the event stream. Give each one a
+    // deterministic synthetic attach event only when no audited event exists.
+    // Remove duplicates created by the earlier pre-release reconciliation.
+    db.exec(`
+      DELETE FROM work_thread_lineage_event AS synthetic
+       WHERE synthetic.id = 'v10-backfill:' || synthetic.thread_id || ':' || synthetic.session_id
+         AND EXISTS (
+           SELECT 1
+             FROM work_thread_lineage_event AS audited
+            WHERE audited.thread_id = synthetic.thread_id
+              AND audited.session_id = synthetic.session_id
+              AND audited.id != synthetic.id
+         );
+
+      INSERT OR IGNORE INTO work_thread_lineage_event (
+        id, thread_id, session_id, event_type, role, rationale, created_at
+      )
+      SELECT 'v10-backfill:' || thread_id || ':' || session_id,
+             thread_id, session_id, 'attach', role,
+             'Backfilled from pre-V10 effective lineage', 0
+        FROM work_thread_session AS membership
+       WHERE NOT EXISTS (
+         SELECT 1
+           FROM work_thread_lineage_event AS event
+          WHERE event.thread_id = membership.thread_id
+            AND event.session_id = membership.session_id
+       );
     `);
   });
   tx();

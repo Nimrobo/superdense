@@ -29,7 +29,7 @@ export function ArtifactsView({ onOpen }: Props) {
       <div className="work-header">
         <div>
           <div className="work-title">Artifacts</div>
-          <div className="work-sub">Immutable artifacts frozen from finalized work threads</div>
+          <div className="work-sub">Stable artifact payloads with append-only provenance</div>
         </div>
       </div>
       <div className="work-body">

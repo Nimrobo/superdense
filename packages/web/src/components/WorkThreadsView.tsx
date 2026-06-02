@@ -11,9 +11,9 @@ interface Props {
 const sections: Array<{ lifecycle: ThreadLifecycle; title: string; empty: string }> = [
   { lifecycle: 'open', title: 'Drafts', empty: 'No draft work threads.' },
   {
-    lifecycle: 'finalized',
-    title: 'Ready to extract',
-    empty: 'No finalized work threads awaiting extraction.',
+    lifecycle: 'ready',
+    title: 'Ready to create artifacts',
+    empty: 'No work threads awaiting artifact creation.',
   },
   { lifecycle: 'artifact', title: 'Artifacts', empty: 'No extracted artifact threads.' },
 ];
@@ -23,7 +23,7 @@ function projectName(project: ProjectSummary | undefined, projectProfileId: stri
 }
 
 function relevantTime(thread: WorkThread): number {
-  return thread.artifactFinalizedAt ?? thread.updatedAt;
+  return thread.artifactFinalizedAt ?? thread.readyAt ?? thread.updatedAt;
 }
 
 export function WorkThreadsView({ projectId, onProjectChange, onOpen }: Props) {
@@ -55,9 +55,9 @@ export function WorkThreadsView({ projectId, onProjectChange, onOpen }: Props) {
     [projects],
   );
 
-  const copyFinalizeCommand = async (threadId: string) => {
-    await navigator.clipboard.writeText(`/superdense-artifact-finalize ${threadId}`);
-    setToast('Finalize command copied. Paste it into Claude Code or Codex.');
+  const copyFinalizeCommand = async () => {
+    await navigator.clipboard.writeText('/superdense-artifact-finalize');
+    setToast('Artifact queue command copied. Paste it into Claude Code or Codex.');
     setTimeout(() => setToast(null), 4000);
   };
 
@@ -124,13 +124,13 @@ export function WorkThreadsView({ projectId, onProjectChange, onOpen }: Props) {
                           {formatRelativeTime(relevantTime(thread))}
                         </div>
                       </button>
-                      {thread.lifecycle === 'finalized' && (
+                      {thread.lifecycle === 'ready' && (
                         <button
                           className="copy-btn"
                           type="button"
-                          onClick={() => copyFinalizeCommand(thread.id)}
+                          onClick={() => copyFinalizeCommand()}
                         >
-                          Copy finalize command
+                          Copy artifact queue command
                         </button>
                       )}
                     </div>

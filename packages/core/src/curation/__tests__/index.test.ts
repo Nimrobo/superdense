@@ -10,7 +10,14 @@ vi.mock('../../paths.js', () => ({
   ensureSuperdenseDirs: vi.fn(),
 }));
 
-import { _resetDbForTests, getDb, getSession, upsertSession, upsertSessionLink } from '../../db.js';
+import {
+  _migrateForTests,
+  _resetDbForTests,
+  getDb,
+  getSession,
+  upsertSession,
+  upsertSessionLink,
+} from '../../db.js';
 import { listProjectProfiles } from '../../projects/index.js';
 import {
   applyCurationBatch,
@@ -18,6 +25,7 @@ import {
   getArtifact,
   getCurationContext,
   getWorkThread,
+  listArtifactInbox,
   listArtifacts,
   listCurationInbox,
   listWorkThreads,
@@ -84,6 +92,30 @@ describe('curation inbox', () => {
     expect(
       listCurationInbox({ projectId: projectId(), limit: 10 }).items.map((item) => item.id),
     ).toEqual(['codex:marked', 'codex:new', 'codex:deferred', 'codex:historical']);
+  });
+
+  it('prioritizes marked roots, then deliverable roots, before the remaining universal backlog', () => {
+    for (const item of [
+      session('codex:ordinary', 300),
+      session('codex:deliverable', 200),
+      session('codex:marked', 100),
+    ]) {
+      upsertSession(item);
+    }
+    getDb()
+      .prepare(
+        `INSERT INTO session_enrich (
+           session_id, query_run_id, name, version, value, computed_at
+         ) VALUES ('codex:deliverable', 'system', 'session_kind', 2, ?, 1)`,
+      )
+      .run(JSON.stringify({ v: 1, kind: 'deliverable' }));
+    markSessionForCuration('codex:marked', 99);
+
+    expect(listCurationInbox({ limit: 10 }).items.map((item) => item.id)).toEqual([
+      'codex:marked',
+      'codex:deliverable',
+      'codex:ordinary',
+    ]);
   });
 
   it('re-marks reviewed sessions as pending without lowering an existing priority', () => {
@@ -269,6 +301,39 @@ describe('curation actions', () => {
     expect(getSession('codex:root')).toMatchObject({ curationStatus: 'skipped' });
   });
 
+  it('rejects direct lifecycle status manipulation', () => {
+    upsertSession(session('codex:a', 100));
+    expect(() =>
+      applyCurationBatch({
+        actions: [
+          {
+            type: 'thread.create',
+            id: 't1',
+            projectProfileId: projectId(),
+            provisionalTitle: 'One',
+            status: 'ready',
+          },
+        ],
+      }),
+    ).toThrow('thread.create.status is not supported');
+
+    applyCurationBatch({
+      actions: [
+        {
+          type: 'thread.create',
+          id: 't1',
+          projectProfileId: projectId(),
+          provisionalTitle: 'One',
+        },
+      ],
+    });
+    expect(() =>
+      applyCurationBatch({
+        actions: [{ type: 'thread.update', threadId: 't1', patch: { status: 'ready' } }],
+      }),
+    ).toThrow('unsupported thread patch field: status');
+  });
+
   it('re-marking a subagent resurfaces its reviewed root', () => {
     upsertSession(session('codex:root', 100));
     upsertSession(session('codex:child', 100, { isSubagent: true, parentSessionId: 'codex:root' }));
@@ -310,13 +375,68 @@ describe('artifact finalization (Layer 3B)', () => {
     );
   });
 
-  it('finalizes a thread then extracts an immutable artifact with frozen lineage', () => {
+  it('reconciles V10 readiness and backfills lineage events idempotently', () => {
+    consumedThread('t1', [['codex:a', 100]]);
+    const db = getDb();
+    db.exec(`
+      DELETE FROM work_thread_lineage_event;
+      UPDATE work_thread SET status = 'finalized', readiness_rationale = NULL;
+      CREATE TABLE work_thread_frontier (id TEXT);
+    `);
+
+    _migrateForTests(db);
+    _migrateForTests(db);
+
+    expect(db.pragma('user_version', { simple: true })).toBe(10);
+    expect(getWorkThread('t1')).toMatchObject({
+      lifecycle: 'ready',
+      readinessRationale: 'Migrated from pre-V10 finalized thread',
+    });
+    expect(
+      db
+        .prepare(
+          "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'work_thread_frontier'",
+        )
+        .get(),
+    ).toEqual({ count: 0 });
+    expect(
+      db.prepare('SELECT event_type, COUNT(*) AS count FROM work_thread_lineage_event').get(),
+    ).toEqual({ event_type: 'attach', count: 1 });
+  });
+
+  it('removes pre-release synthetic lineage events when an audited event exists', () => {
+    consumedThread('t1', [['codex:a', 100]]);
+    const db = getDb();
+    db.prepare(
+      `INSERT INTO work_thread_lineage_event (
+         id, thread_id, session_id, event_type, role, rationale, created_at
+       ) VALUES ('v10-backfill:t1:codex:a', 't1', 'codex:a', 'attach', 'contributor',
+                 'Backfilled from pre-V10 effective lineage', 0)`,
+    ).run();
+
+    _migrateForTests(db);
+    _migrateForTests(db);
+
+    expect(
+      db.prepare('SELECT id FROM work_thread_lineage_event WHERE thread_id = ?').all('t1'),
+    ).toHaveLength(1);
+    expect(
+      db
+        .prepare(
+          "SELECT COUNT(*) AS count FROM work_thread_lineage_event WHERE id LIKE 'v10-backfill:%'",
+        )
+        .get(),
+    ).toEqual({ count: 0 });
+  });
+
+  it('queues a ready thread then creates a stable artifact payload', () => {
     consumedThread('t1', [
       ['codex:a', 100],
       ['codex:b', 200],
     ]);
     applyCurationBatch({ actions: [{ type: 'thread.finalize', threadId: 't1' }] });
-    expect(getWorkThread('t1')).toMatchObject({ status: 'finalized', lifecycle: 'finalized' });
+    expect(getWorkThread('t1')).toMatchObject({ status: 'ready', lifecycle: 'ready' });
+    expect(listArtifactInbox().items.map((item) => item.id)).toEqual(['t1']);
 
     expect(
       finalizeArtifact({
@@ -346,7 +466,7 @@ describe('artifact finalization (Layer 3B)', () => {
     expect(getArtifact('t1')).toMatchObject({ provisionalTitle: 't1 title', payload: {} });
   });
 
-  it('locks a finalized thread against further curation', () => {
+  it('locks a ready thread against regrouping', () => {
     consumedThread('t1', [['codex:a', 100]]);
     applyCurationBatch({ actions: [{ type: 'thread.finalize', threadId: 't1' }] });
 
@@ -354,12 +474,12 @@ describe('artifact finalization (Layer 3B)', () => {
       applyCurationBatch({
         actions: [{ type: 'thread.update', threadId: 't1', patch: { summary: 'x' } }],
       }),
-    ).toThrow('finalized and can no longer be curated');
+    ).toThrow('ready and can no longer be regrouped');
     expect(() =>
       applyCurationBatch({
         actions: [{ type: 'thread.detach', threadId: 't1', sessionId: 'codex:a' }],
       }),
-    ).toThrow('finalized and can no longer be curated');
+    ).toThrow('ready and can no longer be regrouped');
   });
 
   it('rejects finalizing a thread with no sessions', () => {
@@ -376,13 +496,43 @@ describe('artifact finalization (Layer 3B)', () => {
     });
     expect(() =>
       applyCurationBatch({ actions: [{ type: 'thread.finalize', threadId: 't1' }] }),
-    ).toThrow('no sessions to finalize');
+    ).toThrow('no contributor sessions to mark ready');
   });
 
-  it('rejects artifact extraction before the thread is finalized', () => {
+  it('rejects artifact creation before the thread is ready', () => {
     consumedThread('t1', [['codex:a', 100]]);
     expect(() => finalizeArtifact({ threadId: 't1', type: 'tweet' })).toThrow(
-      'must be finalized before extracting an artifact',
+      'must be ready before creating an artifact',
+    );
+  });
+
+  it('rejects malformed ready threads during artifact creation', () => {
+    upsertSession(session('codex:a', 100));
+    applyCurationBatch({
+      actions: [
+        {
+          type: 'thread.create',
+          id: 'empty',
+          projectProfileId: projectId(),
+          provisionalTitle: 'Empty',
+        },
+      ],
+    });
+    getDb()
+      .prepare(
+        "UPDATE work_thread SET status = 'ready', readiness_rationale = 'manual' WHERE id = ?",
+      )
+      .run('empty');
+    expect(() => finalizeArtifact({ threadId: 'empty', type: 'note' })).toThrow(
+      'no contributor sessions for artifact creation',
+    );
+
+    consumedThread('missing-rationale', [['codex:a', 100]]);
+    getDb()
+      .prepare("UPDATE work_thread SET status = 'ready', readiness_rationale = NULL WHERE id = ?")
+      .run('missing-rationale');
+    expect(() => finalizeArtifact({ threadId: 'missing-rationale', type: 'note' })).toThrow(
+      'no readiness rationale',
     );
   });
 
@@ -411,5 +561,147 @@ describe('artifact finalization (Layer 3B)', () => {
         .sort(),
     ).toEqual(['t1', 't2']);
     expect(listArtifacts({ type: 'tweet' }).map((item) => item.id)).toEqual(['t1']);
+  });
+
+  it('keeps new sessions in the normal inbox until the curator attaches them', () => {
+    upsertSession(session('codex:newer', 200, { createdAt: 200 }));
+    applyCurationBatch({
+      actions: [
+        {
+          type: 'thread.create',
+          id: 't1',
+          projectProfileId: projectId(),
+          provisionalTitle: 'Feature',
+        },
+        { type: 'thread.attach', threadId: 't1', sessionId: 'codex:newer', role: 'contributor' },
+        { type: 'session.consume', sessionId: 'codex:newer' },
+      ],
+    });
+
+    upsertSession(session('codex:older', 100, { createdAt: 100 }));
+    expect(listCurationInbox({ limit: 10 }).items).toEqual([
+      expect.objectContaining({ kind: 'session', id: 'codex:older' }),
+    ]);
+
+    applyCurationBatch({
+      actions: [
+        {
+          type: 'lineage.attach',
+          threadId: 't1',
+          sessionId: 'codex:older',
+          role: 'evidence',
+          rationale: 'agent identified related earlier work',
+        },
+        { type: 'session.consume', sessionId: 'codex:older' },
+      ],
+    });
+    expect(listCurationInbox({ limit: 10 }).items).toEqual([]);
+    expect(getWorkThread('t1')?.sessions).toEqual([
+      {
+        sessionId: 'codex:older',
+        role: 'evidence',
+        rationale: 'agent identified related earlier work',
+      },
+      { sessionId: 'codex:newer', role: 'contributor', rationale: null },
+    ]);
+  });
+
+  it('reopens a ready thread when the curator attaches late lineage', () => {
+    consumedThread('t1', [['codex:newer', 200]]);
+    upsertSession(session('codex:older', 100, { createdAt: 100 }));
+    applyCurationBatch({
+      actions: [{ type: 'thread.mark-ready', threadId: 't1', rationale: 'output is clear' }],
+    });
+
+    applyCurationBatch({
+      actions: [
+        {
+          type: 'lineage.attach',
+          threadId: 't1',
+          sessionId: 'codex:older',
+          role: 'evidence',
+          rationale: 'agent identified related earlier work',
+        },
+        { type: 'session.consume', sessionId: 'codex:older' },
+      ],
+    });
+
+    expect(getWorkThread('t1')).toMatchObject({
+      lifecycle: 'open',
+      readyAt: null,
+      readinessRationale: 'Reopened after lineage attachment',
+    });
+    expect(listArtifactInbox().items).toEqual([]);
+  });
+
+  it('appends and retracts lineage after artifact creation without changing the payload', () => {
+    consumedThread('t1', [['codex:a', 200]]);
+    upsertSession(session('codex:older', 100, { createdAt: 100 }));
+    applyCurationBatch({ actions: [{ type: 'thread.finalize', threadId: 't1' }] });
+    finalizeArtifact({ threadId: 't1', type: 'feature', payload: { files: ['src/a.ts'] } });
+
+    applyCurationBatch({
+      actions: [
+        {
+          type: 'lineage.attach',
+          threadId: 't1',
+          sessionId: 'codex:older',
+          role: 'evidence',
+          rationale: 'late historical evidence',
+        },
+      ],
+    });
+    expect(getArtifact('t1')).toMatchObject({
+      payload: { files: ['src/a.ts'] },
+      sessions: [
+        { sessionId: 'codex:older', role: 'evidence' },
+        { sessionId: 'codex:a', role: 'contributor' },
+      ],
+    });
+
+    applyCurationBatch({
+      actions: [
+        {
+          type: 'lineage.retract',
+          threadId: 't1',
+          sessionId: 'codex:older',
+          rationale: 'later review found this unrelated',
+        },
+      ],
+    });
+    const artifact = getArtifact('t1');
+    expect(artifact).toMatchObject({
+      payload: { files: ['src/a.ts'] },
+      sessions: [{ sessionId: 'codex:a', role: 'contributor' }],
+    });
+    expect(artifact?.lineageEvents?.map((event) => event.eventType)).toEqual([
+      'attach',
+      'attach',
+      'retract',
+    ]);
+  });
+
+  it('creates a successor artifact without mutating its predecessor', () => {
+    consumedThread('t1', [['codex:a', 100]]);
+    consumedThread('t2', [['codex:b', 200]]);
+    for (const id of ['t1', 't2']) {
+      applyCurationBatch({ actions: [{ type: 'thread.finalize', threadId: id }] });
+    }
+    finalizeArtifact({ threadId: 't1', type: 'feature', payload: { files: ['src/v1.ts'] } });
+    finalizeArtifact({
+      threadId: 't2',
+      predecessorArtifactId: 't1',
+      type: 'feature',
+      payload: { files: ['src/v2.ts'] },
+    });
+
+    expect(getArtifact('t1')).toMatchObject({
+      payload: { files: ['src/v1.ts'] },
+      predecessorArtifactId: null,
+    });
+    expect(getArtifact('t2')).toMatchObject({
+      payload: { files: ['src/v2.ts'] },
+      predecessorArtifactId: 't1',
+    });
   });
 });

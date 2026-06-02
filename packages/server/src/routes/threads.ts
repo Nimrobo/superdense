@@ -7,8 +7,9 @@ function errorMessage(err: unknown): string {
 
 function lifecycleParam(value: string | undefined): ThreadLifecycle | undefined {
   if (value === undefined) return undefined;
-  if (value === 'open' || value === 'finalized' || value === 'artifact') return value;
-  throw new Error('lifecycle must be open, finalized, or artifact');
+  if (value === 'finalized') return 'ready';
+  if (value === 'open' || value === 'ready' || value === 'artifact') return value;
+  throw new Error('lifecycle must be open, ready, or artifact');
 }
 
 export async function registerThreadsRoutes(app: FastifyInstance): Promise<void> {

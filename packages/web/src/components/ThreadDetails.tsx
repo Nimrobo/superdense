@@ -25,6 +25,15 @@ export function ThreadDetails({ thread, projectName, onOpenSession }: Props) {
             Artifact finalized {formatFullTime(thread.artifactFinalizedAt)}
           </div>
         )}
+        {thread.readyAt && (
+          <div className="muted small">
+            Marked ready {formatFullTime(thread.readyAt)}
+            {thread.readinessRationale ? ` · ${thread.readinessRationale}` : ''}
+          </div>
+        )}
+        {thread.predecessorArtifactId && (
+          <div className="muted small">Successor of {thread.predecessorArtifactId}</div>
+        )}
         {thread.summary && <p>{thread.summary}</p>}
       </section>
 
@@ -39,9 +48,7 @@ export function ThreadDetails({ thread, projectName, onOpenSession }: Props) {
       )}
 
       <section className="card">
-        <div className="card-title">
-          {thread.lifecycle === 'artifact' ? 'Frozen lineage' : 'Linked sessions'}
-        </div>
+        <div className="card-title">Effective lineage</div>
         {!thread.sessions || thread.sessions.length === 0 ? (
           <div className="muted">No linked sessions.</div>
         ) : (
@@ -58,6 +65,25 @@ export function ThreadDetails({ thread, projectName, onOpenSession }: Props) {
                   <span className="muted small"> · head</span>
                 )}
                 {session.rationale && <div className="muted small">{session.rationale}</div>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="card">
+        <div className="card-title">Lineage events</div>
+        {!thread.lineageEvents || thread.lineageEvents.length === 0 ? (
+          <div className="muted">No lineage events.</div>
+        ) : (
+          <ul className="plain-list">
+            {thread.lineageEvents.map((event) => (
+              <li key={event.id} className="list-row">
+                <span className="mono">{event.sessionId}</span> ·{' '}
+                <span className="muted small">
+                  {event.eventType} {event.role}
+                </span>
+                {event.rationale && <div className="muted small">{event.rationale}</div>}
               </li>
             ))}
           </ul>

@@ -118,6 +118,7 @@ export {
   getArtifact,
   getCurationContext,
   getWorkThread,
+  listArtifactInbox,
   listArtifacts,
   listCurationInbox,
   listWorkThreads,
@@ -131,6 +132,8 @@ export type {
   ThreadExternalizationStatus,
   ThreadLifecycle,
   WorkThread,
+  WorkThreadLineageEvent,
+  WorkThreadLineageEventType,
   WorkThreadRole,
   WorkThreadSession,
 } from './curation/index.js';
@@ -147,11 +150,7 @@ export type {
   ExternalizationTarget,
   ExternalizationTargetStatus,
 } from './externalization/index.js';
-export {
-  getArtifactRewards,
-  listRewardSnapshots,
-  recordRewardSnapshot,
-} from './rewards/index.js';
+export { getArtifactRewards, listRewardSnapshots, recordRewardSnapshot } from './rewards/index.js';
 export type { ArtifactRewards, RewardSnapshot, RewardTargetSeries } from './rewards/index.js';
 export type {
   ArtifactDetector,

@@ -34,7 +34,7 @@ describe('thread routes', () => {
 
   it('filters lists by project and lifecycle', async () => {
     const app = await buildApp();
-    for (const lifecycle of ['open', 'finalized', 'artifact'] as const) {
+    for (const lifecycle of ['open', 'ready', 'artifact'] as const) {
       const response = await app.inject({
         method: 'GET',
         url: `/api/threads?projectId=p1&lifecycle=${lifecycle}`,
@@ -44,11 +44,21 @@ describe('thread routes', () => {
     }
   });
 
+  it('accepts finalized as a temporary alias for ready', async () => {
+    const app = await buildApp();
+    const response = await app.inject({ method: 'GET', url: '/api/threads?lifecycle=finalized' });
+    expect(response.statusCode).toBe(200);
+    expect(core.listWorkThreads).toHaveBeenLastCalledWith({
+      projectId: undefined,
+      lifecycle: 'ready',
+    });
+  });
+
   it('rejects invalid lifecycle values', async () => {
     const app = await buildApp();
     const response = await app.inject({ method: 'GET', url: '/api/threads?lifecycle=draft' });
     expect(response.statusCode).toBe(400);
-    expect(response.json()).toEqual({ error: 'lifecycle must be open, finalized, or artifact' });
+    expect(response.json()).toEqual({ error: 'lifecycle must be open, ready, or artifact' });
   });
 
   it('returns a thread detail or 404', async () => {

@@ -75,7 +75,7 @@ beforeEach(() => {
 describe('externalization reconciliation (Layer 4)', () => {
   it('adds V8 folded assessment columns and the target table', () => {
     const db = getDb();
-    expect(db.pragma('user_version', { simple: true })).toBe(9);
+    expect(db.pragma('user_version', { simple: true })).toBe(10);
     const columns = (
       db.prepare('PRAGMA table_info(work_thread)').all() as Array<{ name: string }>
     ).map((row) => row.name);
@@ -101,7 +101,7 @@ describe('externalization reconciliation (Layer 4)', () => {
 
     _migrateForTests(db);
 
-    expect(db.pragma('user_version', { simple: true })).toBe(9);
+    expect(db.pragma('user_version', { simple: true })).toBe(10);
     expect(
       db
         .prepare(

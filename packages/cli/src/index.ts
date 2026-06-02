@@ -47,6 +47,7 @@ import {
   getWorkThread,
   indexAll,
   listArtifacts,
+  listArtifactInbox,
   listCompactors,
   listCurationInbox,
   listEnrichers,
@@ -744,6 +745,10 @@ async function handleArtifact(
     printJson({ marker: markSessionForCuration(flags.session.trim()) }, io);
     return true;
   }
+  if (action === 'inbox') {
+    printJson(listArtifactInbox({ limit: intFlag(flags, 'limit', 10, 1000) }), io);
+    return true;
+  }
   if (action === 'finalize') {
     printJson(finalizeArtifact(await readJsonObject(flags.input, 'input')), io);
     return true;
@@ -1408,14 +1413,15 @@ export async function runCli(
         '  project attention <id>  Mark attention --needed [--reasons <json>] or --resolved',
         '  artifact mark-current  Mark the current agent session for curation',
         '  artifact mark --session <adapter:id>  Mark an explicit session for curation',
+        '  artifact inbox     List ready threads awaiting artifact creation [--limit N]',
         '  curation inbox      Get a bounded root-session review batch [--project <id>] [--limit N]',
         '  curation context <root-session-id>  Load root and linked sub-agent review hints',
         '  curation apply --input <json|@file>  Apply an atomic batch of reversible actions',
         '  thread list         List mutable work threads [--project <id>]',
         '  thread show <id>    Show a work thread and session memberships',
-        '  artifact finalize --input <json|@file>  Extract an immutable artifact from a finalized thread',
+        '  artifact finalize --input <json|@file>  Create a stable artifact payload from a ready thread',
         '  artifact list       List finalized artifacts [--project <id>] [--type <t>]',
-        '  artifact show <thread-id>  Show a finalized artifact and its frozen lineage',
+        '  artifact show <thread-id>  Show a stable artifact payload and effective lineage',
         '  externalization inbox  List unprocessed and blocked finalized artifacts [--limit N] [--cursor <opaque>]',
         '  externalization list   List artifact externalization states [--status <s>]',
         '  externalization show <artifact-id>  Show assessment and connector targets',

@@ -1,7 +1,7 @@
 ---
 name: superdense-session-curate
-version: 0.1.0
-description: Review a bounded Superdense session-curation inbox and maintain mutable work threads before artifact finalization.
+version: 0.2.0
+description: Review a bounded Superdense session-curation inbox, group related work, and queue clear work threads for artifact creation.
 argument-hint: project-id
 allowed-tools: Bash(superdense *)
 ---
@@ -21,11 +21,14 @@ Arguments: `$ARGUMENTS`
    superdense index
    ```
 
-2. Fetch the next inbox batch, defaulting to 10:
+2. Fetch the next universal inbox batch, defaulting to 10:
 
    ```bash
    superdense curation inbox --project <project-id> --limit 10
    ```
+
+   Explicitly marked roots come first, then deliverable roots and the remaining new, changed,
+   deferred, and historical backlog.
 
 3. Review likely neighbors together. Use this exact wording:
 
@@ -54,13 +57,22 @@ Arguments: `$ARGUMENTS`
    source needed.
 
 5. Use profile shapes, plan slugs, branches, intent, time, and distinctive files as retrieval
-   hints. Create or revise mutable work threads with one atomic batch:
+   hints. For each session, decide whether to attach it to an existing thread, create a new
+   thread, skip it, or defer it. Consume useful attached sessions in the same batch. Apply the
+   decisions in one atomic batch:
 
    ```bash
    superdense curation apply --input '<json|@file>'
    ```
 
-6. Stop after the bounded batch. Report the actions applied and the remaining inbox counts.
+6. When one thread represents one identifiable output, queue it:
+
+   ```bash
+   superdense curation apply --input '{"actions":[{"type":"thread.mark-ready","threadId":"<id>","rationale":"<why the output is identifiable>"}]}'
+   ```
+
+7. Stop after the bounded batch. Report actions, remaining inbox counts, and newly ready threads.
+   Tell the user to run `/superdense-artifact-finalize` when the ready queue is non-empty.
 
 ## Actions
 
@@ -72,9 +84,17 @@ Arguments: `$ARGUMENTS`
 - `thread.detach`
 - `thread.merge`
 - `thread.split`
+- `thread.mark-ready`
+- `thread.reopen`
+- `lineage.attach`
+- `lineage.retract`
 - `session.consume`
 - `session.skip`
 - `session.defer`
 
 A consumed session must be attached to at least one thread. Use `contributor` for sessions
 that changed the work and `evidence` for supporting investigation or context.
+
+Artifact payloads are stable after creation, but lineage remains append-only. Use `lineage.attach`
+for late evidence and `lineage.retract` to neutralize an incorrect link while preserving audit
+history.

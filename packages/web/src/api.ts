@@ -192,13 +192,22 @@ export interface Project extends ProjectSummary {
   coveredProjects: ProjectSummary[];
 }
 
-export type ThreadLifecycle = 'open' | 'finalized' | 'artifact';
+export type ThreadLifecycle = 'open' | 'ready' | 'artifact';
 export type WorkThreadRole = 'contributor' | 'evidence';
 
 export interface WorkThreadSession {
   sessionId: string;
   role: WorkThreadRole;
   rationale: string | null;
+}
+
+export interface WorkThreadLineageEvent {
+  id: string;
+  sessionId: string;
+  eventType: 'attach' | 'retract';
+  role: WorkThreadRole;
+  rationale: string | null;
+  createdAt: number;
 }
 
 export interface WorkThread {
@@ -212,12 +221,16 @@ export interface WorkThread {
   artifactType: string | null;
   payload: Record<string, unknown> | null;
   artifactFinalizedAt: number | null;
+  readyAt: number | null;
+  readinessRationale: string | null;
+  predecessorArtifactId: string | null;
   lifecycle: ThreadLifecycle;
   headSessionId?: string | null;
   sessions?: WorkThreadSession[];
+  lineageEvents?: WorkThreadLineageEvent[];
 }
 
-// A finalized work thread is a Layer 3B artifact (artifactType is set).
+// A ready work thread becomes a Layer 3B artifact when its stable payload is set.
 export type Artifact = WorkThread;
 
 async function j<T>(url: string, init?: RequestInit): Promise<T> {

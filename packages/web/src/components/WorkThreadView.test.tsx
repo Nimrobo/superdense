@@ -21,6 +21,9 @@ const artifactThread: apiModule.WorkThread = {
   artifactType: 'video',
   payload: { files: ['final.mp4'] },
   artifactFinalizedAt: 3,
+  readyAt: 2,
+  readinessRationale: 'output is clear',
+  predecessorArtifactId: null,
   lifecycle: 'artifact',
   headSessionId: 'codex:two',
   sessions: [
@@ -65,7 +68,7 @@ describe('WorkThreadView', () => {
 
     await waitFor(() => screen.getByText('Launch video'));
     expect(screen.getByText('Videos')).toBeDefined();
-    expect(screen.getByText('Frozen lineage')).toBeDefined();
+    expect(screen.getByText('Effective lineage')).toBeDefined();
     expect(screen.getByText(/final\.mp4/)).toBeDefined();
     expect(screen.getByText(/rendered final asset/)).toBeDefined();
 

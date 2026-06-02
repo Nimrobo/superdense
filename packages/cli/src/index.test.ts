@@ -41,6 +41,9 @@ vi.mock('@nimrobo/superdense-core', () => ({
   createQuery: vi.fn(),
   deleteQuery: vi.fn(),
   ensureSuperdenseDirs: vi.fn(),
+  finalizeArtifact: vi.fn(),
+  getArtifact: vi.fn(),
+  getArtifactRewards: vi.fn(),
   getCompactor: vi.fn(),
   getCurationContext: vi.fn(),
   getEnrichment: vi.fn(),
@@ -54,6 +57,8 @@ vi.mock('@nimrobo/superdense-core', () => ({
   getWorkThread: vi.fn(),
   indexAll: vi.fn(),
   listCompactors: vi.fn(),
+  listArtifactInbox: vi.fn(),
+  listArtifacts: vi.fn(),
   listCurationInbox: vi.fn(),
   listEnrichers: vi.fn(),
   listExternalizationInbox: vi.fn(),
@@ -69,6 +74,7 @@ vi.mock('@nimrobo/superdense-core', () => ({
   listWorkThreads: vi.fn(),
   loadUserEnrichers: vi.fn(),
   markSessionForCuration: vi.fn(),
+  recordRewardSnapshot: vi.fn(),
   localClaudeSkillsDir: (cwd: string) => join(cwd, '.claude', 'skills'),
   localCodexSkillsDir: (cwd: string) => join(cwd, '.codex', 'skills'),
   previewQuery: vi.fn(),
@@ -349,6 +355,7 @@ beforeEach(() => {
     resolvedSessions: [],
   });
   vi.mocked(core.listWorkThreads).mockReturnValue([]);
+  vi.mocked(core.listArtifactInbox).mockReturnValue({ items: [], limit: 10, remaining: 0 });
   vi.mocked(core.getWorkThread).mockReturnValue({
     id: 't1',
     projectProfileId: 'p1',
@@ -360,6 +367,9 @@ beforeEach(() => {
     artifactType: null,
     payload: null,
     artifactFinalizedAt: null,
+    readyAt: null,
+    readinessRationale: null,
+    predecessorArtifactId: null,
     externalizationStatus: null,
     externalizationEvidence: null,
     externalizationUpdatedAt: null,
@@ -974,6 +984,11 @@ describe('superdense cli agent commands', () => {
   it('marks an explicit session id', async () => {
     await runCli(['artifact', 'mark', '--session', 'codex:explicit'], io().io);
     expect(core.markSessionForCuration).toHaveBeenCalledWith('codex:explicit');
+  });
+
+  it('exposes the autonomous artifact ready queue', async () => {
+    await runCli(['artifact', 'inbox', '--limit', '7'], io().io);
+    expect(core.listArtifactInbox).toHaveBeenCalledWith({ limit: 7 });
   });
 
   it('exposes curation inbox, apply, and mutable thread reads', async () => {
