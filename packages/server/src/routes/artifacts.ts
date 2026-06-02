@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { getArtifact, listArtifacts, listWorkThreads } from '@nimrobo/superdense-core';
+import { getArtifact, listArtifacts } from '@nimrobo/superdense-core';
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -24,22 +24,5 @@ export async function registerArtifactsRoutes(app: FastifyInstance): Promise<voi
       return { error: 'not found' };
     }
     return { artifact };
-  });
-
-  // Threads that are finalized but not yet extracted — the Studio "ready to
-  // extract" queue. Layer 3A exposed no thread route, so this lives here.
-  app.get('/api/threads', async (req, reply) => {
-    const q = req.query as Record<string, string | undefined>;
-    try {
-      return {
-        items: listWorkThreads({
-          projectId: q.projectId,
-          lifecycle: q.lifecycle === 'finalized' ? 'finalized' : undefined,
-        }),
-      };
-    } catch (err) {
-      reply.status(400);
-      return { error: errorMessage(err) };
-    }
   });
 }

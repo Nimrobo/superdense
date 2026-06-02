@@ -201,8 +201,7 @@ export interface WorkThreadSession {
   rationale: string | null;
 }
 
-// A finalized work thread is a Layer 3B artifact (artifactType is set).
-export interface Artifact {
+export interface WorkThread {
   id: string;
   projectProfileId: string;
   provisionalTitle: string;
@@ -217,6 +216,9 @@ export interface Artifact {
   headSessionId?: string | null;
   sessions?: WorkThreadSession[];
 }
+
+// A finalized work thread is a Layer 3B artifact (artifactType is set).
+export type Artifact = WorkThread;
 
 async function j<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -327,11 +329,14 @@ export const api = {
   },
   getArtifact: (id: string) =>
     j<{ artifact: Artifact }>(`/api/artifacts/${encodeURIComponent(id)}`),
-  listFinalizableThreads: (opts: { projectId?: string } = {}) => {
-    const sp = new URLSearchParams({ lifecycle: 'finalized' });
+  listThreads: (opts: { projectId?: string; lifecycle?: ThreadLifecycle } = {}) => {
+    const sp = new URLSearchParams();
     if (opts.projectId) sp.set('projectId', opts.projectId);
-    return j<{ items: Artifact[] }>(`/api/threads?${sp}`);
+    if (opts.lifecycle) sp.set('lifecycle', opts.lifecycle);
+    const qs = sp.toString();
+    return j<{ items: WorkThread[] }>(`/api/threads${qs ? `?${qs}` : ''}`);
   },
+  getThread: (id: string) => j<{ thread: WorkThread }>(`/api/threads/${encodeURIComponent(id)}`),
 };
 
 export interface InsightRecipe {

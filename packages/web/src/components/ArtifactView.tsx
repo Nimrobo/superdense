@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, type Artifact } from '../api.js';
-import { formatFullTime } from '../sessionDisplay.js';
+import { ThreadDetails } from './ThreadDetails.js';
 
 interface Props {
   id: string;
@@ -41,49 +41,7 @@ export function ArtifactView({ id, onBack, onOpenSession }: Props) {
           <div className="work-sub">{artifact.artifactType}</div>
         </div>
       </div>
-      <div className="work-body project-detail">
-        <section className="card">
-          <div className="card-title">Artifact</div>
-          <div className="muted small">
-            Type <strong>{artifact.artifactType}</strong> · status {artifact.status} · lifecycle{' '}
-            {artifact.lifecycle}
-          </div>
-          {artifact.artifactFinalizedAt && (
-            <div className="muted small">
-              Finalized {formatFullTime(artifact.artifactFinalizedAt)}
-            </div>
-          )}
-        </section>
-
-        <section className="card">
-          <div className="card-title">Payload</div>
-          <pre className="command-box">{JSON.stringify(artifact.payload ?? {}, null, 2)}</pre>
-        </section>
-
-        <section className="card">
-          <div className="card-title">Frozen lineage</div>
-          {!artifact.sessions || artifact.sessions.length === 0 ? (
-            <div className="muted">No lineage sessions.</div>
-          ) : (
-            <ul className="plain-list">
-              {artifact.sessions.map((session) => (
-                <li
-                  key={session.sessionId}
-                  className="list-row clickable"
-                  onClick={() => onOpenSession(session.sessionId)}
-                >
-                  <span className="mono">{session.sessionId}</span> ·{' '}
-                  <span className="muted small">{session.role}</span>
-                  {session.sessionId === artifact.headSessionId && (
-                    <span className="muted small"> · head</span>
-                  )}
-                  {session.rationale && <div className="muted small">{session.rationale}</div>}
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      </div>
+      <ThreadDetails thread={artifact} onOpenSession={onOpenSession} />
     </>
   );
 }

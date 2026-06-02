@@ -190,6 +190,29 @@ describe('api projects', () => {
   });
 });
 
+describe('api threads', () => {
+  it('lists all threads without query params', async () => {
+    mockOk({ items: [] });
+    await api.listThreads();
+    expect(mockFetch).toHaveBeenCalledWith('/api/threads', expect.anything());
+  });
+
+  it('lists threads with encoded project and lifecycle filters', async () => {
+    mockOk({ items: [] });
+    await api.listThreads({ projectId: 'project/id', lifecycle: 'open' });
+    expect(mockFetch).toHaveBeenCalledWith(
+      '/api/threads?projectId=project%2Fid&lifecycle=open',
+      expect.anything(),
+    );
+  });
+
+  it('loads a URL-encoded thread id', async () => {
+    mockOk({ thread: { id: 'thread/id' } });
+    await api.getThread('thread/id');
+    expect(mockFetch).toHaveBeenCalledWith('/api/threads/thread%2Fid', expect.anything());
+  });
+});
+
 describe('error handling', () => {
   it('throws on non-ok response with status and statusText', async () => {
     mockErr(500, 'Internal Server Error');

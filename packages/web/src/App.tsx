@@ -11,6 +11,8 @@ import { ProjectsView } from './components/ProjectsView.js';
 import { ProjectView } from './components/ProjectView.js';
 import { ArtifactsView } from './components/ArtifactsView.js';
 import { ArtifactView } from './components/ArtifactView.js';
+import { WorkThreadsView } from './components/WorkThreadsView.js';
+import { WorkThreadView } from './components/WorkThreadView.js';
 
 export type View =
   | { type: 'dashboard' }
@@ -18,6 +20,8 @@ export type View =
   | { type: 'sessions' }
   | { type: 'projects' }
   | { type: 'project'; id: string }
+  | { type: 'threads'; projectId?: string }
+  | { type: 'thread'; id: string; projectId?: string }
   | { type: 'artifacts' }
   | { type: 'artifact'; id: string }
   | { type: 'session'; id: string }
@@ -118,6 +122,20 @@ export function App() {
         )}
         {view.type === 'project' && (
           <ProjectView id={view.id} onBack={() => window.history.back()} />
+        )}
+        {view.type === 'threads' && (
+          <WorkThreadsView
+            projectId={view.projectId}
+            onProjectChange={(projectId) => pushView({ type: 'threads', projectId })}
+            onOpen={(id) => pushView({ type: 'thread', id, projectId: view.projectId })}
+          />
+        )}
+        {view.type === 'thread' && (
+          <WorkThreadView
+            id={view.id}
+            onBack={() => window.history.back()}
+            onOpenSession={(id) => pushView({ type: 'session', id })}
+          />
         )}
         {view.type === 'artifacts' && (
           <ArtifactsView onOpen={(id) => pushView({ type: 'artifact', id })} />
