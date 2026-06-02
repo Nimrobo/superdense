@@ -36,6 +36,9 @@ Use this skill when the user invokes `/superdense-session-curate <project-id>`.
 Supported actions are `thread.create`, `thread.update`, `thread.attach`, `thread.detach`,
 `thread.merge`, `thread.split`, `thread.mark-ready`, `thread.reopen`,
 `lineage.attach`, `lineage.retract`, `session.consume`, `session.skip`, and `session.defer`.
-A consumed session must belong to at least one thread. Roles are `contributor` and `evidence`.
-Artifact payloads are stable after creation, but lineage remains append-only and may receive
-audited attach or retract events later.
+`thread.create` takes `projectProfileId` (required) and `provisionalTitle` (required), plus optional
+`id` and `summary`; it does not accept `status`. `session.consume` only flips curation state and
+does not attach — include a separate `thread.attach` (with a `role`) in the same batch, or the
+batch is rejected because a consumed session must belong to at least one thread. Roles are
+`contributor` and `evidence`. Artifact payloads are stable after creation, but lineage remains
+append-only and may receive audited attach or retract events later.

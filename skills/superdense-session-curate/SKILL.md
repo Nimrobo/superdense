@@ -92,8 +92,24 @@ Arguments: `$ARGUMENTS`
 - `session.skip`
 - `session.defer`
 
-A consumed session must be attached to at least one thread. Use `contributor` for sessions
-that changed the work and `evidence` for supporting investigation or context.
+`thread.create` takes `projectProfileId` (required, the canonical project id), `provisionalTitle`
+(required), and optional `id` and `summary`. It does not accept `status`.
+
+`session.consume` only changes a session's curation state — it does **not** attach the session to a
+thread. To consume a session into a thread, include a separate `thread.attach` (with a `role`) for
+it in the **same** batch. A consumed session must be attached to at least one thread or the whole
+batch is rejected. Use `contributor` for sessions that changed the work and `evidence` for
+supporting investigation or context.
+
+A grouping batch therefore looks like:
+
+```bash
+superdense curation apply --input '{"actions":[
+  {"type":"thread.create","projectProfileId":"<project-id>","provisionalTitle":"<title>","summary":"<optional>"},
+  {"type":"thread.attach","threadId":"<thread-id>","sessionId":"<session-id>","role":"contributor","rationale":"<why>"},
+  {"type":"session.consume","sessionId":"<session-id>"}
+]}'
+```
 
 Artifact payloads are stable after creation, but lineage remains append-only. Use `lineage.attach`
 for late evidence and `lineage.retract` to neutralize an incorrect link while preserving audit
