@@ -146,6 +146,12 @@ function migrate(db: Database.Database): void {
   if (currentVersion < 6) {
     db.pragma('user_version = 6');
   }
+  // V7 folds Layer 3B artifact finalization onto work_thread (no new tables).
+  // Reconciled on every open for the same reason as V5/V6.
+  runDataMigrationV7(db);
+  if (currentVersion < 7) {
+    db.pragma('user_version = 7');
+  }
 
   ensureSystemRun(db);
 }
@@ -423,6 +429,28 @@ function runDataMigrationV6(db: Database.Database, backfillHistoricalRevisions: 
          WHERE curated_revision IS NULL
       `);
     }
+  });
+  tx();
+}
+
+// Layer 3B folds artifact finalization onto work_thread: a finalized thread is
+// the artifact, its lineage is the existing work_thread_session rows. Only three
+// nullable columns are added; no new tables.
+function runDataMigrationV7(db: Database.Database): void {
+  const tx = db.transaction(() => {
+    if (!columnExists(db, 'work_thread', 'artifact_type')) {
+      db.exec('ALTER TABLE work_thread ADD COLUMN artifact_type TEXT;');
+    }
+    if (!columnExists(db, 'work_thread', 'payload')) {
+      db.exec('ALTER TABLE work_thread ADD COLUMN payload TEXT;');
+    }
+    if (!columnExists(db, 'work_thread', 'artifact_finalized_at')) {
+      db.exec('ALTER TABLE work_thread ADD COLUMN artifact_finalized_at INTEGER;');
+    }
+    db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_work_thread_artifact
+         ON work_thread(artifact_type, project_profile_id);`,
+    );
   });
   tx();
 }

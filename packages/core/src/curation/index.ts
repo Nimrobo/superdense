@@ -12,6 +12,12 @@ import type { Session } from '../types.js';
 export type CurationStatus = 'pending' | 'consumed' | 'skipped' | 'deferred';
 export type WorkThreadRole = 'contributor' | 'evidence';
 
+// Layer 3B lifecycle, derived from the folded work_thread row:
+//   open      -> still being curated (L3A)
+//   finalized -> work-thread finalize done; the thread is locked
+//   artifact  -> artifact extracted (artifact_type set)
+export type ThreadLifecycle = 'open' | 'finalized' | 'artifact';
+
 export interface WorkThreadSession {
   sessionId: string;
   role: WorkThreadRole;
@@ -26,6 +32,12 @@ export interface WorkThread {
   status: string;
   createdAt: number;
   updatedAt: number;
+  // Layer 3B artifact fields (folded onto work_thread; null until finalized).
+  artifactType: string | null;
+  payload: Record<string, unknown> | null;
+  artifactFinalizedAt: number | null;
+  lifecycle: ThreadLifecycle;
+  headSessionId?: string | null;
   sessions?: WorkThreadSession[];
 }
 
@@ -37,6 +49,9 @@ interface WorkThreadRow {
   status: string;
   created_at: number;
   updated_at: number;
+  artifact_type: string | null;
+  payload: string | null;
+  artifact_finalized_at: number | null;
 }
 
 interface WorkThreadSessionRow {
@@ -53,7 +68,22 @@ interface SessionSignalRow {
   reads: number;
 }
 
+function parsePayload(raw: string | null): Record<string, unknown> | null {
+  if (raw == null) return null;
+  try {
+    const value = JSON.parse(raw) as unknown;
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 function rowToThread(row: WorkThreadRow): WorkThread {
+  const artifactType = row.artifact_type ?? null;
+  const lifecycle: ThreadLifecycle =
+    artifactType != null ? 'artifact' : row.status === 'finalized' ? 'finalized' : 'open';
   return {
     id: row.id,
     projectProfileId: row.project_profile_id,
@@ -62,6 +92,10 @@ function rowToThread(row: WorkThreadRow): WorkThread {
     status: row.status,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    artifactType,
+    payload: parsePayload(row.payload),
+    artifactFinalizedAt: row.artifact_finalized_at ?? null,
+    lifecycle,
   };
 }
 
@@ -308,14 +342,24 @@ export function getCurationContext(sessionId: string) {
   };
 }
 
-export function listWorkThreads(opts: { projectId?: string } = {}): WorkThread[] {
+export function listWorkThreads(
+  opts: { projectId?: string; lifecycle?: ThreadLifecycle } = {},
+): WorkThread[] {
   const db = getDb();
   const params: string[] = [];
-  let where = '';
+  const clauses: string[] = [];
   if (opts.projectId) {
-    where = 'WHERE project_profile_id = ?';
+    clauses.push('project_profile_id = ?');
     params.push(canonicalProjectId(opts.projectId));
   }
+  if (opts.lifecycle === 'artifact') {
+    clauses.push('artifact_type IS NOT NULL');
+  } else if (opts.lifecycle === 'finalized') {
+    clauses.push("status = 'finalized' AND artifact_type IS NULL");
+  } else if (opts.lifecycle === 'open') {
+    clauses.push("status != 'finalized' AND artifact_type IS NULL");
+  }
+  const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
   return (
     db
       .prepare(`SELECT * FROM work_thread ${where} ORDER BY updated_at DESC, id ASC`)
@@ -329,13 +373,29 @@ export function getWorkThread(id: string): WorkThread | null {
     | WorkThreadRow
     | undefined;
   if (!row) return null;
+  // Lineage order is the "first need -> final" narrative: by session creation
+  // time, with a stable id tiebreak when timestamps are equal or missing.
   const sessions = db
     .prepare(
-      'SELECT session_id, role, rationale FROM work_thread_session WHERE thread_id = ? ORDER BY session_id',
+      `SELECT wts.session_id, wts.role, wts.rationale, s.created_at AS created_at
+         FROM work_thread_session wts
+         JOIN sessions s ON s.id = wts.session_id
+        WHERE wts.thread_id = ?
+        ORDER BY COALESCE(s.created_at, 0) ASC, wts.session_id ASC`,
     )
-    .all(id) as WorkThreadSessionRow[];
+    .all(id) as Array<WorkThreadSessionRow & { created_at: number | null }>;
+  // The head is the session that finalized the artifact: the latest contributor
+  // (falling back to the latest session of any role), derived at read time.
+  const contributors = sessions.filter((session) => session.role === 'contributor');
+  const headPool = contributors.length ? contributors : sessions;
+  const headSessionId = headPool.length
+    ? headPool.reduce((best, session) =>
+        (session.created_at ?? 0) > (best.created_at ?? 0) ? session : best,
+      ).session_id
+    : null;
   return {
     ...rowToThread(row),
+    headSessionId,
     sessions: sessions.map((session) => ({
       sessionId: session.session_id,
       role: session.role,
@@ -362,8 +422,20 @@ function expectActionObject(value: unknown, field: string): Record<string, unkno
   return value as Record<string, unknown>;
 }
 
-function requireThread(id: string): void {
-  if (!getWorkThread(id)) throw new Error(`thread not found: ${id}`);
+function requireThread(id: string): WorkThread {
+  const thread = getWorkThread(id);
+  if (!thread) throw new Error(`thread not found: ${id}`);
+  return thread;
+}
+
+// A finalized thread is an immutable artifact (or a locked thread awaiting
+// extraction); curation can no longer touch it. This guard is what makes the
+// folded artifact immutable without a physically separate table.
+function requireMutableThread(id: string): WorkThread {
+  const thread = requireThread(id);
+  if (thread.lifecycle !== 'open')
+    throw new Error(`thread ${id} is finalized and can no longer be curated`);
+  return thread;
 }
 
 function requireSession(id: string, resolvedSessions?: Map<string, string>): string {
@@ -380,7 +452,7 @@ function attach(
   rationale: unknown,
   resolvedSessions?: Map<string, string>,
 ): void {
-  requireThread(threadId);
+  requireMutableThread(threadId);
   const rootId = requireSession(sessionId, resolvedSessions);
   if (rationale != null && typeof rationale !== 'string')
     throw new Error('rationale must be a string or null');
@@ -440,7 +512,7 @@ export function applyCurationBatch(input: unknown) {
       }
       if (type === 'thread.update') {
         const threadId = expectString(action.threadId, 'threadId');
-        requireThread(threadId);
+        requireMutableThread(threadId);
         const patch = expectActionObject(action.patch, 'patch');
         for (const key of Object.keys(patch)) {
           if (!['provisionalTitle', 'summary', 'status'].includes(key))
@@ -473,7 +545,7 @@ export function applyCurationBatch(input: unknown) {
       }
       if (type === 'thread.detach') {
         const threadId = expectString(action.threadId, 'threadId');
-        requireThread(threadId);
+        requireMutableThread(threadId);
         db.prepare('DELETE FROM work_thread_session WHERE thread_id = ? AND session_id = ?').run(
           threadId,
           requireSession(expectString(action.sessionId, 'sessionId'), resolvedSessions),
@@ -482,14 +554,14 @@ export function applyCurationBatch(input: unknown) {
       }
       if (type === 'thread.merge') {
         const targetThreadId = expectString(action.targetThreadId, 'targetThreadId');
-        requireThread(targetThreadId);
+        requireMutableThread(targetThreadId);
         const target = getWorkThread(targetThreadId)!;
         if (!Array.isArray(action.sourceThreadIds) || action.sourceThreadIds.length === 0)
           throw new Error('sourceThreadIds must be a non-empty array');
         for (const rawId of action.sourceThreadIds) {
           const sourceId = expectString(rawId, 'sourceThreadIds[]');
           if (sourceId === targetThreadId) continue;
-          requireThread(sourceId);
+          requireMutableThread(sourceId);
           if (getWorkThread(sourceId)!.projectProfileId !== target.projectProfileId) {
             throw new Error('merged threads must belong to the same project');
           }
@@ -504,7 +576,7 @@ export function applyCurationBatch(input: unknown) {
       }
       if (type === 'thread.split') {
         const sourceThreadId = expectString(action.sourceThreadId, 'sourceThreadId');
-        requireThread(sourceThreadId);
+        requireMutableThread(sourceThreadId);
         if (!Array.isArray(action.threads) || action.threads.length === 0)
           throw new Error('threads must be a non-empty array');
         for (const rawThread of action.threads) {
@@ -541,6 +613,23 @@ export function applyCurationBatch(input: unknown) {
           }
         }
         db.prepare('UPDATE work_thread SET updated_at = ? WHERE id = ?').run(now, sourceThreadId);
+        continue;
+      }
+      if (type === 'thread.finalize') {
+        // Step 1 of Layer 3B: curation is complete for this thread. Lock it so
+        // its membership is frozen, ready for artifact extraction.
+        const threadId = expectString(action.threadId, 'threadId');
+        requireMutableThread(threadId);
+        const memberCount = (
+          db
+            .prepare('SELECT COUNT(*) AS count FROM work_thread_session WHERE thread_id = ?')
+            .get(threadId) as { count: number }
+        ).count;
+        if (memberCount === 0) throw new Error(`thread ${threadId} has no sessions to finalize`);
+        db.prepare("UPDATE work_thread SET status = 'finalized', updated_at = ? WHERE id = ?").run(
+          now,
+          threadId,
+        );
         continue;
       }
       if (type === 'session.consume' || type === 'session.skip' || type === 'session.defer') {
@@ -590,4 +679,76 @@ export function applyCurationBatch(input: unknown) {
       rootSessionId,
     })),
   };
+}
+
+// Layer 3B step 2: extract the durable artifact from a finalized work thread.
+// The thread must already be finalized (locked) and must not yet carry an
+// artifact. `payload` is open JSON so the deliverable can be a file set
+// (`{ "files": [...] }`), inline content (`{ "text": "..." }` for a tweet that
+// only lives in the session), or a mix.
+export function finalizeArtifact(input: unknown): {
+  ok: true;
+  threadId: string;
+  artifactType: string;
+} {
+  const body = expectActionObject(input, 'input');
+  const threadId = expectString(body.threadId, 'threadId');
+  const type = expectString(body.type, 'type');
+  const title = body.title === undefined ? null : expectString(body.title, 'title');
+  let payload: Record<string, unknown> = {};
+  if (body.payload !== undefined) payload = expectActionObject(body.payload, 'payload');
+  const db = getDb();
+  const now = Date.now();
+  const tx = db.transaction(() => {
+    const row = db.prepare('SELECT * FROM work_thread WHERE id = ?').get(threadId) as
+      | WorkThreadRow
+      | undefined;
+    if (!row) throw new Error(`thread not found: ${threadId}`);
+    if (row.status !== 'finalized')
+      throw new Error(`thread ${threadId} must be finalized before extracting an artifact`);
+    if (row.artifact_type != null) throw new Error(`thread ${threadId} already has an artifact`);
+    db.prepare(
+      `UPDATE work_thread
+          SET artifact_type = ?,
+              payload = ?,
+              artifact_finalized_at = ?,
+              provisional_title = COALESCE(?, provisional_title),
+              updated_at = ?
+        WHERE id = ?`,
+    ).run(type, JSON.stringify(payload), now, title, now, threadId);
+  });
+  tx();
+  return { ok: true, threadId, artifactType: type };
+}
+
+// Read finalized artifacts (work threads where an artifact has been extracted).
+export function listArtifacts(opts: { projectId?: string; type?: string } = {}): WorkThread[] {
+  const db = getDb();
+  const clauses = ['artifact_type IS NOT NULL'];
+  const params: string[] = [];
+  if (opts.projectId) {
+    clauses.push('project_profile_id = ?');
+    params.push(canonicalProjectId(opts.projectId));
+  }
+  if (opts.type) {
+    clauses.push('artifact_type = ?');
+    params.push(opts.type);
+  }
+  return (
+    db
+      .prepare(
+        `SELECT * FROM work_thread
+          WHERE ${clauses.join(' AND ')}
+          ORDER BY artifact_finalized_at DESC, id ASC`,
+      )
+      .all(...params) as WorkThreadRow[]
+  ).map(rowToThread);
+}
+
+// A single artifact: the finalized thread plus its frozen lineage and derived
+// head. Returns null when the thread is missing or has no artifact yet.
+export function getArtifact(threadId: string): WorkThread | null {
+  const thread = getWorkThread(threadId);
+  if (!thread || thread.artifactType == null) return null;
+  return thread;
 }

@@ -9,6 +9,8 @@ import { DashboardView } from './components/DashboardView.js';
 import { InsightsView } from './components/InsightsView.js';
 import { ProjectsView } from './components/ProjectsView.js';
 import { ProjectView } from './components/ProjectView.js';
+import { ArtifactsView } from './components/ArtifactsView.js';
+import { ArtifactView } from './components/ArtifactView.js';
 
 export type View =
   | { type: 'dashboard' }
@@ -16,6 +18,8 @@ export type View =
   | { type: 'sessions' }
   | { type: 'projects' }
   | { type: 'project'; id: string }
+  | { type: 'artifacts' }
+  | { type: 'artifact'; id: string }
   | { type: 'session'; id: string }
   | { type: 'query-builder' }
   | { type: 'query'; id: string };
@@ -114,6 +118,16 @@ export function App() {
         )}
         {view.type === 'project' && (
           <ProjectView id={view.id} onBack={() => window.history.back()} />
+        )}
+        {view.type === 'artifacts' && (
+          <ArtifactsView onOpen={(id) => pushView({ type: 'artifact', id })} />
+        )}
+        {view.type === 'artifact' && (
+          <ArtifactView
+            id={view.id}
+            onBack={() => window.history.back()}
+            onOpenSession={(id) => pushView({ type: 'session', id })}
+          />
         )}
         {view.type === 'session' && (
           <SessionReader id={view.id} onBack={() => window.history.back()} />

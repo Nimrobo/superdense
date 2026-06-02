@@ -114,8 +114,11 @@ export {
 } from './projects/index.js';
 export {
   applyCurationBatch,
+  finalizeArtifact,
+  getArtifact,
   getCurationContext,
   getWorkThread,
+  listArtifacts,
   listCurationInbox,
   listWorkThreads,
   markSessionForCuration,
@@ -125,6 +128,7 @@ export {
 } from './curation/index.js';
 export type {
   CurationStatus,
+  ThreadLifecycle,
   WorkThread,
   WorkThreadRole,
   WorkThreadSession,

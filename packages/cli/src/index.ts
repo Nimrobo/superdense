@@ -29,6 +29,8 @@ import {
   createQuery,
   deleteQuery,
   ensureSuperdenseDirs,
+  finalizeArtifact,
+  getArtifact,
   getCompactor,
   getCurationContext,
   getEnrichment,
@@ -41,6 +43,7 @@ import {
   getSessionTree,
   getWorkThread,
   indexAll,
+  listArtifacts,
   listCompactors,
   listCurationInbox,
   listEnrichers,
@@ -80,6 +83,7 @@ const REQUIRED_STUDIO_SKILLS = [
   'chain',
   'superdense-project-profile',
   'superdense-session-curate',
+  'superdense-artifact-finalize',
 ];
 
 interface CliIo {
@@ -715,11 +719,11 @@ function resolveCurrentSessionId(env: NodeJS.ProcessEnv = process.env): string {
   );
 }
 
-function handleArtifact(
+async function handleArtifact(
   args: string[],
   flags: Record<string, string | boolean>,
   io: CliIo,
-): boolean {
+): Promise<boolean> {
   const action = args[0];
   if (action === 'mark-current') {
     printJson({ marker: markSessionForCuration(resolveCurrentSessionId()) }, io);
@@ -730,6 +734,30 @@ function handleArtifact(
       throw new Error('artifact mark requires --session <adapter:id>');
     }
     printJson({ marker: markSessionForCuration(flags.session.trim()) }, io);
+    return true;
+  }
+  if (action === 'finalize') {
+    printJson(finalizeArtifact(await readJsonObject(flags.input, 'input')), io);
+    return true;
+  }
+  if (action === 'list') {
+    printJson(
+      {
+        items: listArtifacts({
+          projectId: typeof flags.project === 'string' ? flags.project : undefined,
+          type: typeof flags.type === 'string' ? flags.type : undefined,
+        }),
+      },
+      io,
+    );
+    return true;
+  }
+  if (action === 'show') {
+    const id = args[1];
+    if (!id) throw new Error('artifact show requires <thread-id>');
+    const artifact = getArtifact(id);
+    if (!artifact) throw new Error(`artifact not found: ${id}`);
+    printJson({ artifact }, io);
     return true;
   }
   throw new Error(`unknown artifact command: ${action ?? '(none)'}`);
@@ -1227,7 +1255,7 @@ export async function runCli(
   }
 
   if (cmd === 'artifact') {
-    handleArtifact(args, flags, io);
+    await handleArtifact(args, flags, io);
     return 0;
   }
 
@@ -1310,6 +1338,9 @@ export async function runCli(
         '  curation apply --input <json|@file>  Apply an atomic batch of reversible actions',
         '  thread list         List mutable work threads [--project <id>]',
         '  thread show <id>    Show a work thread and session memberships',
+        '  artifact finalize --input <json|@file>  Extract an immutable artifact from a finalized thread',
+        '  artifact list       List finalized artifacts [--project <id>] [--type <t>]',
+        '  artifact show <thread-id>  Show a finalized artifact and its frozen lineage',
         '  skill install [n]   Install skills into Claude and Codex',
         '      --locally       Install skills into ./.claude and ./.codex for this cwd',
         '  index               Incremental session index',

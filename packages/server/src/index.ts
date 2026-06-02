@@ -10,6 +10,7 @@ import { registerReindexRoutes } from './routes/reindex.js';
 import { registerStatsRoutes } from './routes/stats.js';
 import { registerInsightsRoutes } from './routes/insights.js';
 import { registerProjectsRoutes } from './routes/projects.js';
+import { registerArtifactsRoutes } from './routes/artifacts.js';
 
 export interface ServerOptions {
   port?: number;
@@ -37,6 +38,7 @@ async function buildApp(opts: ServerOptions) {
   await registerStatsRoutes(app);
   await registerInsightsRoutes(app);
   await registerProjectsRoutes(app);
+  await registerArtifactsRoutes(app);
 
   const here = dirname(fileURLToPath(import.meta.url));
   const candidates = [

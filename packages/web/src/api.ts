@@ -192,6 +192,32 @@ export interface Project extends ProjectSummary {
   coveredProjects: ProjectSummary[];
 }
 
+export type ThreadLifecycle = 'open' | 'finalized' | 'artifact';
+export type WorkThreadRole = 'contributor' | 'evidence';
+
+export interface WorkThreadSession {
+  sessionId: string;
+  role: WorkThreadRole;
+  rationale: string | null;
+}
+
+// A finalized work thread is a Layer 3B artifact (artifactType is set).
+export interface Artifact {
+  id: string;
+  projectProfileId: string;
+  provisionalTitle: string;
+  summary: string | null;
+  status: string;
+  createdAt: number;
+  updatedAt: number;
+  artifactType: string | null;
+  payload: Record<string, unknown> | null;
+  artifactFinalizedAt: number | null;
+  lifecycle: ThreadLifecycle;
+  headSessionId?: string | null;
+  sessions?: WorkThreadSession[];
+}
+
 async function j<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     ...init,
@@ -292,6 +318,20 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ needed, ...(reasons ? { reasons } : {}) }),
     }),
+  listArtifacts: (opts: { projectId?: string; type?: string } = {}) => {
+    const sp = new URLSearchParams();
+    if (opts.projectId) sp.set('projectId', opts.projectId);
+    if (opts.type) sp.set('type', opts.type);
+    const qs = sp.toString();
+    return j<{ items: Artifact[] }>(`/api/artifacts${qs ? `?${qs}` : ''}`);
+  },
+  getArtifact: (id: string) =>
+    j<{ artifact: Artifact }>(`/api/artifacts/${encodeURIComponent(id)}`),
+  listFinalizableThreads: (opts: { projectId?: string } = {}) => {
+    const sp = new URLSearchParams({ lifecycle: 'finalized' });
+    if (opts.projectId) sp.set('projectId', opts.projectId);
+    return j<{ items: Artifact[] }>(`/api/threads?${sp}`);
+  },
 };
 
 export interface InsightRecipe {

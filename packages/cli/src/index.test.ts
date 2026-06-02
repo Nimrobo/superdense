@@ -330,6 +330,11 @@ beforeEach(() => {
     status: 'open',
     createdAt: 1,
     updatedAt: 1,
+    artifactType: null,
+    payload: null,
+    artifactFinalizedAt: null,
+    lifecycle: 'open',
+    headSessionId: null,
     sessions: [],
   });
   vi.mocked(core.setProjectAttention).mockReturnValue(project);

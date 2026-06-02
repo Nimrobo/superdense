@@ -14,8 +14,11 @@ import { _resetDbForTests, getDb, getSession, upsertSession, upsertSessionLink }
 import { listProjectProfiles } from '../../projects/index.js';
 import {
   applyCurationBatch,
+  finalizeArtifact,
+  getArtifact,
   getCurationContext,
   getWorkThread,
+  listArtifacts,
   listCurationInbox,
   listWorkThreads,
   markSessionForCuration,
@@ -279,5 +282,134 @@ describe('curation actions', () => {
       id: 'codex:root',
       curationPriorityAt: 200,
     });
+  });
+});
+
+describe('artifact finalization (Layer 3B)', () => {
+  function consumedThread(id: string, sessionIds: Array<[string, number]>): string {
+    for (const [sessionId, createdAt] of sessionIds) {
+      upsertSession(session(sessionId, createdAt, { createdAt }));
+    }
+    const actions: Array<Record<string, unknown>> = [
+      { type: 'thread.create', id, projectProfileId: projectId(), provisionalTitle: `${id} title` },
+    ];
+    for (const [sessionId] of sessionIds) {
+      actions.push({ type: 'thread.attach', threadId: id, sessionId, role: 'contributor' });
+      actions.push({ type: 'session.consume', sessionId });
+    }
+    applyCurationBatch({ actions });
+    return id;
+  }
+
+  it('adds the V7 artifact columns to work_thread', () => {
+    const columns = (
+      getDb().prepare('PRAGMA table_info(work_thread)').all() as Array<{ name: string }>
+    ).map((row) => row.name);
+    expect(columns).toEqual(
+      expect.arrayContaining(['artifact_type', 'payload', 'artifact_finalized_at']),
+    );
+  });
+
+  it('finalizes a thread then extracts an immutable artifact with frozen lineage', () => {
+    consumedThread('t1', [
+      ['codex:a', 100],
+      ['codex:b', 200],
+    ]);
+    applyCurationBatch({ actions: [{ type: 'thread.finalize', threadId: 't1' }] });
+    expect(getWorkThread('t1')).toMatchObject({ status: 'finalized', lifecycle: 'finalized' });
+
+    expect(
+      finalizeArtifact({
+        threadId: 't1',
+        type: 'tweet',
+        title: 'Launch announcement',
+        payload: { text: 'Launching today' },
+      }),
+    ).toEqual({ ok: true, threadId: 't1', artifactType: 'tweet' });
+
+    const artifact = getArtifact('t1');
+    expect(artifact).toMatchObject({
+      artifactType: 'tweet',
+      provisionalTitle: 'Launch announcement',
+      payload: { text: 'Launching today' },
+      lifecycle: 'artifact',
+      headSessionId: 'codex:b',
+    });
+    // Lineage is ordered by session creation time (first need -> final).
+    expect(artifact?.sessions?.map((item) => item.sessionId)).toEqual(['codex:a', 'codex:b']);
+  });
+
+  it('keeps the provisional title when finalize omits one', () => {
+    consumedThread('t1', [['codex:a', 100]]);
+    applyCurationBatch({ actions: [{ type: 'thread.finalize', threadId: 't1' }] });
+    finalizeArtifact({ threadId: 't1', type: 'note' });
+    expect(getArtifact('t1')).toMatchObject({ provisionalTitle: 't1 title', payload: {} });
+  });
+
+  it('locks a finalized thread against further curation', () => {
+    consumedThread('t1', [['codex:a', 100]]);
+    applyCurationBatch({ actions: [{ type: 'thread.finalize', threadId: 't1' }] });
+
+    expect(() =>
+      applyCurationBatch({
+        actions: [{ type: 'thread.update', threadId: 't1', patch: { summary: 'x' } }],
+      }),
+    ).toThrow('finalized and can no longer be curated');
+    expect(() =>
+      applyCurationBatch({
+        actions: [{ type: 'thread.detach', threadId: 't1', sessionId: 'codex:a' }],
+      }),
+    ).toThrow('finalized and can no longer be curated');
+  });
+
+  it('rejects finalizing a thread with no sessions', () => {
+    upsertSession(session('codex:a', 100));
+    applyCurationBatch({
+      actions: [
+        {
+          type: 'thread.create',
+          id: 't1',
+          projectProfileId: projectId(),
+          provisionalTitle: 'Empty',
+        },
+      ],
+    });
+    expect(() =>
+      applyCurationBatch({ actions: [{ type: 'thread.finalize', threadId: 't1' }] }),
+    ).toThrow('no sessions to finalize');
+  });
+
+  it('rejects artifact extraction before the thread is finalized', () => {
+    consumedThread('t1', [['codex:a', 100]]);
+    expect(() => finalizeArtifact({ threadId: 't1', type: 'tweet' })).toThrow(
+      'must be finalized before extracting an artifact',
+    );
+  });
+
+  it('rejects a second artifact on the same thread', () => {
+    consumedThread('t1', [['codex:a', 100]]);
+    applyCurationBatch({ actions: [{ type: 'thread.finalize', threadId: 't1' }] });
+    finalizeArtifact({ threadId: 't1', type: 'tweet' });
+    expect(() => finalizeArtifact({ threadId: 't1', type: 'feature' })).toThrow(
+      'already has an artifact',
+    );
+  });
+
+  it('lists finalized artifacts and filters by type, excluding open threads', () => {
+    consumedThread('t1', [['codex:a', 100]]);
+    consumedThread('t2', [['codex:b', 100]]);
+    consumedThread('t3', [['codex:c', 100]]);
+    for (const id of ['t1', 't2']) {
+      applyCurationBatch({ actions: [{ type: 'thread.finalize', threadId: id }] });
+    }
+    finalizeArtifact({ threadId: 't1', type: 'tweet' });
+    finalizeArtifact({ threadId: 't2', type: 'feature' });
+
+    expect(
+      listArtifacts()
+        .map((item) => item.id)
+        .sort(),
+    ).toEqual(['t1', 't2']);
+    expect(listArtifacts({ type: 'tweet' }).map((item) => item.id)).toEqual(['t1']);
   });
 });
