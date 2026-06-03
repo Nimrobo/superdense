@@ -41,6 +41,8 @@ Profile one detected Superdense project. This is a local, structural description
 
 ## Artifact Shapes
 
+Before choosing `artifactShapes[].type`, consult `reward/artifact-types.md`. Artifact type is a cohort-normalization guide, not an enum: reuse a common type when it fits, and create a project-specific lower-kebab type only when the common types would make comparison misleading.
+
 Use an open artifact type name and one strict local detector:
 
 ```json
@@ -63,5 +65,7 @@ Supported detectors:
 - `file-glob`: requires `include`, optionally `exclude`.
 - `branch`: no extra fields.
 - `whole-surface`: no extra fields.
+
+Keep artifact type separate from external platform. Do not choose reward connectors, published URLs, or collection policies during profiling.
 
 Use `needsHumanAttention: true` only with specific `attentionReasons`. A valid completed profile may have an empty `artifactShapes` array when no stable rewardable local artifacts exist.

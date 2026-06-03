@@ -18,7 +18,7 @@ Process the Layer 4 inbox: decide whether finalized artifacts stayed internal or
    superdense curation context <root-session-id>
    ```
 
-   Decide whether the artifact remained internal or infer each external connector it needs. The `connector` value is a free-text platform label you choose, such as `x`, `youtube`, or `substack`; it is not tied to any installed CLI. Do not mutate an external service, and do not attach matches found only through general web browsing. If indexed context is insufficient, follow the shared escalation policy in `reward/README.md`.
+   Decide whether the artifact remained internal or infer each external connector it needs. Consult `reward/connectors.md` for common connector labels, locator formats, and evidence standards. The `connector` value is a free-text platform label you choose, such as `github`, `npm`, `x`, `youtube`, or `substack`; it is not tied to any installed CLI. Do not mutate an external service, and do not attach matches found only through general web browsing. If indexed context is insufficient, follow the shared escalation policy in `reward/README.md`.
 
 3. Replace the current assessment:
 
@@ -52,6 +52,7 @@ Process the Layer 4 inbox: decide whether finalized artifacts stayed internal or
 - Process each inbox item at most once per run. Blocked artifacts intentionally remain visible for a future explicit run.
 - Treat `nextCursor` as opaque. Never decode, edit, or invent a cursor. Process one page per invocation and continue only when explicitly asked.
 - Attach only a clear connector-authoritative match. Keep uncertain candidates in evidence and use `ambiguous`.
+- Keep artifact type and connector separate. Prefer `post` with connector `x`, `software-change` with connector `github`, and `release` with connector `npm`.
 - Preserve existing linked targets when reassessing a partially blocked artifact unless evidence shows that the old match was wrong.
 - `locator` is opaque text. Store the connector's exact identifier, URL, coordinate, or serialized query without translating it into a Superdense schema.
 - Record concise evidence for every assessment and unresolved target.

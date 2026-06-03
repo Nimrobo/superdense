@@ -19,11 +19,11 @@ Process one bounded Layer 3B ready queue. Curation has already grouped sessions 
 
    If indexed context is insufficient, follow the shared escalation policy in `reward/README.md`.
 
-3. When the thread clearly represents one output, choose an open-vocabulary `type`, a `title`, and a stable `payload`, then create the artifact:
+3. When the thread clearly represents one output, consult `reward/artifact-types.md`, choose an open-vocabulary `type`, a `title`, and a stable `payload`, then create the artifact:
 
    ```bash
-   superdense artifact finalize --input '{"threadId":"<id>","type":"feature","title":"...","payload":{"files":["src/x.ts"]}}'
-   superdense artifact finalize --input '{"threadId":"<id>","type":"tweet","title":"...","payload":{"text":"..."}}'
+   superdense artifact finalize --input '{"threadId":"<id>","type":"software-change","title":"...","payload":{"files":["src/x.ts"]}}'
+   superdense artifact finalize --input '{"threadId":"<id>","type":"post","title":"...","payload":{"text":"..."}}'
    ```
 
 4. If the output remains ambiguous, reopen the thread for more curation:
@@ -42,6 +42,7 @@ Process one bounded Layer 3B ready queue. Curation has already grouped sessions 
 ## Rules
 
 - Do not ask the user to select a thread ID. Process the ready queue.
+- Prefer the project's `artifactShapes[].type` when it fits. Use lower-kebab artifact types and choose the output shape, not the publishing platform.
 - Artifact identity and payload stay stable after creation. Lineage remains append-only and may gain audited `lineage.attach` or `lineage.retract` events later.
 - If the produced output changes, create a successor thread and pass `predecessorArtifactId` while creating its artifact. Do not inherit externalization targets automatically.
 - Never claim deterministic artifact discovery. The ready queue is agent-confirmed.

@@ -38,3 +38,10 @@ Use `salience` for the gist and `trace` when ordering matters. Raw session sourc
 | `reconcile` | `reward/reconcile.md` |
 | `collect`   | `reward/collect.md`   |
 | `compare`   | `reward/compare.md`   |
+
+## Helper References
+
+| Helper          | Reference                  | Use when                                     |
+| --------------- | -------------------------- | -------------------------------------------- |
+| Artifact types  | `reward/artifact-types.md` | Choosing `artifactShapes[].type` or `type`.  |
+| Connector names | `reward/connectors.md`     | Reconciling targets or collecting snapshots. |

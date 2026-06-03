@@ -82,7 +82,7 @@ Use `superdense reward status --project <id>` to focus the project-sensitive sta
 | `collect`   | `reward/collect.md`   |
 | `compare`   | `reward/compare.md`   |
 
-Shared reward-layer rules live in `reward/README.md`.
+Shared reward-layer rules and helper references for artifact types and connector names live in `reward/README.md`.
 
 **Precondition.** Refresh the index only when the user asks about recent/latest work, new sessions may have appeared, or results look stale:
 
