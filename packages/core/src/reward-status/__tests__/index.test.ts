@@ -215,4 +215,16 @@ describe('reward status', () => {
     expect(status.projectId).toBe(projectA);
     expect(actionable(status, 'collect')).toBe(1);
   });
+
+  it('scopes finalize and reconcile counts to a requested project', () => {
+    const projectA = createReadyThread('ready-a', { pwd: '/repo/a' });
+    createReadyThread('ready-b', { pwd: '/repo/b' });
+    createArtifact('artifact-a', { pwd: '/repo/a' });
+    createArtifact('artifact-b', { pwd: '/repo/b' });
+
+    const status = getRewardStatus({ projectId: projectA });
+
+    expect(actionable(status, 'finalize')).toBe(1);
+    expect(actionable(status, 'reconcile')).toBe(1);
+  });
 });

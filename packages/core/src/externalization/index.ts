@@ -59,6 +59,14 @@ interface ExternalizationInboxCursor {
 
 const INVALID_INBOX_CURSOR = 'cursor must be a valid externalization inbox cursor';
 
+function canonicalProjectId(projectId: string): string {
+  const row = getDb()
+    .prepare('SELECT id, covered_by FROM project_profile WHERE id = ?')
+    .get(projectId) as { id: string; covered_by: string | null } | undefined;
+  if (!row) throw new Error(`project not found: ${projectId}`);
+  return row.covered_by ?? row.id;
+}
+
 function expectObject(value: unknown, field: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error(`${field} must be an object`);
@@ -239,12 +247,17 @@ function decodeInboxCursor(raw: string): ExternalizationInboxCursor {
   }
 }
 
-export function listExternalizationInbox(opts: { limit?: number; cursor?: string } = {}) {
+export function listExternalizationInbox(
+  opts: { projectId?: string; limit?: number; cursor?: string } = {},
+) {
   const limit = Math.max(0, Math.min(Math.floor(opts.limit ?? 10), 1000));
   const cursor = opts.cursor === undefined ? null : decodeInboxCursor(opts.cursor);
   const db = getDb();
+  const projectWhere = opts.projectId ? 'AND project_profile_id = ?' : '';
+  const projectParams = opts.projectId ? [canonicalProjectId(opts.projectId)] : [];
   const actionableWhere = `
     artifact_type IS NOT NULL
+    ${projectWhere}
     AND (
       externalization_status IS NULL
       OR (
@@ -276,7 +289,7 @@ export function listExternalizationInbox(opts: { limit?: number; cursor?: string
         ORDER BY artifact_finalized_at DESC, id ASC
         LIMIT ?`,
     )
-    .all(...cursorParams, limit + 1) as ArtifactRow[];
+    .all(...projectParams, ...cursorParams, limit + 1) as ArtifactRow[];
   const pageRows = rows.slice(0, limit);
   const targetMap = listTargetsByArtifact(pageRows.map((row) => row.id));
   const items = pageRows.map((row) => rowToExternalization(row, targetMap.get(row.id) ?? []));
@@ -291,7 +304,7 @@ export function listExternalizationInbox(opts: { limit?: number; cursor?: string
        FROM work_thread
        WHERE ${actionableWhere}`,
     )
-    .get() as { unprocessed: number; blocked: number };
+    .get(...projectParams) as { unprocessed: number; blocked: number };
   return {
     items,
     limit,

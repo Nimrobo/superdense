@@ -1362,6 +1362,105 @@ a {
   gap: 8px;
   padding: 4px 9px;
 }
+
+.reward-page {
+  max-width: 1180px;
+}
+.reward-section {
+  min-height: 0;
+}
+.section-heading {
+  align-items: flex-start;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+.pending-pipeline-list {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+.pending-pipeline-tile {
+  align-content: start;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  display: grid;
+  gap: 10px;
+  grid-template-rows: 1fr auto;
+  min-height: 154px;
+  padding: 12px 14px;
+}
+.pending-pipeline-detail {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+.pending-pipeline-copy {
+  justify-self: start;
+}
+.project-columns {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.type-list {
+  display: grid;
+  gap: 8px;
+}
+.stat-row {
+  color: var(--text-muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 11px;
+  gap: 7px;
+  margin: 8px 0 5px;
+}
+.stat-row span {
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 7px;
+}
+.stat-row.large {
+  font-size: 12px;
+  margin: 12px 0;
+}
+.concept-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+.concept-item {
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  display: grid;
+  font-size: 11.5px;
+  gap: 4px;
+  padding: 10px;
+}
+.concept-item strong {
+  color: var(--text);
+  font-size: 12px;
+}
+.folded-artifact {
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-top: 10px;
+  padding: 10px;
+}
+.thread-open {
+  margin-top: 8px;
+  padding-left: 0;
+}
+.empty.compact {
+  margin: 8px 0 0;
+  min-height: 0;
+  padding: 12px;
+}
 .cli-list {
   margin-top: 4px;
 }
@@ -1592,7 +1691,9 @@ a {
   }
   .activity-rhythm-row,
   .momentum-card,
-  .three-col {
+  .three-col,
+  .project-columns,
+  .concept-grid {
     grid-template-columns: 1fr;
   }
   .momentum-main {
@@ -1612,6 +1713,9 @@ a {
   .window-grid,
   .records-grid,
   .focus-grid {
+    grid-template-columns: 1fr;
+  }
+  .pending-pipeline-list {
     grid-template-columns: 1fr;
   }
 }

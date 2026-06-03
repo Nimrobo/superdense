@@ -908,29 +908,33 @@ export function finalizeArtifact(input: unknown): {
   return { ok: true, threadId, artifactType: type };
 }
 
-export function listArtifactInbox(opts: { limit?: number } = {}) {
+export function listArtifactInbox(opts: { projectId?: string; limit?: number } = {}) {
   const limit = Math.max(0, Math.min(Math.floor(opts.limit ?? 10), 1000));
+  const clauses = ["status = 'ready'", 'artifact_type IS NULL'];
+  const params: string[] = [];
+  if (opts.projectId) {
+    clauses.push('project_profile_id = ?');
+    params.push(canonicalProjectId(opts.projectId));
+  }
   const items = (
     getDb()
       .prepare(
         `SELECT *
            FROM work_thread
-          WHERE status = 'ready'
-            AND artifact_type IS NULL
+          WHERE ${clauses.join(' AND ')}
           ORDER BY COALESCE(ready_at, updated_at) ASC, id ASC
           LIMIT ?`,
       )
-      .all(limit) as WorkThreadRow[]
+      .all(...params, limit) as WorkThreadRow[]
   ).map(rowToThread);
   const remaining = (
     getDb()
       .prepare(
         `SELECT COUNT(*) AS count
            FROM work_thread
-          WHERE status = 'ready'
-            AND artifact_type IS NULL`,
+          WHERE ${clauses.join(' AND ')}`,
       )
-      .get() as { count: number }
+      .get(...params) as { count: number }
   ).count;
   return { items, limit, remaining };
 }

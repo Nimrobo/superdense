@@ -139,8 +139,8 @@ export function getRewardStatus(opts: { projectId?: string } = {}): RewardStatus
   const stages = [
     stage('profile', profile.count),
     stage('curate', listCurationInbox({ projectId, limit: 0 }).remaining),
-    stage('finalize', listArtifactInbox({ limit: 0 }).remaining),
-    stage('reconcile', listExternalizationInbox({ limit: 0 }).remaining),
+    stage('finalize', listArtifactInbox({ projectId, limit: 0 }).remaining),
+    stage('reconcile', listExternalizationInbox({ projectId, limit: 0 }).remaining),
     stage('collect', countCollectableTargets(projectId)),
     stage('compare', countComparableOpportunities(projectId)),
   ];

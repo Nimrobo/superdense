@@ -63,6 +63,20 @@ describe('api.listSessions', () => {
   });
 });
 
+describe('api.rewardStatus', () => {
+  it('calls /api/reward/status with no params by default', async () => {
+    mockOk({ projectId: null, stages: [], nextAction: null });
+    await api.rewardStatus();
+    expect(mockFetch).toHaveBeenCalledWith('/api/reward/status', expect.anything());
+  });
+
+  it('forwards the projectId filter', async () => {
+    mockOk({ projectId: 'p1', stages: [], nextAction: null });
+    await api.rewardStatus({ projectId: 'p1' });
+    expect(mockFetch).toHaveBeenCalledWith('/api/reward/status?projectId=p1', expect.anything());
+  });
+});
+
 describe('api.getSession', () => {
   it('calls the correct URL', async () => {
     mockOk({ id: 'abc' });

@@ -52,30 +52,10 @@ export function Sidebar({ view, setView, queries, search, setSearch, progress, o
             <span>Insights</span>
           </div>
           <div
-            className={active(view.type === 'projects' || view.type === 'project')}
-            onClick={() => setView({ type: 'projects' })}
+            className={active(view.type === 'reward' || view.type === 'project')}
+            onClick={() => setView({ type: 'reward' })}
           >
-            <span>Projects</span>
-          </div>
-          <div
-            className={active(view.type === 'threads' || view.type === 'thread')}
-            onClick={() => setView({ type: 'threads' })}
-          >
-            <span>Work Threads</span>
-          </div>
-          <div
-            className={active(view.type === 'artifacts' || view.type === 'artifact')}
-            onClick={() => setView({ type: 'artifacts' })}
-          >
-            <span>Artifacts</span>
-          </div>
-          <div
-            className={active(
-              view.type === 'cohorts' || view.type === 'cohort' || view.type === 'chain',
-            )}
-            onClick={() => setView({ type: 'cohorts' })}
-          >
-            <span>Cohorts</span>
+            <span>Reward</span>
           </div>
         </div>
 

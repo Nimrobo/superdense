@@ -224,6 +224,9 @@ export interface WorkThread {
   readyAt: number | null;
   readinessRationale: string | null;
   predecessorArtifactId: string | null;
+  externalizationStatus: 'not_external' | 'external' | null;
+  externalizationEvidence: string | null;
+  externalizationUpdatedAt: number | null;
   lifecycle: ThreadLifecycle;
   headSessionId?: string | null;
   sessions?: WorkThreadSession[];
@@ -234,7 +237,7 @@ export interface WorkThread {
 export type Artifact = WorkThread;
 
 // The list view carries a derived linkage badge alongside each artifact.
-export interface ArtifactListItem extends Artifact {
+export interface ArtifactListItem extends Omit<Artifact, 'externalizationStatus'> {
   externalizationStatus: 'unprocessed' | 'not_external' | 'linked' | 'blocked';
 }
 
@@ -315,6 +318,77 @@ export interface VersionChain {
   rootId: string;
   type: string;
   members: CohortMember[];
+}
+
+export type RewardStageKey =
+  | 'profile'
+  | 'curate'
+  | 'finalize'
+  | 'reconcile'
+  | 'collect'
+  | 'compare';
+
+export interface RewardStage {
+  key: RewardStageKey;
+  label: string;
+  unit: string;
+  actionable: number;
+  skill: string;
+}
+
+export interface RewardNextAction {
+  stage: RewardStageKey;
+  skill: string;
+  command: string;
+  why: string;
+}
+
+export interface RewardStatus {
+  projectId: string | null;
+  stages: RewardStage[];
+  nextAction: RewardNextAction | null;
+}
+
+export interface RewardProjectCurationCounts {
+  pending: number;
+  consumed: number;
+  skipped: number;
+  deferred: number;
+  remaining: number;
+  attachedConsumed: number;
+}
+
+export interface RewardProjectThreadCounts {
+  open: number;
+  ready: number;
+  artifact: number;
+  total: number;
+}
+
+export interface RewardProjectOverview {
+  project: ProjectSummary;
+  curation: RewardProjectCurationCounts;
+  threads: RewardProjectThreadCounts;
+  status: RewardStatus;
+  nextAction: RewardNextAction | null;
+}
+
+export interface RewardOverviewAction {
+  stage: RewardStageKey;
+  label: string;
+  unit: string;
+  actionable: number;
+  skill: string;
+  command: string;
+  why: string;
+  projectId: string | null;
+}
+
+export interface RewardOverview {
+  status: RewardStatus;
+  actionQueue: RewardOverviewAction[];
+  projects: RewardProjectOverview[];
+  typeSummaries: CohortSummary[];
 }
 
 async function j<T>(url: string, init?: RequestInit): Promise<T> {
@@ -460,6 +534,13 @@ export const api = {
   },
   getVersionChain: (artifactId: string) =>
     j<{ chain: VersionChain }>(`/api/cohorts/chains/${encodeURIComponent(artifactId)}`),
+  rewardStatus: (opts: { projectId?: string } = {}) => {
+    const sp = new URLSearchParams();
+    if (opts.projectId) sp.set('projectId', opts.projectId);
+    const qs = sp.toString();
+    return j<RewardStatus>(`/api/reward/status${qs ? `?${qs}` : ''}`);
+  },
+  rewardOverview: () => j<RewardOverview>('/api/reward/overview'),
 };
 
 export interface InsightRecipe {

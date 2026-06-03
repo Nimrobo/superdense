@@ -168,6 +168,14 @@ export type {
   RewardStatusStage,
   RewardStatusStageKey,
 } from './reward-status/index.js';
+export { getRewardOverview } from './reward-overview/index.js';
+export type {
+  RewardOverview,
+  RewardOverviewAction,
+  RewardProjectCurationCounts,
+  RewardProjectOverview,
+  RewardProjectThreadCounts,
+} from './reward-overview/index.js';
 export type {
   ArtifactDetector,
   ArtifactShape,

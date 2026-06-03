@@ -7,28 +7,15 @@ import { QueryView } from './components/QueryView.js';
 import { QueryBuilder } from './components/QueryBuilder.js';
 import { DashboardView } from './components/DashboardView.js';
 import { InsightsView } from './components/InsightsView.js';
-import { ProjectsView } from './components/ProjectsView.js';
 import { ProjectView } from './components/ProjectView.js';
-import { ArtifactsView } from './components/ArtifactsView.js';
-import { ArtifactView } from './components/ArtifactView.js';
-import { WorkThreadsView } from './components/WorkThreadsView.js';
-import { WorkThreadView } from './components/WorkThreadView.js';
-import { CohortsView } from './components/CohortsView.js';
-import { CohortView, ChainView } from './components/CohortView.js';
+import { RewardView } from './components/RewardView.js';
 
 export type View =
   | { type: 'dashboard' }
   | { type: 'insights' }
   | { type: 'sessions' }
-  | { type: 'projects' }
+  | { type: 'reward' }
   | { type: 'project'; id: string }
-  | { type: 'threads'; projectId?: string }
-  | { type: 'thread'; id: string; projectId?: string }
-  | { type: 'artifacts' }
-  | { type: 'artifact'; id: string }
-  | { type: 'cohorts' }
-  | { type: 'cohort'; cohortType: string; connector?: string }
-  | { type: 'chain'; artifactId: string }
   | { type: 'session'; id: string }
   | { type: 'query-builder' }
   | { type: 'query'; id: string };
@@ -122,58 +109,11 @@ export function App() {
         {view.type === 'sessions' && (
           <SessionsView search={search} onOpen={(id) => pushView({ type: 'session', id })} />
         )}
-        {view.type === 'projects' && (
-          <ProjectsView onOpen={(id) => pushView({ type: 'project', id })} />
+        {view.type === 'reward' && (
+          <RewardView onOpenSession={(id) => pushView({ type: 'session', id })} />
         )}
         {view.type === 'project' && (
           <ProjectView id={view.id} onBack={() => window.history.back()} />
-        )}
-        {view.type === 'threads' && (
-          <WorkThreadsView
-            projectId={view.projectId}
-            onProjectChange={(projectId) => pushView({ type: 'threads', projectId })}
-            onOpen={(id) => pushView({ type: 'thread', id, projectId: view.projectId })}
-          />
-        )}
-        {view.type === 'thread' && (
-          <WorkThreadView
-            id={view.id}
-            onBack={() => window.history.back()}
-            onOpenSession={(id) => pushView({ type: 'session', id })}
-          />
-        )}
-        {view.type === 'artifacts' && (
-          <ArtifactsView onOpen={(id) => pushView({ type: 'artifact', id })} />
-        )}
-        {view.type === 'artifact' && (
-          <ArtifactView
-            id={view.id}
-            onBack={() => window.history.back()}
-            onOpenSession={(id) => pushView({ type: 'session', id })}
-          />
-        )}
-        {view.type === 'cohorts' && (
-          <CohortsView
-            onOpenCohort={(cohortType, connector) =>
-              pushView({ type: 'cohort', cohortType, connector })
-            }
-            onOpenChain={(artifactId) => pushView({ type: 'chain', artifactId })}
-          />
-        )}
-        {view.type === 'cohort' && (
-          <CohortView
-            cohortType={view.cohortType}
-            connector={view.connector}
-            onBack={() => window.history.back()}
-            onOpenArtifact={(id) => pushView({ type: 'artifact', id })}
-          />
-        )}
-        {view.type === 'chain' && (
-          <ChainView
-            artifactId={view.artifactId}
-            onBack={() => window.history.back()}
-            onOpenArtifact={(id) => pushView({ type: 'artifact', id })}
-          />
         )}
         {view.type === 'session' && (
           <SessionReader id={view.id} onBack={() => window.history.back()} />
