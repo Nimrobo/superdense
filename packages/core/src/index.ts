@@ -152,12 +152,7 @@ export type {
 } from './externalization/index.js';
 export { getArtifactRewards, listRewardSnapshots, recordRewardSnapshot } from './rewards/index.js';
 export type { ArtifactRewards, RewardSnapshot, RewardTargetSeries } from './rewards/index.js';
-export {
-  getCohort,
-  getVersionChain,
-  listCohorts,
-  listVersionChains,
-} from './cohorts/index.js';
+export { getCohort, getVersionChain, listCohorts, listVersionChains } from './cohorts/index.js';
 export type {
   Cohort,
   CohortAxis,
@@ -166,6 +161,13 @@ export type {
   VersionChain,
   VersionChainSummary,
 } from './cohorts/index.js';
+export { getRewardStatus } from './reward-status/index.js';
+export type {
+  RewardStatus,
+  RewardStatusNextAction,
+  RewardStatusStage,
+  RewardStatusStageKey,
+} from './reward-status/index.js';
 export type {
   ArtifactDetector,
   ArtifactShape,

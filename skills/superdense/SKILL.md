@@ -65,6 +65,14 @@ superdense session enrichments <session-id> --name subagent_summary
 
 Use the CLI as a staged inspection pipeline: candidate discovery → metadata triage → compact only what's relevant.
 
+**Reward layer.** To see the reward-layer punch list and the next skill to run, start with:
+
+```bash
+superdense reward status
+```
+
+Use `superdense reward status --project <id>` to focus the project-sensitive stages.
+
 **Precondition.** Refresh the index only when the user asks about recent/latest work, new sessions may have appeared, or results look stale:
 
 ```bash

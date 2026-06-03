@@ -39,6 +39,7 @@ import {
   getArtifactRewards,
   getCohort,
   getVersionChain,
+  getRewardStatus,
   listCohorts,
   listVersionChains,
   getProjectContext,
@@ -888,14 +889,15 @@ async function handleReward(
     printJson({ rewards }, io);
     return true;
   }
+  if (action === 'status') {
+    const projectId = typeof flags.project === 'string' ? flags.project : undefined;
+    printJson(getRewardStatus({ projectId }), io);
+    return true;
+  }
   throw new Error(`unknown reward command: ${args.join(' ') || '(none)'}`);
 }
 
-function handleCohort(
-  args: string[],
-  flags: Record<string, string | boolean>,
-  io: CliIo,
-): boolean {
+function handleCohort(args: string[], flags: Record<string, string | boolean>, io: CliIo): boolean {
   const action = args[0];
   const projectId = typeof flags.project === 'string' ? flags.project : undefined;
   if (action === 'list') {
@@ -1475,6 +1477,7 @@ export async function runCli(
         '  externalization assess --input <json|@file>  Replace one artifact assessment',
         '  reward record --input <json|@file>  Record one multidimensional reward snapshot for a linked target',
         '  reward show <artifact-id>  Show latest reward snapshot and series per linked target',
+        '  reward status       Show reward-layer punch-list and next action [--project <id>]',
         '  cohort list         List comparable peer cohorts [--project <id>] [--by type|connector]',
         '  cohort show <type>  Surface a cohort for comparison [--connector <c>] [--project <id>]',
         '  cohort chains       List version chains (a deliverable across versions) [--project <id>]',

@@ -51,6 +51,7 @@ vi.mock('@nimrobo/superdense-core', () => ({
   getProjectContext: vi.fn(),
   getProjectProfileResolution: vi.fn(),
   getQuery: vi.fn(),
+  getRewardStatus: vi.fn(),
   getSession: vi.fn(),
   getSessionChildren: vi.fn(),
   getSessionTree: vi.fn(),
@@ -174,6 +175,31 @@ const externalization = {
       updatedAt: 2,
     },
   ],
+};
+const rewardStatus: core.RewardStatus = {
+  projectId: 'p1',
+  stages: [
+    {
+      key: 'profile',
+      label: 'Profile',
+      unit: 'projects',
+      actionable: 0,
+      skill: '/superdense-project-profile',
+    },
+    {
+      key: 'curate',
+      label: 'Curate',
+      unit: 'sessions',
+      actionable: 1,
+      skill: '/superdense-session-curate',
+    },
+  ],
+  nextAction: {
+    stage: 'curate',
+    skill: '/superdense-session-curate',
+    command: '/superdense-session-curate p1',
+    why: '1 sessions at Curate',
+  },
 };
 
 const originalClaudeSkillsDir = process.env.CLAUDE_SKILLS_DIR;
@@ -391,6 +417,7 @@ beforeEach(() => {
     artifactId: 't1',
     externalization,
   });
+  vi.mocked(core.getRewardStatus).mockReturnValue(rewardStatus);
   vi.mocked(core.setProjectAttention).mockReturnValue(project);
   vi.mocked(startServer).mockResolvedValue({ url: 'http://127.0.0.1:4242', close: vi.fn() });
   vi.mocked(open).mockResolvedValue({} as Awaited<ReturnType<typeof open>>);
@@ -427,6 +454,7 @@ describe('superdense cli agent commands', () => {
     });
     expect(noArgs.stdout[0]).toContain('Usage: superdense <command> [options]');
     expect(start.stdout).toContain('[superdense] http://127.0.0.1:4242');
+    expect(noArgs.stdout[0]).toContain('reward status');
   });
 
   it('starts the studio command without opening the browser when requested', async () => {
@@ -1054,6 +1082,15 @@ describe('superdense cli agent commands', () => {
       evidence: 'internal',
       targets: [],
     });
+  });
+
+  it('exposes reward status as a JSON reward-layer punch list', async () => {
+    const out = io();
+
+    await runCli(['reward', 'status', '--project', 'p1'], out.io);
+
+    expect(core.getRewardStatus).toHaveBeenCalledWith({ projectId: 'p1' });
+    expect(json(out.stdout[0]!)).toEqual(rewardStatus);
   });
 
   it('throws intended errors for missing query, session, and compactor', async () => {
