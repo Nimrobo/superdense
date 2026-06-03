@@ -42,20 +42,25 @@ const STAGE_META: Record<
   RewardStatusStageKey,
   Pick<RewardStatusStage, 'label' | 'unit' | 'skill'>
 > = {
-  profile: { label: 'Profile', unit: 'projects', skill: '/superdense-project-profile' },
-  curate: { label: 'Curate', unit: 'sessions', skill: '/superdense-session-curate' },
-  finalize: { label: 'Finalize', unit: 'threads', skill: '/superdense-artifact-finalize' },
+  profile: { label: 'Profile', unit: 'projects', skill: 'superdense/reward/profile.md' },
+  curate: { label: 'Curate', unit: 'sessions', skill: 'superdense/reward/curate.md' },
+  finalize: { label: 'Finalize', unit: 'threads', skill: 'superdense/reward/finalize.md' },
   reconcile: {
     label: 'Reconcile',
     unit: 'artifacts',
-    skill: '/superdense-externalization-reconcile',
+    skill: 'superdense/reward/reconcile.md',
   },
-  collect: { label: 'Collect', unit: 'linked targets', skill: '/superdense-reward-collect' },
-  compare: { label: 'Compare', unit: 'cohorts', skill: '/superdense-cohort-compare' },
+  collect: { label: 'Collect', unit: 'linked targets', skill: 'superdense/reward/collect.md' },
+  compare: { label: 'Compare', unit: 'cohorts', skill: 'superdense/reward/compare.md' },
 };
 
 function stage(key: RewardStatusStageKey, actionable: number): RewardStatusStage {
   return { key, ...STAGE_META[key], actionable };
+}
+
+function stageCommand(key: RewardStatusStageKey, detail?: string): string {
+  const suffix = detail ? ` ${detail}` : '';
+  return `Read ${STAGE_META[key].skill}${suffix}`;
 }
 
 function profileCount(projectId: string | undefined): { count: number; command: string } {
@@ -66,15 +71,15 @@ function profileCount(projectId: string | undefined): { count: number; command: 
     const needsAction = project.status === 'unprofiled' || project.needsHumanAttention;
     return {
       count: needsAction ? 1 : 0,
-      command: `${STAGE_META.profile.skill} ${project.id}`,
+      command: stageCommand('profile', `for project ${project.id}`),
     };
   }
   const projects = listProjectProfiles({ needsAction: true });
   return {
     count: projects.length,
     command: projects[0]
-      ? `${STAGE_META.profile.skill} ${projects[0].id}`
-      : STAGE_META.profile.skill,
+      ? stageCommand('profile', `for project ${projects[0].id}`)
+      : stageCommand('profile'),
   };
 }
 
@@ -141,11 +146,11 @@ export function getRewardStatus(opts: { projectId?: string } = {}): RewardStatus
   ];
   const commands: Partial<Record<RewardStatusStageKey, string>> = {
     profile: profile.command,
-    curate: projectId ? `${STAGE_META.curate.skill} ${projectId}` : STAGE_META.curate.skill,
-    finalize: STAGE_META.finalize.skill,
-    reconcile: STAGE_META.reconcile.skill,
-    collect: STAGE_META.collect.skill,
-    compare: STAGE_META.compare.skill,
+    curate: projectId ? stageCommand('curate', `for project ${projectId}`) : stageCommand('curate'),
+    finalize: stageCommand('finalize'),
+    reconcile: stageCommand('reconcile'),
+    collect: stageCommand('collect'),
+    compare: stageCommand('compare'),
   };
   return {
     projectId: projectId ?? null,

@@ -33,10 +33,10 @@ export function ProjectView({ id, onBack }: Props) {
 
   useEffect(refresh, [id]);
 
-  const command = `/superdense-project-profile ${project?.id ?? id}`;
+  const command = `Read superdense/reward/profile.md for project ${project?.id ?? id}`;
   const copyCommand = async () => {
     await navigator.clipboard.writeText(command);
-    setToast('Profiling command copied. Paste it into Claude Code or Codex.');
+    setToast('Profiling instruction copied. Paste it into Claude Code or Codex.');
     setTimeout(() => setToast(null), 4000);
   };
 
@@ -95,7 +95,7 @@ export function ProjectView({ id, onBack }: Props) {
             </div>
             <div className="button-row">
               <button className="copy-btn" onClick={copyCommand}>
-                Copy profiling command
+                Copy profiling instruction
               </button>
               <button className="copy-btn" onClick={toggleAttention}>
                 {project.needsHumanAttention ? 'Resolve attention' : 'Mark for attention'}

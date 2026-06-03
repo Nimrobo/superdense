@@ -56,8 +56,8 @@ export function WorkThreadsView({ projectId, onProjectChange, onOpen }: Props) {
   );
 
   const copyFinalizeCommand = async () => {
-    await navigator.clipboard.writeText('/superdense-artifact-finalize');
-    setToast('Artifact queue command copied. Paste it into Claude Code or Codex.');
+    await navigator.clipboard.writeText('Read superdense/reward/finalize.md');
+    setToast('Artifact queue instruction copied. Paste it into Claude Code or Codex.');
     setTimeout(() => setToast(null), 4000);
   };
 
@@ -130,7 +130,7 @@ export function WorkThreadsView({ projectId, onProjectChange, onOpen }: Props) {
                           type="button"
                           onClick={() => copyFinalizeCommand()}
                         >
-                          Copy artifact queue command
+                          Copy artifact queue instruction
                         </button>
                       )}
                     </div>

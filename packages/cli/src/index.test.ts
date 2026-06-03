@@ -184,20 +184,20 @@ const rewardStatus: core.RewardStatus = {
       label: 'Profile',
       unit: 'projects',
       actionable: 0,
-      skill: '/superdense-project-profile',
+      skill: 'superdense/reward/profile.md',
     },
     {
       key: 'curate',
       label: 'Curate',
       unit: 'sessions',
       actionable: 1,
-      skill: '/superdense-session-curate',
+      skill: 'superdense/reward/curate.md',
     },
   ],
   nextAction: {
     stage: 'curate',
-    skill: '/superdense-session-curate',
-    command: '/superdense-session-curate p1',
+    skill: 'superdense/reward/curate.md',
+    command: 'Read superdense/reward/curate.md for project p1',
     why: '1 sessions at Curate',
   },
 };
@@ -1221,24 +1221,23 @@ describe('superdense cli agent commands', () => {
     );
     expect(existsSync(join(root, 'claude', 'superdense', 'agents', 'openai.yaml'))).toBe(true);
     expect(existsSync(join(root, 'codex', 'superdense', 'agents', 'openai.yaml'))).toBe(true);
+    expect(existsSync(join(root, 'claude', 'superdense', 'reward', 'profile.md'))).toBe(true);
+    expect(existsSync(join(root, 'codex', 'superdense', 'reward', 'profile.md'))).toBe(true);
+    expect(existsSync(join(root, 'claude', 'superdense', 'reward', 'reconcile.md'))).toBe(true);
+    expect(existsSync(join(root, 'codex', 'superdense', 'reward', 'reconcile.md'))).toBe(true);
     expect(existsSync(join(root, 'claude', 'chain', 'chain-sessions.sh'))).toBe(true);
     expect(existsSync(join(root, 'codex', 'chain', 'chain-sessions.sh'))).toBe(true);
-    expect(existsSync(join(root, 'claude', 'superdense-project-profile', 'SKILL.md'))).toBe(true);
-    expect(existsSync(join(root, 'codex', 'superdense-project-profile', 'SKILL.md'))).toBe(true);
     expect(
       existsSync(join(root, 'claude', 'superdense-externalization-reconcile', 'SKILL.md')),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       existsSync(join(root, 'codex', 'superdense-externalization-reconcile', 'SKILL.md')),
-    ).toBe(true);
+    ).toBe(false);
     expect(
-      readFileSync(
-        join(root, 'claude', 'superdense-externalization-reconcile', 'SKILL.md'),
-        'utf8',
-      ),
+      readFileSync(join(root, 'claude', 'superdense', 'reward', 'reconcile.md'), 'utf8'),
     ).toContain('--cursor <opaque>');
     expect(
-      readFileSync(join(root, 'codex', 'superdense-externalization-reconcile', 'SKILL.md'), 'utf8'),
+      readFileSync(join(root, 'codex', 'superdense', 'reward', 'reconcile.md'), 'utf8'),
     ).toContain('--cursor <opaque>');
   });
 
@@ -1314,20 +1313,24 @@ describe('superdense cli agent commands', () => {
     expect(readlineMocks.question).toHaveBeenCalledTimes(1);
     expect(existsSync(join(root, 'global-claude', 'superdense', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(root, 'global-codex', 'superdense', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, 'global-claude', 'superdense', 'reward', 'profile.md'))).toBe(
+      true,
+    );
+    expect(existsSync(join(root, 'global-codex', 'superdense', 'reward', 'profile.md'))).toBe(true);
+    expect(existsSync(join(root, 'global-claude', 'superdense', 'reward', 'reconcile.md'))).toBe(
+      true,
+    );
+    expect(existsSync(join(root, 'global-codex', 'superdense', 'reward', 'reconcile.md'))).toBe(
+      true,
+    );
     expect(existsSync(join(root, 'global-claude', 'chain', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(root, 'global-codex', 'chain', 'SKILL.md'))).toBe(true);
-    expect(existsSync(join(root, 'global-claude', 'superdense-project-profile', 'SKILL.md'))).toBe(
-      true,
-    );
-    expect(existsSync(join(root, 'global-codex', 'superdense-project-profile', 'SKILL.md'))).toBe(
-      true,
-    );
     expect(
       existsSync(join(root, 'global-claude', 'superdense-externalization-reconcile', 'SKILL.md')),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       existsSync(join(root, 'global-codex', 'superdense-externalization-reconcile', 'SKILL.md')),
-    ).toBe(true);
+    ).toBe(false);
     expect(out.stdout).toContain('[superdense] installed Superdense skills globally.');
     expect(startServer).toHaveBeenCalled();
   });

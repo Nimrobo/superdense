@@ -90,16 +90,7 @@ import open from 'open';
 const CLI_PACKAGE_NAME = '@nimrobo/superdense';
 const NPM_REGISTRY_PACKAGE_URL = `https://registry.npmjs.org/${CLI_PACKAGE_NAME.replace('/', '%2f')}`;
 const SKIP_UPDATE_CHECK_ENV = 'SUPERDENSE_SKIP_UPDATE_CHECK';
-const REQUIRED_STUDIO_SKILLS = [
-  'superdense',
-  'chain',
-  'superdense-project-profile',
-  'superdense-session-curate',
-  'superdense-artifact-finalize',
-  'superdense-externalization-reconcile',
-  'superdense-reward-collect',
-  'superdense-cohort-compare',
-];
+const REQUIRED_STUDIO_SKILLS = ['superdense', 'chain'];
 
 interface CliIo {
   stdout: Pick<typeof console, 'log'>;

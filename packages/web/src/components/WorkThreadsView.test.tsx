@@ -77,7 +77,7 @@ function Harness({ onOpen = vi.fn() }: { onOpen?: (id: string) => void }) {
 }
 
 describe('WorkThreadsView', () => {
-  it('groups lifecycle states, filters by project, opens threads, and copies finalize commands', async () => {
+  it('groups lifecycle states, filters by project, opens threads, and copies finalize instructions', async () => {
     const onOpen = vi.fn();
     render(<Harness onOpen={onOpen} />);
 
@@ -90,8 +90,8 @@ describe('WorkThreadsView', () => {
     fireEvent.click(screen.getByText('Draft thread'));
     expect(onOpen).toHaveBeenCalledWith('draft-1');
 
-    fireEvent.click(screen.getByText('Copy artifact queue command'));
-    expect(writeText).toHaveBeenCalledWith('/superdense-artifact-finalize');
+    fireEvent.click(screen.getByText('Copy artifact queue instruction'));
+    expect(writeText).toHaveBeenCalledWith('Read superdense/reward/finalize.md');
 
     fireEvent.change(screen.getByLabelText('Project'), { target: { value: 'p1' } });
     await waitFor(() =>

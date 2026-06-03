@@ -56,15 +56,15 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('ProjectView', () => {
-  it('renders profile details, redirects aliases, copies the skill command, and resolves attention', async () => {
+  it('renders profile details, redirects aliases, copies the skill instruction, and resolves attention', async () => {
     render(<ProjectView id="alias" onBack={vi.fn()} />);
     await waitFor(() => screen.getByText('Videos'));
     expect(screen.getByText(/redirects to its canonical profile/)).toBeDefined();
     expect(screen.getByText('video')).toBeDefined();
     expect(screen.getByText(/finals\/\*\.mp4/)).toBeDefined();
 
-    fireEvent.click(screen.getByText('Copy profiling command'));
-    expect(writeText).toHaveBeenCalledWith('/superdense-project-profile p1');
+    fireEvent.click(screen.getByText('Copy profiling instruction'));
+    expect(writeText).toHaveBeenCalledWith('Read superdense/reward/profile.md for project p1');
 
     fireEvent.click(screen.getByText('Resolve attention'));
     await waitFor(() =>

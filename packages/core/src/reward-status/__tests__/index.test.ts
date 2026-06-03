@@ -139,7 +139,7 @@ describe('reward status', () => {
     expect(actionable(status, 'profile')).toBe(1);
     expect(status.nextAction).toMatchObject({
       stage: 'profile',
-      skill: '/superdense-project-profile',
+      skill: 'superdense/reward/profile.md',
     });
   });
 
@@ -153,7 +153,7 @@ describe('reward status', () => {
     expect(actionable(status, 'curate')).toBe(1);
     expect(status.nextAction).toMatchObject({
       stage: 'curate',
-      command: `/superdense-session-curate ${projectId}`,
+      command: `Read superdense/reward/curate.md for project ${projectId}`,
     });
   });
 
@@ -199,7 +199,7 @@ describe('reward status', () => {
     expect(actionable(status, 'compare')).toBe(2);
     expect(status.nextAction).toMatchObject({
       stage: 'compare',
-      skill: '/superdense-cohort-compare',
+      skill: 'superdense/reward/compare.md',
     });
   });
 
