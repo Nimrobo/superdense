@@ -37,6 +37,10 @@ import {
   getEnrichment,
   getExternalization,
   getArtifactRewards,
+  getCohort,
+  getVersionChain,
+  listCohorts,
+  listVersionChains,
   getProjectContext,
   getProjectProfileResolution,
   getQuery,
@@ -93,6 +97,7 @@ const REQUIRED_STUDIO_SKILLS = [
   'superdense-artifact-finalize',
   'superdense-externalization-reconcile',
   'superdense-reward-collect',
+  'superdense-cohort-compare',
 ];
 
 interface CliIo {
@@ -886,6 +891,43 @@ async function handleReward(
   throw new Error(`unknown reward command: ${args.join(' ') || '(none)'}`);
 }
 
+function handleCohort(
+  args: string[],
+  flags: Record<string, string | boolean>,
+  io: CliIo,
+): boolean {
+  const action = args[0];
+  const projectId = typeof flags.project === 'string' ? flags.project : undefined;
+  if (action === 'list') {
+    const by = typeof flags.by === 'string' ? flags.by : 'type';
+    if (by !== 'type' && by !== 'connector') {
+      throw new Error("cohort list --by must be 'type' or 'connector'");
+    }
+    printJson({ items: listCohorts({ projectId, by }) }, io);
+    return true;
+  }
+  if (action === 'show') {
+    const type = args[1];
+    if (!type) throw new Error('cohort show requires <type>');
+    const connector = typeof flags.connector === 'string' ? flags.connector : undefined;
+    printJson({ cohort: getCohort({ type, connector, projectId }) }, io);
+    return true;
+  }
+  if (action === 'chains') {
+    printJson({ items: listVersionChains({ projectId }) }, io);
+    return true;
+  }
+  if (action === 'chain') {
+    const id = args[1];
+    if (!id) throw new Error('cohort chain requires <artifact-id>');
+    const chain = getVersionChain(id);
+    if (!chain) throw new Error(`artifact not found: ${id}`);
+    printJson({ chain }, io);
+    return true;
+  }
+  throw new Error(`unknown cohort command: ${args.join(' ') || '(none)'}`);
+}
+
 function handleInsight(args: string[], io: CliIo): boolean {
   const action = args[0] ?? 'list';
   if (action === 'list') {
@@ -1349,6 +1391,11 @@ export async function runCli(
     return 0;
   }
 
+  if (cmd === 'cohort') {
+    handleCohort(args, flags, io);
+    return 0;
+  }
+
   if (cmd === 'insight') {
     handleInsight(args, io);
     return 0;
@@ -1428,6 +1475,10 @@ export async function runCli(
         '  externalization assess --input <json|@file>  Replace one artifact assessment',
         '  reward record --input <json|@file>  Record one multidimensional reward snapshot for a linked target',
         '  reward show <artifact-id>  Show latest reward snapshot and series per linked target',
+        '  cohort list         List comparable peer cohorts [--project <id>] [--by type|connector]',
+        '  cohort show <type>  Surface a cohort for comparison [--connector <c>] [--project <id>]',
+        '  cohort chains       List version chains (a deliverable across versions) [--project <id>]',
+        '  cohort chain <artifact-id>  Surface one artifact next to its own versions',
         '  skill install [n]   Install skills into Claude and Codex',
         '      --locally       Install skills into ./.claude and ./.codex for this cwd',
         '  index               Incremental session index',

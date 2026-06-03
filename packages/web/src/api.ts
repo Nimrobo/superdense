@@ -233,6 +233,85 @@ export interface WorkThread {
 // A ready work thread becomes a Layer 3B artifact when its stable payload is set.
 export type Artifact = WorkThread;
 
+export interface ExternalizationTarget {
+  id: string;
+  artifactId: string;
+  connector: string;
+  status: 'linked' | 'needs_connector' | 'not_found' | 'ambiguous';
+  locator: string | null;
+  evidence: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ArtifactExternalization {
+  artifactId: string;
+  status: 'unprocessed' | 'not_external' | 'linked' | 'blocked';
+  conclusion: 'not_external' | 'external' | null;
+  evidence: string | null;
+  updatedAt: number | null;
+  targets: ExternalizationTarget[];
+}
+
+export interface RewardSnapshot {
+  id: string;
+  targetId: string;
+  capturedAt: number;
+  metrics: Record<string, number>;
+  primaryDim: string | null;
+  source: string | null;
+  evidence: string | null;
+  createdAt: number;
+}
+
+export interface RewardTargetSeries {
+  targetId: string;
+  connector: string;
+  locator: string | null;
+  latest: RewardSnapshot | null;
+  snapshots: RewardSnapshot[];
+}
+
+export interface ArtifactRewards {
+  artifactId: string;
+  targets: RewardTargetSeries[];
+}
+
+export type CohortAxis = 'type' | 'connector';
+
+export interface CohortSummary {
+  type: string;
+  connector: string | null;
+  artifactCount: number;
+  externalizedCount: number;
+  withRewardsCount: number;
+}
+
+export interface CohortMember {
+  artifact: Artifact;
+  externalization: ArtifactExternalization | null;
+  rewards: ArtifactRewards;
+}
+
+export interface Cohort {
+  type: string;
+  connector: string | null;
+  projectId: string | null;
+  members: CohortMember[];
+}
+
+export interface VersionChainSummary {
+  rootId: string;
+  type: string;
+  length: number;
+}
+
+export interface VersionChain {
+  rootId: string;
+  type: string;
+  members: CohortMember[];
+}
+
 async function j<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     ...init,
@@ -350,6 +429,28 @@ export const api = {
     return j<{ items: WorkThread[] }>(`/api/threads${qs ? `?${qs}` : ''}`);
   },
   getThread: (id: string) => j<{ thread: WorkThread }>(`/api/threads/${encodeURIComponent(id)}`),
+  listCohorts: (opts: { projectId?: string; by?: CohortAxis } = {}) => {
+    const sp = new URLSearchParams();
+    if (opts.projectId) sp.set('projectId', opts.projectId);
+    if (opts.by) sp.set('by', opts.by);
+    const qs = sp.toString();
+    return j<{ items: CohortSummary[] }>(`/api/cohorts${qs ? `?${qs}` : ''}`);
+  },
+  getCohort: (type: string, opts: { connector?: string; projectId?: string } = {}) => {
+    const sp = new URLSearchParams();
+    if (opts.connector) sp.set('connector', opts.connector);
+    if (opts.projectId) sp.set('projectId', opts.projectId);
+    const qs = sp.toString();
+    return j<{ cohort: Cohort }>(`/api/cohorts/${encodeURIComponent(type)}${qs ? `?${qs}` : ''}`);
+  },
+  listVersionChains: (opts: { projectId?: string } = {}) => {
+    const sp = new URLSearchParams();
+    if (opts.projectId) sp.set('projectId', opts.projectId);
+    const qs = sp.toString();
+    return j<{ items: VersionChainSummary[] }>(`/api/cohorts/chains${qs ? `?${qs}` : ''}`);
+  },
+  getVersionChain: (artifactId: string) =>
+    j<{ chain: VersionChain }>(`/api/cohorts/chains/${encodeURIComponent(artifactId)}`),
 };
 
 export interface InsightRecipe {

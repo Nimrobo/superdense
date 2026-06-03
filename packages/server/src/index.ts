@@ -12,6 +12,7 @@ import { registerInsightsRoutes } from './routes/insights.js';
 import { registerProjectsRoutes } from './routes/projects.js';
 import { registerArtifactsRoutes } from './routes/artifacts.js';
 import { registerThreadsRoutes } from './routes/threads.js';
+import { registerCohortsRoutes } from './routes/cohorts.js';
 
 export interface ServerOptions {
   port?: number;
@@ -41,6 +42,7 @@ async function buildApp(opts: ServerOptions) {
   await registerProjectsRoutes(app);
   await registerArtifactsRoutes(app);
   await registerThreadsRoutes(app);
+  await registerCohortsRoutes(app);
 
   const here = dirname(fileURLToPath(import.meta.url));
   const candidates = [

@@ -152,6 +152,20 @@ export type {
 } from './externalization/index.js';
 export { getArtifactRewards, listRewardSnapshots, recordRewardSnapshot } from './rewards/index.js';
 export type { ArtifactRewards, RewardSnapshot, RewardTargetSeries } from './rewards/index.js';
+export {
+  getCohort,
+  getVersionChain,
+  listCohorts,
+  listVersionChains,
+} from './cohorts/index.js';
+export type {
+  Cohort,
+  CohortAxis,
+  CohortMember,
+  CohortSummary,
+  VersionChain,
+  VersionChainSummary,
+} from './cohorts/index.js';
 export type {
   ArtifactDetector,
   ArtifactShape,
