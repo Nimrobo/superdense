@@ -5,6 +5,7 @@ import {
   getSessionParent,
   getSessionTree,
   listSessionEnrichments,
+  withDbRetry,
   SYSTEM_RUN_ID,
 } from '../db.js';
 import type { Session } from '../types.js';
@@ -185,7 +186,7 @@ export function markSessionForCuration(
             AND curation_status != 'pending'`,
       ).run(rootSessionId);
     });
-    tx();
+    withDbRetry(tx);
     return { sessionId, buffered: false, markedAt };
   }
   db.prepare(
@@ -230,7 +231,7 @@ export function reconcileIndexedSession(sessionId: string, changed: boolean): vo
           )`,
     ).run(sessionId, rootSessionId, changed && sessionId !== rootSessionId ? 1 : 0);
   });
-  tx();
+  withDbRetry(tx);
 }
 
 function canonicalProjectId(projectId: string): string {
@@ -836,7 +837,7 @@ export function applyCurationBatch(input: unknown) {
     if (invalid)
       throw new Error(`consumed session must be attached to at least one thread: ${invalid.id}`);
   });
-  tx();
+  withDbRetry(tx);
   return {
     ok: true,
     createdThreadIds,
@@ -903,7 +904,7 @@ export function finalizeArtifact(input: unknown): {
         WHERE id = ?`,
     ).run(type, JSON.stringify(payload), now, predecessorArtifactId, title, now, threadId);
   });
-  tx();
+  withDbRetry(tx);
   return { ok: true, threadId, artifactType: type };
 }
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, type Artifact } from '../api.js';
+import { api, type ArtifactListItem } from '../api.js';
 import { formatRelativeTime } from '../sessionDisplay.js';
 
 interface Props {
@@ -13,8 +13,15 @@ function payloadPreview(payload: Record<string, unknown> | null): string {
   return JSON.stringify(payload);
 }
 
+const LINKAGE_LABEL: Record<ArtifactListItem['externalizationStatus'], string> = {
+  linked: 'linked',
+  blocked: 'blocked',
+  not_external: 'internal',
+  unprocessed: 'not assessed',
+};
+
 export function ArtifactsView({ onOpen }: Props) {
-  const [items, setItems] = useState<Artifact[] | null>(null);
+  const [items, setItems] = useState<ArtifactListItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -51,7 +58,8 @@ export function ArtifactsView({ onOpen }: Props) {
               {payloadPreview(artifact.payload)}
             </div>
             <div className="muted small">
-              finalized {formatRelativeTime(artifact.artifactFinalizedAt ?? artifact.updatedAt)}
+              finalized {formatRelativeTime(artifact.artifactFinalizedAt ?? artifact.updatedAt)} ·{' '}
+              {LINKAGE_LABEL[artifact.externalizationStatus]}
             </div>
           </button>
         ))}

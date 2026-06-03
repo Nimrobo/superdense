@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, type Artifact } from '../api.js';
+import { api, type Artifact, type ArtifactExternalization, type ArtifactRewards } from '../api.js';
 import { ThreadDetails } from './ThreadDetails.js';
 
 interface Props {
@@ -10,6 +10,8 @@ interface Props {
 
 export function ArtifactView({ id, onBack, onOpenSession }: Props) {
   const [artifact, setArtifact] = useState<Artifact | null>(null);
+  const [externalization, setExternalization] = useState<ArtifactExternalization | null>(null);
+  const [rewards, setRewards] = useState<ArtifactRewards | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -17,6 +19,8 @@ export function ArtifactView({ id, onBack, onOpenSession }: Props) {
       .getArtifact(id)
       .then((result) => {
         setArtifact(result.artifact);
+        setExternalization(result.externalization);
+        setRewards(result.rewards);
         setError(null);
       })
       .catch((err) => setError(err instanceof Error ? err.message : String(err)));
@@ -41,7 +45,12 @@ export function ArtifactView({ id, onBack, onOpenSession }: Props) {
           <div className="work-sub">{artifact.artifactType}</div>
         </div>
       </div>
-      <ThreadDetails thread={artifact} onOpenSession={onOpenSession} />
+      <ThreadDetails
+        thread={artifact}
+        externalization={externalization}
+        rewards={rewards}
+        onOpenSession={onOpenSession}
+      />
     </>
   );
 }

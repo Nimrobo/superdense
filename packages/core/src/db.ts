@@ -16,6 +16,11 @@ export function getDb(): Database.Database {
   const db = new Database(DB_PATH);
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
+  // Conductor runs many agents in parallel against one DB. WAL lets readers and
+  // writers coexist, but concurrent writers still serialize; without a busy
+  // timeout the loser throws SQLITE_BUSY ("database is locked") immediately.
+  // Wait for a held lock instead of failing.
+  db.pragma('busy_timeout = 5000');
   db.function('REGEXP', { deterministic: true }, (pattern: unknown, value: unknown) => {
     if (value == null || pattern == null) return 0;
     try {
@@ -27,6 +32,35 @@ export function getDb(): Database.Database {
   migrate(db);
   dbInstance = db;
   return db;
+}
+
+/**
+ * Run a DB write and retry on SQLITE_BUSY. `busy_timeout` already makes a writer
+ * wait for a held lock, but a DEFERRED transaction that upgrades a read lock to a
+ * write lock while another writer holds it gets SQLITE_BUSY_SNAPSHOT immediately,
+ * ignoring the timeout. A few short synchronous backoffs clear that race under
+ * Conductor's parallel agents. Each backoff carries jitter so colliding writers
+ * don't re-collide on identical delays (thundering herd). The wrapped work must be
+ * atomic (a transaction), so a retry re-runs cleanly.
+ */
+export function withDbRetry<T>(fn: () => T, attempts = 5): T {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      return fn();
+    } catch (err) {
+      const code = (err as { code?: unknown }).code;
+      if (typeof code === 'string' && code.startsWith('SQLITE_BUSY') && attempt < attempts - 1) {
+        lastErr = err;
+        // better-sqlite3 is synchronous; sleep synchronously before retrying.
+        const backoffMs = 20 * (attempt + 1) + Math.floor(Math.random() * 20);
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, backoffMs);
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr;
 }
 
 /** Test-only: reset the cached instance so a fresh :memory: DB can be opened. */

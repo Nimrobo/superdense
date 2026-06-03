@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { getDb } from '../db.js';
+import { getDb, withDbRetry } from '../db.js';
 
 export type ExternalizationConclusion = 'not_external' | 'external';
 export type ExternalizationTargetStatus = 'linked' | 'needs_connector' | 'not_found' | 'ambiguous';
@@ -375,7 +375,7 @@ export function assessExternalization(input: unknown): {
       );
     }
   });
-  tx();
+  withDbRetry(tx);
 
   return {
     ok: true,

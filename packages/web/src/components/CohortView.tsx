@@ -1,18 +1,13 @@
 import { useEffect, useState } from 'react';
 import { api, type CohortMember } from '../api.js';
 import { formatRelativeTime } from '../sessionDisplay.js';
+import { RewardTargetList } from '../rewardDisplay.js';
 
 function payloadPreview(payload: Record<string, unknown> | null): string {
   if (!payload) return '';
   if (typeof payload.text === 'string') return payload.text;
   if (Array.isArray(payload.files)) return (payload.files as unknown[]).join(', ');
   return JSON.stringify(payload);
-}
-
-function metricsLine(metrics: Record<string, number>, primaryDim: string | null): string {
-  return Object.entries(metrics)
-    .map(([key, value]) => `${key === primaryDim ? '★' : ''}${key} ${value}`)
-    .join('  ·  ');
 }
 
 // One comparable bundle, surfaced for the agent/human to judge — never ranked.
@@ -38,23 +33,7 @@ function MemberCard({
         finalized {formatRelativeTime(artifact.artifactFinalizedAt ?? artifact.updatedAt)}
       </div>
 
-      {linked.length === 0 && <div className="muted small">No linked external identity yet.</div>}
-      {linked.map((target) => (
-        <div key={target.targetId} style={{ marginTop: 6 }}>
-          <div className="small">
-            <strong>{target.connector}</strong>
-            {target.locator ? ` · ${target.locator}` : ''}
-          </div>
-          {target.latest ? (
-            <div className="muted small">
-              {metricsLine(target.latest.metrics, target.latest.primaryDim)}
-              {target.snapshots.length > 1 ? ` · ${target.snapshots.length} snapshots` : ''}
-            </div>
-          ) : (
-            <div className="muted small">No reward snapshot recorded.</div>
-          )}
-        </div>
-      ))}
+      <RewardTargetList targets={linked} />
 
       <button
         type="button"

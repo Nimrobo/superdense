@@ -50,6 +50,7 @@ import {
   listQueryRunsForSavedQuery,
   listStandaloneRuns,
   getQueryRun,
+  withDbRetry,
   _migrateForTests,
 } from '../db.js';
 import {
@@ -1301,5 +1302,54 @@ describe('query runs', () => {
     const got = getQueryRun(id);
     expect(got!.finishedAt).toBe(500);
     expect(got!.matchedCount).toBe(3);
+  });
+});
+
+describe('concurrency hardening', () => {
+  it('sets a busy_timeout so writers wait instead of failing immediately', () => {
+    const db = getDb();
+    expect(db.pragma('busy_timeout', { simple: true })).toBe(5000);
+  });
+
+  it('withDbRetry retries on SQLITE_BUSY then succeeds', () => {
+    let attempts = 0;
+    const result = withDbRetry(() => {
+      attempts += 1;
+      if (attempts < 3) {
+        const err = new Error('database is locked') as Error & { code: string };
+        err.code = 'SQLITE_BUSY';
+        throw err;
+      }
+      return 'ok';
+    });
+    expect(result).toBe('ok');
+    expect(attempts).toBe(3);
+  });
+
+  it('withDbRetry rethrows non-busy errors without retrying', () => {
+    let attempts = 0;
+    expect(() =>
+      withDbRetry(() => {
+        attempts += 1;
+        throw new Error('boom');
+      }),
+    ).toThrow('boom');
+    expect(attempts).toBe(1);
+  });
+
+  it('withDbRetry gives up after exhausting attempts', () => {
+    let attempts = 0;
+    const make = () => {
+      const err = new Error('database is locked') as Error & { code: string };
+      err.code = 'SQLITE_BUSY';
+      return err;
+    };
+    expect(() =>
+      withDbRetry(() => {
+        attempts += 1;
+        throw make();
+      }, 3),
+    ).toThrow('database is locked');
+    expect(attempts).toBe(3);
   });
 });

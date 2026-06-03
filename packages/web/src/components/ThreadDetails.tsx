@@ -1,13 +1,22 @@
-import type { WorkThread } from '../api.js';
+import type { ArtifactExternalization, ArtifactRewards, WorkThread } from '../api.js';
 import { formatFullTime } from '../sessionDisplay.js';
+import { Locator, RewardTargetList } from '../rewardDisplay.js';
 
 interface Props {
   thread: WorkThread;
   projectName?: string;
+  externalization?: ArtifactExternalization | null;
+  rewards?: ArtifactRewards | null;
   onOpenSession: (id: string) => void;
 }
 
-export function ThreadDetails({ thread, projectName, onOpenSession }: Props) {
+export function ThreadDetails({
+  thread,
+  projectName,
+  externalization,
+  rewards,
+  onOpenSession,
+}: Props) {
   return (
     <div className="work-body project-detail">
       <section className="card">
@@ -44,6 +53,44 @@ export function ThreadDetails({ thread, projectName, onOpenSession }: Props) {
             Type <strong>{thread.artifactType}</strong>
           </div>
           <pre className="command-box">{JSON.stringify(thread.payload ?? {}, null, 2)}</pre>
+        </section>
+      )}
+
+      {externalization !== undefined && (
+        <section className="card">
+          <div className="card-title">External linkage</div>
+          <div className="muted small">
+            Status <strong>{externalization?.status ?? 'unprocessed'}</strong>
+            {externalization?.conclusion ? ` · conclusion ${externalization.conclusion}` : ''}
+          </div>
+          {externalization?.evidence && <p className="small">{externalization.evidence}</p>}
+          {!externalization || externalization.targets.length === 0 ? (
+            <div className="muted">No external targets recorded.</div>
+          ) : (
+            <ul className="plain-list">
+              {externalization.targets.map((target) => (
+                <li key={target.id} className="list-row">
+                  <span className="small">
+                    <strong>{target.connector}</strong> · {target.status}
+                    {target.locator ? (
+                      <>
+                        {' · '}
+                        <Locator locator={target.locator} />
+                      </>
+                    ) : null}
+                  </span>
+                  {target.evidence && <div className="muted small">{target.evidence}</div>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
+      {rewards !== undefined && (
+        <section className="card">
+          <div className="card-title">Rewards</div>
+          <RewardTargetList targets={rewards?.targets ?? []} />
         </section>
       )}
 

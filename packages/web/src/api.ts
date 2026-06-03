@@ -233,6 +233,11 @@ export interface WorkThread {
 // A ready work thread becomes a Layer 3B artifact when its stable payload is set.
 export type Artifact = WorkThread;
 
+// The list view carries a derived linkage badge alongside each artifact.
+export interface ArtifactListItem extends Artifact {
+  externalizationStatus: 'unprocessed' | 'not_external' | 'linked' | 'blocked';
+}
+
 export interface ExternalizationTarget {
   id: string;
   artifactId: string;
@@ -417,10 +422,14 @@ export const api = {
     if (opts.projectId) sp.set('projectId', opts.projectId);
     if (opts.type) sp.set('type', opts.type);
     const qs = sp.toString();
-    return j<{ items: Artifact[] }>(`/api/artifacts${qs ? `?${qs}` : ''}`);
+    return j<{ items: ArtifactListItem[] }>(`/api/artifacts${qs ? `?${qs}` : ''}`);
   },
   getArtifact: (id: string) =>
-    j<{ artifact: Artifact }>(`/api/artifacts/${encodeURIComponent(id)}`),
+    j<{
+      artifact: Artifact;
+      externalization: ArtifactExternalization | null;
+      rewards: ArtifactRewards | null;
+    }>(`/api/artifacts/${encodeURIComponent(id)}`),
   listThreads: (opts: { projectId?: string; lifecycle?: ThreadLifecycle } = {}) => {
     const sp = new URLSearchParams();
     if (opts.projectId) sp.set('projectId', opts.projectId);

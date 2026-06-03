@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { getDb } from '../db.js';
+import { getDb, withDbRetry } from '../db.js';
 
 // Layer 4 reward collection. Superdense never executes connectors: an agent
 // gathers current metrics with whatever tool it judges best and reports a
@@ -138,7 +138,7 @@ export function recordRewardSnapshot(input: unknown): { ok: true; snapshot: Rewa
        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(id, targetId, capturedAt, JSON.stringify(metrics), primaryDim, source, evidence, now);
   });
-  tx();
+  withDbRetry(tx);
 
   return {
     ok: true,
