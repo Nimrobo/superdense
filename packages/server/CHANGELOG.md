@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.0](https://github.com/Nimrobo/superdense/compare/@nimrobo/superdense-v0.3.0...superdense-server-v0.4.0) (2026-06-04)
+
+
+### Features
+
+* add reward layer for Superdense — curation, artifacts, cohorts, projects, enrichers, and reward UI ([#58](https://github.com/Nimrobo/superdense/issues/58)) ([2c0533d](https://github.com/Nimrobo/superdense/commit/2c0533dff4ba7a29d4c46103088d77de4e8bf142))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @nimrobo/superdense-core bumped to 0.4.0
+
 ## [0.3.0](https://github.com/Nimrobo/superdense/compare/superdense-server-v0.2.2...superdense-server-v0.3.0) (2026-05-29)
 
 
