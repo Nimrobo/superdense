@@ -1158,17 +1158,11 @@ describe('superdense cli agent commands', () => {
     );
 
     await expect(
-      runCli(
-        ['reward', 'docs', 'connectors', '--artifact', 'post', '--connector', 'x'],
-        io().io,
-      ),
+      runCli(['reward', 'docs', 'connectors', '--artifact', 'post', '--connector', 'x'], io().io),
     ).rejects.toThrow('reward docs connectors requires exactly one of --artifact or --connector');
 
     await expect(
-      runCli(
-        ['reward', 'docs', 'connectors', '--connector', 'x', '--section', 'setup'],
-        io().io,
-      ),
+      runCli(['reward', 'docs', 'connectors', '--connector', 'x', '--section', 'setup'], io().io),
     ).rejects.toThrow(
       "reward docs connectors --section must be 'usage', 'install', or 'troubleshoot'",
     );

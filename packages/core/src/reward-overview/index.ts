@@ -122,7 +122,7 @@ function actionForStage(
   const next =
     globalStatus.nextAction?.stage === stage.key
       ? globalStatus.nextAction
-      : projectMatch?.nextAction ?? null;
+      : (projectMatch?.nextAction ?? null);
   return {
     stage: stage.key,
     label: stage.label,

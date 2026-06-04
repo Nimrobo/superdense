@@ -284,11 +284,7 @@ function ProjectSummaryCard({
 }) {
   const totalReviewed = item.curation.consumed + item.curation.skipped;
   return (
-    <button
-      type="button"
-      className="project-card"
-      onClick={() => onOpenProject(item.project.id)}
-    >
+    <button type="button" className="project-card" onClick={() => onOpenProject(item.project.id)}>
       <div className="project-card-top">
         <strong>{projectName(item.project)}</strong>
         <span

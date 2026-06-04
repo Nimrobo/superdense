@@ -19,9 +19,7 @@ export async function registerArtifactsRoutes(app: FastifyInstance): Promise<voi
       // | unprocessed). One batched pass — listExternalizations folds all targets in
       // via a single query — instead of a getExternalization call per row. Artifacts
       // absent from the set fall back to 'unprocessed'. The detail view carries full targets.
-      const statusByArtifact = new Map(
-        listExternalizations().map((e) => [e.artifactId, e.status]),
-      );
+      const statusByArtifact = new Map(listExternalizations().map((e) => [e.artifactId, e.status]));
       const items = listArtifacts({ projectId: q.projectId, type: q.type }).map((artifact) => ({
         ...artifact,
         externalizationStatus: statusByArtifact.get(artifact.id) ?? 'unprocessed',

@@ -92,11 +92,7 @@ export function CohortView({
         {!members && !error && <div className="empty">Loading...</div>}
         {members?.length === 0 && <div className="empty">No artifacts in this cohort.</div>}
         {members?.map((member) => (
-          <MemberCard
-            key={member.artifact.id}
-            member={member}
-            onOpenArtifact={onOpenArtifact}
-          />
+          <MemberCard key={member.artifact.id} member={member} onOpenArtifact={onOpenArtifact} />
         ))}
       </div>
     </>
@@ -135,7 +131,9 @@ export function ChainView({
         </button>
         <div className="work-heading">
           <div className="work-title">Version chain{chainType ? ` · ${chainType}` : ''}</div>
-          <div className="work-sub">One deliverable across versions, oldest first. Did it improve?</div>
+          <div className="work-sub">
+            One deliverable across versions, oldest first. Did it improve?
+          </div>
         </div>
       </div>
       <div className="work-body">
