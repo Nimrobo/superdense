@@ -45,6 +45,31 @@ Requires Node 20+. The single `superdense` binary ships everything — the index
 
 If no sessions exist yet, `/chain` triggers an incremental index automatically. Use it at the start of any session where the agent should be aware of prior work.
 
+## Reward layer
+
+Superdense already indexes what your agents did. The reward layer closes the loop: it lets agents group those sessions into the real things you shipped — a PR, a post, a release — link each one to where it went live, record how it actually performed, and pull that evidence into the next run. It's local and agent-driven, and it never scores anything: Superdense surfaces the evidence, you make the call.
+
+**How to begin.** Open Studio so Superdense is running and your sessions are indexed, then ask your coding agent to run the layer:
+
+```text
+/superdense run the reward layer for this project
+```
+
+The agent runs `superdense reward status`, which reports the next actionable stage and walks the pipeline one bounded batch at a time — the first pass starts at `profile`. You can also run `superdense reward status` yourself to see the punch list (add `--project <id>` to focus one project).
+
+The pipeline is `profile → curate → finalize → reconcile → collect → compare`:
+
+| Stage       | What it does                                                                      |
+| ----------- | --------------------------------------------------------------------------------- |
+| `profile`   | Describe the project once — its roots and the kinds of artifacts it produces.     |
+| `curate`    | Group indexed sessions into threads that each represent one real output.          |
+| `finalize`  | Promote a ready thread into a stable artifact record.                             |
+| `reconcile` | Link an artifact to where it went live (GitHub, X, npm, YouTube, …).              |
+| `collect`   | Record real-world metrics for linked artifacts (views, reactions, …).             |
+| `compare`   | Before shipping the next one, see how past peers performed and reuse what worked. |
+
+Full stage references and the `superdense reward docs artifacts` / `superdense reward docs connectors …` helpers live in [`skills/superdense/reward/README.md`](./skills/superdense/reward/README.md).
+
 ## How Superdense works
 
 1. **Index** sessions from Claude Code, Codex, OpenCode, and similar tools.
