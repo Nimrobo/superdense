@@ -104,3 +104,84 @@ export {
   INSIGHT_MARKER_VERSION,
 } from './insights/index.js';
 export type { InsightRecipe, InsightMarker } from './insights/index.js';
+export {
+  applyProjectProfilePatch,
+  getProjectContext,
+  getProjectProfile,
+  getProjectProfileResolution,
+  listProjectProfiles,
+  setProjectAttention,
+} from './projects/index.js';
+export {
+  applyCurationBatch,
+  finalizeArtifact,
+  getArtifact,
+  getCurationContext,
+  getWorkThread,
+  listArtifactInbox,
+  listArtifacts,
+  listCurationInbox,
+  listWorkThreads,
+  markSessionForCuration,
+  reconcileIndexedSession,
+  resolveRootSessionId,
+  sessionRevision,
+} from './curation/index.js';
+export type {
+  CurationStatus,
+  ThreadExternalizationStatus,
+  ThreadLifecycle,
+  WorkThread,
+  WorkThreadLineageEvent,
+  WorkThreadLineageEventType,
+  WorkThreadRole,
+  WorkThreadSession,
+} from './curation/index.js';
+export {
+  assessExternalization,
+  getExternalization,
+  listExternalizationInbox,
+  listExternalizations,
+} from './externalization/index.js';
+export type {
+  ArtifactExternalization,
+  ExternalizationConclusion,
+  ExternalizationStatus,
+  ExternalizationTarget,
+  ExternalizationTargetStatus,
+} from './externalization/index.js';
+export { getArtifactRewards, listRewardSnapshots, recordRewardSnapshot } from './rewards/index.js';
+export type { ArtifactRewards, RewardSnapshot, RewardTargetSeries } from './rewards/index.js';
+export { getCohort, getVersionChain, listCohorts, listVersionChains } from './cohorts/index.js';
+export type {
+  Cohort,
+  CohortAxis,
+  CohortMember,
+  CohortSummary,
+  VersionChain,
+  VersionChainSummary,
+} from './cohorts/index.js';
+export { getRewardStatus } from './reward-status/index.js';
+export type {
+  RewardStatus,
+  RewardStatusNextAction,
+  RewardStatusStage,
+  RewardStatusStageKey,
+} from './reward-status/index.js';
+export { getRewardOverview } from './reward-overview/index.js';
+export type {
+  RewardOverview,
+  RewardOverviewAction,
+  RewardProjectCurationCounts,
+  RewardProjectOverview,
+  RewardProjectThreadCounts,
+} from './reward-overview/index.js';
+export type {
+  ArtifactDetector,
+  ArtifactShape,
+  ProjectContext,
+  ProjectProfile,
+  ProjectProfileResolution,
+  ProjectProfileStatus,
+  ProjectProfileSummary,
+} from './projects/index.js';

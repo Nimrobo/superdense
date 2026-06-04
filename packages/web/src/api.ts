@@ -155,6 +155,242 @@ export interface Stats {
   recentSessions: Session[];
 }
 
+export type ProjectStatus = 'unprofiled' | 'profiled' | 'covered';
+
+export type ArtifactDetector =
+  | { kind: 'folder-leaf'; include: string[]; exclude?: string[] }
+  | { kind: 'file-glob'; include: string[]; exclude?: string[] }
+  | { kind: 'branch' }
+  | { kind: 'whole-surface' };
+
+export interface ArtifactShape {
+  type: string;
+  detector: ArtifactDetector;
+  outputHint?: { globs: string[]; note?: string };
+}
+
+export interface ProjectSummary {
+  id: string;
+  projectKey: string;
+  status: ProjectStatus;
+  coveredBy: string | null;
+  name: string | null;
+  description: string | null;
+  roots: string[];
+  artifactShapes: ArtifactShape[];
+  evidenceSummary: string[];
+  notes: string | null;
+  needsHumanAttention: boolean;
+  attentionReasons: string[];
+  firstSeenAt: number;
+  lastSeenAt: number;
+  profiledAt: number | null;
+  updatedAt: number;
+}
+
+export interface Project extends ProjectSummary {
+  coveredProjects: ProjectSummary[];
+}
+
+export type ThreadLifecycle = 'open' | 'ready' | 'artifact';
+export type WorkThreadRole = 'contributor' | 'evidence';
+
+export interface WorkThreadSession {
+  sessionId: string;
+  role: WorkThreadRole;
+  rationale: string | null;
+}
+
+export interface WorkThreadLineageEvent {
+  id: string;
+  sessionId: string;
+  eventType: 'attach' | 'retract';
+  role: WorkThreadRole;
+  rationale: string | null;
+  createdAt: number;
+}
+
+export interface WorkThread {
+  id: string;
+  projectProfileId: string;
+  provisionalTitle: string;
+  summary: string | null;
+  status: string;
+  createdAt: number;
+  updatedAt: number;
+  artifactType: string | null;
+  payload: Record<string, unknown> | null;
+  artifactFinalizedAt: number | null;
+  readyAt: number | null;
+  readinessRationale: string | null;
+  predecessorArtifactId: string | null;
+  externalizationStatus: 'not_external' | 'external' | null;
+  externalizationEvidence: string | null;
+  externalizationUpdatedAt: number | null;
+  lifecycle: ThreadLifecycle;
+  headSessionId?: string | null;
+  sessions?: WorkThreadSession[];
+  lineageEvents?: WorkThreadLineageEvent[];
+}
+
+// A ready work thread becomes a Layer 3B artifact when its stable payload is set.
+export type Artifact = WorkThread;
+
+// The list view carries a derived linkage badge alongside each artifact.
+export interface ArtifactListItem extends Omit<Artifact, 'externalizationStatus'> {
+  externalizationStatus: 'unprocessed' | 'not_external' | 'linked' | 'blocked';
+}
+
+export interface ExternalizationTarget {
+  id: string;
+  artifactId: string;
+  connector: string;
+  status: 'linked' | 'needs_connector' | 'not_found' | 'ambiguous';
+  locator: string | null;
+  evidence: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ArtifactExternalization {
+  artifactId: string;
+  status: 'unprocessed' | 'not_external' | 'linked' | 'blocked';
+  conclusion: 'not_external' | 'external' | null;
+  evidence: string | null;
+  updatedAt: number | null;
+  targets: ExternalizationTarget[];
+}
+
+export interface RewardSnapshot {
+  id: string;
+  targetId: string;
+  capturedAt: number;
+  metrics: Record<string, number>;
+  primaryDim: string | null;
+  source: string | null;
+  evidence: string | null;
+  createdAt: number;
+}
+
+export interface RewardTargetSeries {
+  targetId: string;
+  connector: string;
+  locator: string | null;
+  latest: RewardSnapshot | null;
+  snapshots: RewardSnapshot[];
+}
+
+export interface ArtifactRewards {
+  artifactId: string;
+  targets: RewardTargetSeries[];
+}
+
+export type CohortAxis = 'type' | 'connector';
+
+export interface CohortSummary {
+  type: string;
+  connector: string | null;
+  artifactCount: number;
+  externalizedCount: number;
+  withRewardsCount: number;
+}
+
+export interface CohortMember {
+  artifact: Artifact;
+  externalization: ArtifactExternalization | null;
+  rewards: ArtifactRewards;
+}
+
+export interface Cohort {
+  type: string;
+  connector: string | null;
+  projectId: string | null;
+  members: CohortMember[];
+}
+
+export interface VersionChainSummary {
+  rootId: string;
+  type: string;
+  length: number;
+}
+
+export interface VersionChain {
+  rootId: string;
+  type: string;
+  members: CohortMember[];
+}
+
+export type RewardStageKey =
+  | 'profile'
+  | 'curate'
+  | 'finalize'
+  | 'reconcile'
+  | 'collect'
+  | 'compare';
+
+export interface RewardStage {
+  key: RewardStageKey;
+  label: string;
+  unit: string;
+  actionable: number;
+  skill: string;
+}
+
+export interface RewardNextAction {
+  stage: RewardStageKey;
+  skill: string;
+  command: string;
+  why: string;
+}
+
+export interface RewardStatus {
+  projectId: string | null;
+  stages: RewardStage[];
+  nextAction: RewardNextAction | null;
+}
+
+export interface RewardProjectCurationCounts {
+  pending: number;
+  consumed: number;
+  skipped: number;
+  deferred: number;
+  remaining: number;
+  attachedConsumed: number;
+}
+
+export interface RewardProjectThreadCounts {
+  open: number;
+  ready: number;
+  artifact: number;
+  total: number;
+}
+
+export interface RewardProjectOverview {
+  project: ProjectSummary;
+  curation: RewardProjectCurationCounts;
+  threads: RewardProjectThreadCounts;
+  status: RewardStatus;
+  nextAction: RewardNextAction | null;
+}
+
+export interface RewardOverviewAction {
+  stage: RewardStageKey;
+  label: string;
+  unit: string;
+  actionable: number;
+  skill: string;
+  command: string;
+  why: string;
+  projectId: string | null;
+}
+
+export interface RewardOverview {
+  status: RewardStatus;
+  actionQueue: RewardOverviewAction[];
+  projects: RewardProjectOverview[];
+  typeSummaries: CohortSummary[];
+}
+
 async function j<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     ...init,
@@ -244,6 +480,67 @@ export const api = {
     return { prompt, runId: res.headers.get('x-superdense-run-id') };
   },
   insightsRuns: () => j<{ items: InsightRun[] }>('/api/insights/runs'),
+  listProjects: (opts: { needsAction?: boolean } = {}) =>
+    j<{ items: ProjectSummary[] }>(`/api/projects${opts.needsAction ? '?needsAction=true' : ''}`),
+  getProject: (id: string) =>
+    j<{ project: Project; redirectedFrom: string | null }>(
+      `/api/projects/${encodeURIComponent(id)}`,
+    ),
+  setProjectAttention: (id: string, needed: boolean, reasons?: string[]) =>
+    j<{ project: Project }>(`/api/projects/${encodeURIComponent(id)}/attention`, {
+      method: 'PATCH',
+      body: JSON.stringify({ needed, ...(reasons ? { reasons } : {}) }),
+    }),
+  listArtifacts: (opts: { projectId?: string; type?: string } = {}) => {
+    const sp = new URLSearchParams();
+    if (opts.projectId) sp.set('projectId', opts.projectId);
+    if (opts.type) sp.set('type', opts.type);
+    const qs = sp.toString();
+    return j<{ items: ArtifactListItem[] }>(`/api/artifacts${qs ? `?${qs}` : ''}`);
+  },
+  getArtifact: (id: string) =>
+    j<{
+      artifact: Artifact;
+      externalization: ArtifactExternalization | null;
+      rewards: ArtifactRewards | null;
+    }>(`/api/artifacts/${encodeURIComponent(id)}`),
+  listThreads: (opts: { projectId?: string; lifecycle?: ThreadLifecycle } = {}) => {
+    const sp = new URLSearchParams();
+    if (opts.projectId) sp.set('projectId', opts.projectId);
+    if (opts.lifecycle) sp.set('lifecycle', opts.lifecycle);
+    const qs = sp.toString();
+    return j<{ items: WorkThread[] }>(`/api/threads${qs ? `?${qs}` : ''}`);
+  },
+  getThread: (id: string) => j<{ thread: WorkThread }>(`/api/threads/${encodeURIComponent(id)}`),
+  listCohorts: (opts: { projectId?: string; by?: CohortAxis } = {}) => {
+    const sp = new URLSearchParams();
+    if (opts.projectId) sp.set('projectId', opts.projectId);
+    if (opts.by) sp.set('by', opts.by);
+    const qs = sp.toString();
+    return j<{ items: CohortSummary[] }>(`/api/cohorts${qs ? `?${qs}` : ''}`);
+  },
+  getCohort: (type: string, opts: { connector?: string; projectId?: string } = {}) => {
+    const sp = new URLSearchParams();
+    if (opts.connector) sp.set('connector', opts.connector);
+    if (opts.projectId) sp.set('projectId', opts.projectId);
+    const qs = sp.toString();
+    return j<{ cohort: Cohort }>(`/api/cohorts/${encodeURIComponent(type)}${qs ? `?${qs}` : ''}`);
+  },
+  listVersionChains: (opts: { projectId?: string } = {}) => {
+    const sp = new URLSearchParams();
+    if (opts.projectId) sp.set('projectId', opts.projectId);
+    const qs = sp.toString();
+    return j<{ items: VersionChainSummary[] }>(`/api/cohorts/chains${qs ? `?${qs}` : ''}`);
+  },
+  getVersionChain: (artifactId: string) =>
+    j<{ chain: VersionChain }>(`/api/cohorts/chains/${encodeURIComponent(artifactId)}`),
+  rewardStatus: (opts: { projectId?: string } = {}) => {
+    const sp = new URLSearchParams();
+    if (opts.projectId) sp.set('projectId', opts.projectId);
+    const qs = sp.toString();
+    return j<RewardStatus>(`/api/reward/status${qs ? `?${qs}` : ''}`);
+  },
+  rewardOverview: () => j<RewardOverview>('/api/reward/overview'),
 };
 
 export interface InsightRecipe {

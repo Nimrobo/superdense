@@ -31,6 +31,9 @@ vi.mock('@nimrobo/superdense-core', () => ({
   CLAUDE_SKILLS_DIR: '/unused/claude/skills',
   CODEX_SKILLS_DIR: '/unused/codex/skills',
   SYSTEM_RUN_ID: 'system',
+  applyCurationBatch: vi.fn(),
+  assessExternalization: vi.fn(),
+  applyProjectProfilePatch: vi.fn(),
   backfillQuery: vi.fn(),
   compactSession: vi.fn(),
   countQueryMatches: vi.fn(),
@@ -38,23 +41,41 @@ vi.mock('@nimrobo/superdense-core', () => ({
   createQuery: vi.fn(),
   deleteQuery: vi.fn(),
   ensureSuperdenseDirs: vi.fn(),
+  finalizeArtifact: vi.fn(),
+  getArtifact: vi.fn(),
+  getArtifactRewards: vi.fn(),
   getCompactor: vi.fn(),
+  getCurationContext: vi.fn(),
   getEnrichment: vi.fn(),
+  getExternalization: vi.fn(),
+  getProjectContext: vi.fn(),
+  getProjectProfileResolution: vi.fn(),
   getQuery: vi.fn(),
+  getRewardStatus: vi.fn(),
   getSession: vi.fn(),
   getSessionChildren: vi.fn(),
   getSessionTree: vi.fn(),
+  getWorkThread: vi.fn(),
   indexAll: vi.fn(),
   listCompactors: vi.fn(),
+  listArtifactInbox: vi.fn(),
+  listArtifacts: vi.fn(),
+  listCurationInbox: vi.fn(),
   listEnrichers: vi.fn(),
+  listExternalizationInbox: vi.fn(),
+  listExternalizations: vi.fn(),
   listFilterCatalog: vi.fn(),
   listFilters: vi.fn(),
   listQueries: vi.fn(),
+  listProjectProfiles: vi.fn(),
   listQueryMatchDetails: vi.fn(),
   listQueryMatches: vi.fn(),
   listSessionEnrichments: vi.fn(),
   listSessions: vi.fn(),
+  listWorkThreads: vi.fn(),
   loadUserEnrichers: vi.fn(),
+  markSessionForCuration: vi.fn(),
+  recordRewardSnapshot: vi.fn(),
   localClaudeSkillsDir: (cwd: string) => join(cwd, '.claude', 'skills'),
   localCodexSkillsDir: (cwd: string) => join(cwd, '.codex', 'skills'),
   previewQuery: vi.fn(),
@@ -62,6 +83,7 @@ vi.mock('@nimrobo/superdense-core', () => ({
   runDiscovery: vi.fn(),
   runQueryEvaluation: vi.fn(),
   runSavedQuery: vi.fn(),
+  setProjectAttention: vi.fn(),
   validateQueryDefinition: vi.fn(),
 }));
 
@@ -112,10 +134,78 @@ const sessionTwo = {
   summary: 'Review code',
   modifiedAt: 1779322000000,
 };
+const project = {
+  id: 'p1',
+  projectKey: '/repo',
+  status: 'profiled' as const,
+  coveredBy: null,
+  name: 'Repo',
+  description: 'Software project',
+  roots: ['/repo'],
+  artifactShapes: [{ type: 'feature', detector: { kind: 'branch' as const } }],
+  evidenceSummary: ['branch-shaped software work'],
+  notes: null,
+  needsHumanAttention: false,
+  attentionReasons: [],
+  firstSeenAt: 1,
+  lastSeenAt: 2,
+  profiledAt: 2,
+  updatedAt: 2,
+  coveredProjects: [],
+};
+const externalization = {
+  artifactId: 't1',
+  artifactType: 'launch',
+  title: 'Launch',
+  summary: null,
+  artifactFinalizedAt: 1,
+  status: 'blocked' as const,
+  conclusion: 'external' as const,
+  evidence: 'Published launch',
+  updatedAt: 2,
+  targets: [
+    {
+      id: 'target-1',
+      artifactId: 't1',
+      connector: 'x',
+      status: 'needs_connector' as const,
+      locator: '187123456789',
+      evidence: 'X connector is not installed',
+      createdAt: 2,
+      updatedAt: 2,
+    },
+  ],
+};
+const rewardStatus: core.RewardStatus = {
+  projectId: 'p1',
+  stages: [
+    {
+      key: 'profile',
+      label: 'Profile',
+      unit: 'projects',
+      actionable: 0,
+      skill: 'superdense/reward/profile.md',
+    },
+    {
+      key: 'curate',
+      label: 'Curate',
+      unit: 'sessions',
+      actionable: 1,
+      skill: 'superdense/reward/curate.md',
+    },
+  ],
+  nextAction: {
+    stage: 'curate',
+    skill: 'superdense/reward/curate.md',
+    command: 'Read superdense/reward/curate.md for project p1',
+    why: '1 sessions at Curate',
+  },
+};
 
 const originalClaudeSkillsDir = process.env.CLAUDE_SKILLS_DIR;
 const originalCodexSkillsDir = process.env.CODEX_SKILLS_DIR;
 const originalSkipUpdateCheck = process.env.SUPERDENSE_SKIP_UPDATE_CHECK;
+const originalDocsBaseUrl = process.env.SUPERDENSE_DOCS_BASE_URL;
 const originalCwd = process.cwd();
 const originalStdinIsTty = Object.getOwnPropertyDescriptor(process.stdin, 'isTTY');
 const tempRoots: string[] = [];
@@ -172,6 +262,7 @@ beforeEach(() => {
   delete process.env.CLAUDE_SKILLS_DIR;
   delete process.env.CODEX_SKILLS_DIR;
   delete process.env.SUPERDENSE_SKIP_UPDATE_CHECK;
+  delete process.env.SUPERDENSE_DOCS_BASE_URL;
   vi.mocked(core.getSession).mockReturnValue(session);
   vi.mocked(core.getSessionChildren).mockReturnValue([]);
   vi.mocked(core.getSessionTree).mockReturnValue({
@@ -244,6 +335,92 @@ beforeEach(() => {
   }));
   vi.mocked(core.runDiscovery).mockResolvedValue({ discovered: 2 });
   vi.mocked(core.runQueryEvaluation).mockResolvedValue({ evaluated: 0 });
+  vi.mocked(core.listProjectProfiles).mockReturnValue([project]);
+  vi.mocked(core.getProjectProfileResolution).mockReturnValue({ project, redirectedFrom: null });
+  vi.mocked(core.getProjectContext).mockReturnValue({
+    project,
+    observed: {
+      projectKeys: ['/repo'],
+      paths: [{ pwd: '/repo', sessions: 2, lastSeenAt: 2 }],
+      sessionCount: 2,
+      firstIntents: [],
+      touchedFiles: [],
+      tools: [],
+      clis: [],
+    },
+    siblingCandidates: [],
+    fileCensus: {
+      root: '/repo',
+      filesScanned: 0,
+      directoriesScanned: 0,
+      extensions: [],
+      sampleFiles: [],
+      truncated: false,
+      warnings: [],
+    },
+  });
+  vi.mocked(core.applyProjectProfilePatch).mockReturnValue(project);
+  vi.mocked(core.markSessionForCuration).mockImplementation((sessionId) => ({
+    sessionId,
+    buffered: false,
+    markedAt: 1,
+  }));
+  vi.mocked(core.listCurationInbox).mockReturnValue({
+    items: [],
+    limit: 10,
+    remaining: 0,
+    counts: { pending: 0, consumed: 0, skipped: 0, deferred: 0 },
+  });
+  vi.mocked(core.getCurationContext).mockReturnValue({
+    requestedSessionId: 'codex:abc123',
+    rootSessionId: 'codex:abc123',
+    tree: { id: 'codex:abc123', relation: 'root', children: [] },
+    sessions: [],
+  });
+  vi.mocked(core.applyCurationBatch).mockReturnValue({
+    ok: true,
+    createdThreadIds: [],
+    resolvedSessions: [],
+  });
+  vi.mocked(core.listWorkThreads).mockReturnValue([]);
+  vi.mocked(core.listArtifactInbox).mockReturnValue({ items: [], limit: 10, remaining: 0 });
+  vi.mocked(core.getWorkThread).mockReturnValue({
+    id: 't1',
+    projectProfileId: 'p1',
+    provisionalTitle: 'Thread',
+    summary: null,
+    status: 'open',
+    createdAt: 1,
+    updatedAt: 1,
+    artifactType: null,
+    payload: null,
+    artifactFinalizedAt: null,
+    readyAt: null,
+    readinessRationale: null,
+    predecessorArtifactId: null,
+    externalizationStatus: null,
+    externalizationEvidence: null,
+    externalizationUpdatedAt: null,
+    lifecycle: 'open',
+    headSessionId: null,
+    sessions: [],
+  });
+  vi.mocked(core.listExternalizationInbox).mockReturnValue({
+    items: [externalization],
+    limit: 10,
+    remaining: 1,
+    counts: { unprocessed: 0, blocked: 1 },
+    nextCursor: 'next-page',
+  });
+  vi.mocked(core.listExternalizations).mockReturnValue([externalization]);
+  vi.mocked(core.getExternalization).mockReturnValue(externalization);
+  vi.mocked(core.assessExternalization).mockReturnValue({
+    ok: true,
+    artifactId: 't1',
+    externalization,
+  });
+  vi.mocked(core.getRewardStatus).mockReturnValue(rewardStatus);
+  vi.mocked(core.setProjectAttention).mockReturnValue(project);
   vi.mocked(startServer).mockResolvedValue({ url: 'http://127.0.0.1:4242', close: vi.fn() });
   vi.mocked(open).mockResolvedValue({} as Awaited<ReturnType<typeof open>>);
 });
@@ -258,6 +435,8 @@ afterEach(() => {
   else process.env.CODEX_SKILLS_DIR = originalCodexSkillsDir;
   if (originalSkipUpdateCheck == null) delete process.env.SUPERDENSE_SKIP_UPDATE_CHECK;
   else process.env.SUPERDENSE_SKIP_UPDATE_CHECK = originalSkipUpdateCheck;
+  if (originalDocsBaseUrl == null) delete process.env.SUPERDENSE_DOCS_BASE_URL;
+  else process.env.SUPERDENSE_DOCS_BASE_URL = originalDocsBaseUrl;
   if (originalStdinIsTty) Object.defineProperty(process.stdin, 'isTTY', originalStdinIsTty);
   else delete (process.stdin as Partial<typeof process.stdin>).isTTY;
 });
@@ -279,6 +458,7 @@ describe('superdense cli agent commands', () => {
     });
     expect(noArgs.stdout[0]).toContain('Usage: superdense <command> [options]');
     expect(start.stdout).toContain('[superdense] http://127.0.0.1:4242');
+    expect(noArgs.stdout[0]).toContain('reward status');
   });
 
   it('starts the studio command without opening the browser when requested', async () => {
@@ -766,6 +946,238 @@ describe('superdense cli agent commands', () => {
     });
   });
 
+  it('lists project work needing action and applies a merge patch', async () => {
+    const list = io();
+    await runCli(['project', 'list', '--needs-action'], list.io);
+    expect(core.listProjectProfiles).toHaveBeenCalledWith({ needsAction: true });
+    expect(json(list.stdout[0]!)).toMatchObject({ items: [{ id: 'p1' }] });
+
+    const apply = io();
+    await runCli(['project', 'apply', 'p1', '--patch', '{"description":"Updated"}'], apply.io);
+    expect(core.applyProjectProfilePatch).toHaveBeenCalledWith('p1', {
+      description: 'Updated',
+    });
+    expect(json(apply.stdout[0]!)).toMatchObject({ project: { id: 'p1' } });
+  });
+
+  it('shows project profiling context and resolves attention', async () => {
+    const context = io();
+    await runCli(['project', 'context', 'p1'], context.io);
+    expect(core.getProjectContext).toHaveBeenCalledWith('p1');
+    expect(json(context.stdout[0]!)).toMatchObject({ project: { id: 'p1' } });
+
+    const attention = io();
+    await runCli(['project', 'attention', 'p1', '--resolved'], attention.io);
+    expect(core.setProjectAttention).toHaveBeenCalledWith('p1', { needed: false });
+  });
+
+  it('marks the current session from supported environment ids without guessing', async () => {
+    const keys = [
+      'SUPERDENSE_CURRENT_SESSION_ID',
+      'CODEX_THREAD_ID',
+      'CLAUDE_CODE_SESSION_ID',
+      'CLAUDE_CODE_REMOTE_SESSION_ID',
+    ] as const;
+    const original = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+    try {
+      for (const key of keys) delete process.env[key];
+      process.env.SUPERDENSE_CURRENT_SESSION_ID = 'claude-code:override';
+      process.env.CODEX_THREAD_ID = 'ignored';
+      await runCli(['artifact', 'mark-current'], io().io);
+      expect(core.markSessionForCuration).toHaveBeenLastCalledWith('claude-code:override');
+
+      delete process.env.SUPERDENSE_CURRENT_SESSION_ID;
+      await runCli(['artifact', 'mark-current'], io().io);
+      expect(core.markSessionForCuration).toHaveBeenLastCalledWith('codex:ignored');
+
+      delete process.env.CODEX_THREAD_ID;
+      process.env.CLAUDE_CODE_SESSION_ID = 'local';
+      await runCli(['artifact', 'mark-current'], io().io);
+      expect(core.markSessionForCuration).toHaveBeenLastCalledWith('claude-code:local');
+
+      delete process.env.CLAUDE_CODE_SESSION_ID;
+      process.env.CLAUDE_CODE_REMOTE_SESSION_ID = 'remote';
+      await runCli(['artifact', 'mark-current'], io().io);
+      expect(core.markSessionForCuration).toHaveBeenLastCalledWith('claude-code:remote');
+
+      delete process.env.CLAUDE_CODE_REMOTE_SESSION_ID;
+      await expect(runCli(['artifact', 'mark-current'], io().io)).rejects.toThrow(
+        'artifact mark --session',
+      );
+    } finally {
+      for (const key of keys) {
+        const value = original[key];
+        if (value == null) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
+
+  it('marks an explicit session id', async () => {
+    await runCli(['artifact', 'mark', '--session', 'codex:explicit'], io().io);
+    expect(core.markSessionForCuration).toHaveBeenCalledWith('codex:explicit');
+  });
+
+  it('exposes the autonomous artifact ready queue', async () => {
+    await runCli(['artifact', 'inbox', '--limit', '7'], io().io);
+    expect(core.listArtifactInbox).toHaveBeenCalledWith({ limit: 7 });
+  });
+
+  it('exposes curation inbox, apply, and mutable thread reads', async () => {
+    await runCli(['curation', 'inbox', '--project', 'p1', '--limit', '7'], io().io);
+    expect(core.listCurationInbox).toHaveBeenCalledWith({ projectId: 'p1', limit: 7 });
+
+    await runCli(['curation', 'context', 'codex:abc123'], io().io);
+    expect(core.getCurationContext).toHaveBeenCalledWith('codex:abc123');
+
+    await runCli(
+      [
+        'curation',
+        'apply',
+        '--input',
+        '{"actions":[{"type":"session.defer","sessionId":"codex:abc123"}]}',
+      ],
+      io().io,
+    );
+    expect(core.applyCurationBatch).toHaveBeenCalledWith({
+      actions: [{ type: 'session.defer', sessionId: 'codex:abc123' }],
+    });
+
+    await runCli(['thread', 'list', '--project', 'p1'], io().io);
+    expect(core.listWorkThreads).toHaveBeenCalledWith({ projectId: 'p1' });
+    await runCli(['thread', 'show', 't1'], io().io);
+    expect(core.getWorkThread).toHaveBeenCalledWith('t1');
+  });
+
+  it('exposes externalization inbox, reads, and assessment writes', async () => {
+    const inbox = io();
+    await runCli(
+      ['externalization', 'inbox', '--limit', '7', '--cursor', 'current-page'],
+      inbox.io,
+    );
+    expect(core.listExternalizationInbox).toHaveBeenCalledWith({
+      limit: 7,
+      cursor: 'current-page',
+    });
+    expect(json(inbox.stdout[0]!)).toMatchObject({
+      items: [{ artifactId: 't1', status: 'blocked' }],
+      remaining: 1,
+      nextCursor: 'next-page',
+    });
+
+    await runCli(['externalization', 'list', '--status', 'blocked'], io().io);
+    expect(core.listExternalizations).toHaveBeenCalledWith({ status: 'blocked' });
+
+    await runCli(['externalization', 'show', 't1'], io().io);
+    expect(core.getExternalization).toHaveBeenCalledWith('t1');
+
+    await runCli(
+      [
+        'externalization',
+        'assess',
+        '--input',
+        '{"artifactId":"t1","status":"not_external","evidence":"internal","targets":[]}',
+      ],
+      io().io,
+    );
+    expect(core.assessExternalization).toHaveBeenCalledWith({
+      artifactId: 't1',
+      status: 'not_external',
+      evidence: 'internal',
+      targets: [],
+    });
+  });
+
+  it('exposes reward status as a JSON reward-layer punch list', async () => {
+    const out = io();
+
+    await runCli(['reward', 'status', '--project', 'p1'], out.io);
+
+    expect(core.getRewardStatus).toHaveBeenCalledWith({ projectId: 'p1' });
+    expect(json(out.stdout[0]!)).toEqual(rewardStatus);
+  });
+
+  it('fetches live reward artifact docs from the default base URL', async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => '# Artifact docs',
+    } as Response);
+    const out = io();
+
+    await runCli(['reward', 'docs', 'artifacts'], out.io);
+
+    expect(fetch).toHaveBeenCalledWith(
+      'https://www.nimroboai.com/docs/reward/artifacts',
+      expect.objectContaining({
+        headers: { accept: 'text/markdown, text/plain;q=0.9, */*;q=0.1' },
+      }),
+    );
+    expect(out.stdout).toEqual(['# Artifact docs']);
+  });
+
+  it('fetches live reward connector docs using slash routes and an overridable base URL', async () => {
+    process.env.SUPERDENSE_DOCS_BASE_URL = 'https://docs.test/reward/';
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => 'connector docs',
+    } as Response);
+
+    const artifactOut = io();
+    await runCli(['reward', 'docs', 'connectors', '--artifact', 'post'], artifactOut.io);
+    expect(fetch).toHaveBeenLastCalledWith(
+      'https://docs.test/reward/artifacts/post/connectors',
+      expect.any(Object),
+    );
+    expect(artifactOut.stdout).toEqual(['connector docs']);
+
+    const usageOut = io();
+    await runCli(['reward', 'docs', 'connectors', '--connector', 'x'], usageOut.io);
+    expect(fetch).toHaveBeenLastCalledWith(
+      'https://docs.test/reward/connectors/x/usage',
+      expect.any(Object),
+    );
+    expect(usageOut.stdout).toEqual(['connector docs']);
+
+    const installOut = io();
+    await runCli(
+      ['reward', 'docs', 'connectors', '--connector', 'x', '--section', 'install'],
+      installOut.io,
+    );
+    expect(fetch).toHaveBeenLastCalledWith(
+      'https://docs.test/reward/connectors/x/install',
+      expect.any(Object),
+    );
+    expect(installOut.stdout).toEqual(['connector docs']);
+  });
+
+  it('validates reward connector doc selectors and sections', async () => {
+    await expect(runCli(['reward', 'docs', 'connectors'], io().io)).rejects.toThrow(
+      'reward docs connectors requires exactly one of --artifact or --connector',
+    );
+
+    await expect(
+      runCli(['reward', 'docs', 'connectors', '--artifact', 'post', '--connector', 'x'], io().io),
+    ).rejects.toThrow('reward docs connectors requires exactly one of --artifact or --connector');
+
+    await expect(
+      runCli(['reward', 'docs', 'connectors', '--connector', 'x', '--section', 'setup'], io().io),
+    ).rejects.toThrow(
+      "reward docs connectors --section must be 'usage', 'install', or 'troubleshoot'",
+    );
+
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('surfaces reward docs fetch failures with the attempted URL and connectivity hint', async () => {
+    vi.mocked(fetch).mockRejectedValue(new Error('offline'));
+
+    await expect(runCli(['reward', 'docs', 'artifacts'], io().io)).rejects.toThrow(
+      'reward docs unavailable: https://www.nimroboai.com/docs/reward/artifacts (offline) - check your connection',
+    );
+  });
+
   it('throws intended errors for missing query, session, and compactor', async () => {
     vi.mocked(core.getQuery).mockReturnValue(null);
     await expect(runCli(['query', 'show', 'missing'], io().io)).rejects.toThrow(
@@ -894,8 +1306,24 @@ describe('superdense cli agent commands', () => {
     );
     expect(existsSync(join(root, 'claude', 'superdense', 'agents', 'openai.yaml'))).toBe(true);
     expect(existsSync(join(root, 'codex', 'superdense', 'agents', 'openai.yaml'))).toBe(true);
+    expect(existsSync(join(root, 'claude', 'superdense', 'reward', 'profile.md'))).toBe(true);
+    expect(existsSync(join(root, 'codex', 'superdense', 'reward', 'profile.md'))).toBe(true);
+    expect(existsSync(join(root, 'claude', 'superdense', 'reward', 'reconcile.md'))).toBe(true);
+    expect(existsSync(join(root, 'codex', 'superdense', 'reward', 'reconcile.md'))).toBe(true);
     expect(existsSync(join(root, 'claude', 'chain', 'chain-sessions.sh'))).toBe(true);
     expect(existsSync(join(root, 'codex', 'chain', 'chain-sessions.sh'))).toBe(true);
+    expect(
+      existsSync(join(root, 'claude', 'superdense-externalization-reconcile', 'SKILL.md')),
+    ).toBe(false);
+    expect(
+      existsSync(join(root, 'codex', 'superdense-externalization-reconcile', 'SKILL.md')),
+    ).toBe(false);
+    expect(
+      readFileSync(join(root, 'claude', 'superdense', 'reward', 'reconcile.md'), 'utf8'),
+    ).toContain('--cursor <opaque>');
+    expect(
+      readFileSync(join(root, 'codex', 'superdense', 'reward', 'reconcile.md'), 'utf8'),
+    ).toContain('--cursor <opaque>');
   });
 
   it('installs a skill locally under the current working directory', async () => {
@@ -970,8 +1398,24 @@ describe('superdense cli agent commands', () => {
     expect(readlineMocks.question).toHaveBeenCalledTimes(1);
     expect(existsSync(join(root, 'global-claude', 'superdense', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(root, 'global-codex', 'superdense', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, 'global-claude', 'superdense', 'reward', 'profile.md'))).toBe(
+      true,
+    );
+    expect(existsSync(join(root, 'global-codex', 'superdense', 'reward', 'profile.md'))).toBe(true);
+    expect(existsSync(join(root, 'global-claude', 'superdense', 'reward', 'reconcile.md'))).toBe(
+      true,
+    );
+    expect(existsSync(join(root, 'global-codex', 'superdense', 'reward', 'reconcile.md'))).toBe(
+      true,
+    );
     expect(existsSync(join(root, 'global-claude', 'chain', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(root, 'global-codex', 'chain', 'SKILL.md'))).toBe(true);
+    expect(
+      existsSync(join(root, 'global-claude', 'superdense-externalization-reconcile', 'SKILL.md')),
+    ).toBe(false);
+    expect(
+      existsSync(join(root, 'global-codex', 'superdense-externalization-reconcile', 'SKILL.md')),
+    ).toBe(false);
     expect(out.stdout).toContain('[superdense] installed Superdense skills globally.');
     expect(startServer).toHaveBeenCalled();
   });

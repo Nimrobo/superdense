@@ -63,6 +63,20 @@ describe('api.listSessions', () => {
   });
 });
 
+describe('api.rewardStatus', () => {
+  it('calls /api/reward/status with no params by default', async () => {
+    mockOk({ projectId: null, stages: [], nextAction: null });
+    await api.rewardStatus();
+    expect(mockFetch).toHaveBeenCalledWith('/api/reward/status', expect.anything());
+  });
+
+  it('forwards the projectId filter', async () => {
+    mockOk({ projectId: 'p1', stages: [], nextAction: null });
+    await api.rewardStatus({ projectId: 'p1' });
+    expect(mockFetch).toHaveBeenCalledWith('/api/reward/status?projectId=p1', expect.anything());
+  });
+});
+
 describe('api.getSession', () => {
   it('calls the correct URL', async () => {
     mockOk({ id: 'abc' });
@@ -163,6 +177,53 @@ describe('api.progress', () => {
     const result = await api.progress();
     expect(mockFetch).toHaveBeenCalledWith('/api/progress', expect.anything());
     expect(result.phase).toBe('idle');
+  });
+});
+
+describe('api projects', () => {
+  it('lists action-needed projects', async () => {
+    mockOk({ items: [] });
+    await api.listProjects({ needsAction: true });
+    expect(mockFetch).toHaveBeenCalledWith('/api/projects?needsAction=true', expect.anything());
+  });
+
+  it('loads a project and updates attention', async () => {
+    mockOk({ project: { id: 'p1' }, redirectedFrom: null });
+    await api.getProject('project/id');
+    expect(mockFetch).toHaveBeenCalledWith('/api/projects/project%2Fid', expect.anything());
+
+    mockOk({ project: { id: 'p1' } });
+    await api.setProjectAttention('p1', true, ['review roots']);
+    expect(mockFetch).toHaveBeenCalledWith(
+      '/api/projects/p1/attention',
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({ needed: true, reasons: ['review roots'] }),
+      }),
+    );
+  });
+});
+
+describe('api threads', () => {
+  it('lists all threads without query params', async () => {
+    mockOk({ items: [] });
+    await api.listThreads();
+    expect(mockFetch).toHaveBeenCalledWith('/api/threads', expect.anything());
+  });
+
+  it('lists threads with encoded project and lifecycle filters', async () => {
+    mockOk({ items: [] });
+    await api.listThreads({ projectId: 'project/id', lifecycle: 'open' });
+    expect(mockFetch).toHaveBeenCalledWith(
+      '/api/threads?projectId=project%2Fid&lifecycle=open',
+      expect.anything(),
+    );
+  });
+
+  it('loads a URL-encoded thread id', async () => {
+    mockOk({ thread: { id: 'thread/id' } });
+    await api.getThread('thread/id');
+    expect(mockFetch).toHaveBeenCalledWith('/api/threads/thread%2Fid', expect.anything());
   });
 });
 

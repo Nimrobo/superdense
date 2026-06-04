@@ -326,20 +326,20 @@ function* extractCodexEvents(
     return;
   }
 
-  if (payload?.type === 'function_call') {
+  if (payload?.type === 'function_call' || payload?.type === 'custom_tool_call') {
     yield {
       ts,
       kind: 'tool_call',
       role: 'assistant',
       toolCallId: typeof payload.call_id === 'string' ? payload.call_id : undefined,
       toolName: typeof payload.name === 'string' ? payload.name : undefined,
-      inputText: stringifyValue(payload.arguments ?? {}),
+      inputText: stringifyValue(payload.arguments ?? payload.input ?? {}),
       raw: obj,
     };
     return;
   }
 
-  if (payload?.type === 'function_call_output') {
+  if (payload?.type === 'function_call_output' || payload?.type === 'custom_tool_call_output') {
     const toolCallId = typeof payload.call_id === 'string' ? payload.call_id : undefined;
     yield {
       ts,

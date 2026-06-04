@@ -51,6 +51,12 @@ export function Sidebar({ view, setView, queries, search, setSearch, progress, o
           >
             <span>Insights</span>
           </div>
+          <div
+            className={active(view.type === 'reward' || view.type === 'project')}
+            onClick={() => setView({ type: 'reward' })}
+          >
+            <span>Reward</span>
+          </div>
         </div>
 
         <div className="sidebar-section">

@@ -19,6 +19,11 @@ export interface SessionRow {
   parent_session_id: string | null;
   file_mtime: number | null;
   last_indexed_at: number | null;
+  curation_status: 'pending' | 'consumed' | 'skipped' | 'deferred';
+  curated_revision: string | null;
+  curated_at: number | null;
+  curation_note: string | null;
+  curation_priority_at: number | null;
 }
 
 export function rowToSession(r: SessionRow): Session {
@@ -40,5 +45,10 @@ export function rowToSession(r: SessionRow): Session {
     parentSessionId: r.parent_session_id ?? null,
     fileMtime: r.file_mtime,
     lastIndexedAt: r.last_indexed_at,
+    curationStatus: r.curation_status,
+    curatedRevision: r.curated_revision,
+    curatedAt: r.curated_at,
+    curationNote: r.curation_note,
+    curationPriorityAt: r.curation_priority_at,
   };
 }

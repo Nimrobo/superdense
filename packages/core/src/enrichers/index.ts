@@ -1,14 +1,26 @@
 import { iterSessionEvents } from '../adapters/index.js';
-import { SYSTEM_RUN_ID, getEnrichment, upsertEnrichment } from '../db.js';
+import {
+  SYSTEM_RUN_ID,
+  getEnrichment,
+  replacePlanRefs,
+  replaceSessionFiles,
+  upsertEnrichment,
+  type PlanRefInput,
+  type SessionFileInput,
+} from '../db.js';
 import type { Session } from '../types.js';
 import { activeDurationEnricher } from './active-duration.js';
 import { bashCliCountsEnricher } from './bash-cli-counts.js';
 import { eventCountEnricher } from './event-count.js';
+import { fileFootprintEnricher, type Footprint } from './file-footprint.js';
 import { fingerprintEnricher } from './fingerprint.js';
+import { firstIntentEnricher } from './first-intent.js';
 import { hasErrorsEnricher } from './has-errors.js';
 import { insightRunEnricher } from './insight-run.js';
 import { readUserEnrichers } from './loader.js';
 import { planModeEnricher } from './plan-mode.js';
+import { planRefsEnricher, type PlanRef } from './plan-refs.js';
+import { sessionKindEnricher } from './session-kind.js';
 import { subagentSummaryEnricher } from './subagent-summary.js';
 import { toolCountsEnricher } from './tool-counts.js';
 import type { Enricher } from './types.js';
@@ -23,6 +35,10 @@ const BUILTINS: Enricher[] = [
   activeDurationEnricher,
   planModeEnricher,
   subagentSummaryEnricher,
+  fileFootprintEnricher,
+  planRefsEnricher,
+  firstIntentEnricher,
+  sessionKindEnricher,
 ];
 
 const registry: Enricher[] = [...BUILTINS];
@@ -116,6 +132,45 @@ export async function runEnrichersForSession(session: Session): Promise<void> {
   for (const enricher of registry) {
     if (!enricher.alwaysRun && !activeNames.has(enricher.name)) continue;
     await runOne(enricher, session, SYSTEM_RUN_ID);
+  }
+  projectSessionTables(session);
+}
+
+/**
+ * Project the file_footprint and plan_refs enrichments into the dedicated
+ * indexed tables (session_file, plan_refs) so they support inverse lookups the
+ * JSON blobs can't. Reads the stored enrichment (works whether or not the
+ * enricher recomputed this pass) and is idempotent (replace = delete+insert).
+ */
+function projectSessionTables(session: Session): void {
+  try {
+    const fp = getEnrichment(session.id, SYSTEM_RUN_ID, 'file_footprint')?.value as
+      | Footprint
+      | undefined;
+    if (fp?.files) {
+      const rows: SessionFileInput[] = fp.files.map((f) => ({
+        pathRel: f.pathRel,
+        pathAbs: f.pathAbs,
+        role: f.role,
+        writes: f.writes,
+        reads: f.reads,
+        ops: f.ops,
+        firstTs: f.firstTs,
+        lastTs: f.lastTs,
+      }));
+      replaceSessionFiles(session.id, rows);
+    }
+
+    const pr = getEnrichment(session.id, SYSTEM_RUN_ID, 'plan_refs')?.value as
+      | { refs?: PlanRef[] }
+      | undefined;
+    if (pr?.refs) {
+      const rows: PlanRefInput[] = pr.refs.map((r) => ({ slug: r.slug, kind: r.kind }));
+      replacePlanRefs(session.id, rows);
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[projector] failed for ${session.id}: ${msg}`);
   }
 }
 

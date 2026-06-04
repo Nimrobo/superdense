@@ -13,6 +13,19 @@ export const CLAUDE_SKILLS_DIR =
   process.env.CLAUDE_SKILLS_DIR ?? join(homedir(), '.claude', 'skills');
 export const CODEX_SKILLS_DIR = process.env.CODEX_SKILLS_DIR ?? join(homedir(), '.codex', 'skills');
 
+/** Where Claude Code persists named plan files (`<slug>.md`). The slug is a free,
+ *  human-readable artifact anchor — sessions citing the same slug are the same work. */
+export const CLAUDE_PLANS_DIR = process.env.CLAUDE_PLANS_DIR ?? join(homedir(), '.claude', 'plans');
+
+/** Extract the plan slug from a `~/.claude/plans/<slug>.md` path, else null.
+ *  Matches the plans dir anywhere in the string so it works on both absolute
+ *  paths and text mentions. */
+export function planSlugFromPath(p: string): string | null {
+  if (!p) return null;
+  const m = p.match(/\.claude\/plans\/([^/\s]+?)\.md\b/);
+  return m?.[1] ?? null;
+}
+
 export function localClaudeSkillsDir(cwd: string): string {
   return join(cwd, '.claude', 'skills');
 }

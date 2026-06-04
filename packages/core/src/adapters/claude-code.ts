@@ -49,6 +49,7 @@ interface JsonlHead {
   cwd?: string;
   agentId?: string;
   slug?: string;
+  gitBranch?: string;
 }
 
 export async function scanJsonlHead(logPath: string, maxLines = 50): Promise<JsonlHead> {
@@ -88,6 +89,12 @@ export async function scanJsonlHead(logPath: string, maxLines = 50): Promise<Jso
         }
         if (!result.slug && typeof obj?.slug === 'string' && obj.slug) {
           result.slug = obj.slug;
+        }
+        // gitBranch rides on each message line (same line as cwd) — the
+        // historical branch at session time, present far more often than
+        // sessions-index.json captures it.
+        if (!result.gitBranch && typeof obj?.gitBranch === 'string' && obj.gitBranch) {
+          result.gitBranch = obj.gitBranch;
         }
         if (!result.firstPrompt) {
           const m = obj?.message;
@@ -146,11 +153,16 @@ export const claudeCodeAdapter: Adapter = {
           seen.add(e.sessionId);
           let pwd = e.projectPath;
           let firstPrompt = extractMeaningfulPrompt(e.firstPrompt);
-          if (!pwd || !firstPrompt) {
+          let gitBranch = e.gitBranch;
+          // Scan the transcript head when the index is missing pwd, the prompt,
+          // or the branch — the branch is absent from the index for ~84% of
+          // claude-code sessions but rides on the transcript message lines.
+          if (!pwd || !firstPrompt || !gitBranch) {
             const head = await scanJsonlHead(e.fullPath);
             if (!projectCwd && head.cwd) projectCwd = head.cwd;
             if (!pwd) pwd = projectCwd ?? pwdGuess;
             firstPrompt = firstPrompt ?? head.firstPrompt;
+            gitBranch = gitBranch ?? head.gitBranch;
           }
           out.push({
             sessionId: e.sessionId,
@@ -159,7 +171,7 @@ export const claudeCodeAdapter: Adapter = {
             firstPrompt,
             summary: e.summary,
             messageCount: e.messageCount,
-            gitBranch: e.gitBranch,
+            gitBranch,
             createdAt: toMs(e.created),
             modifiedAt: toMs(e.modified) ?? e.fileMtime,
             isSidechain: e.isSidechain,
@@ -195,6 +207,7 @@ export const claudeCodeAdapter: Adapter = {
           logPath,
           pwd: head.cwd ?? projectCwd ?? pwdGuess,
           firstPrompt: head.firstPrompt,
+          gitBranch: head.gitBranch,
           createdAt: mtime,
           modifiedAt: mtime,
         });
@@ -250,6 +263,7 @@ export const claudeCodeAdapter: Adapter = {
             logPath,
             pwd: head.cwd ?? pwdGuess,
             firstPrompt: head.firstPrompt,
+            gitBranch: head.gitBranch,
             createdAt: mtime,
             modifiedAt: mtime,
           },

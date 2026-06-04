@@ -65,6 +65,25 @@ superdense session enrichments <session-id> --name subagent_summary
 
 Use the CLI as a staged inspection pipeline: candidate discovery → metadata triage → compact only what's relevant.
 
+**Reward layer.** To see the reward-layer punch list and next stage, start with:
+
+```bash
+superdense reward status
+```
+
+Use `superdense reward status --project <id>` to focus the project-sensitive stages. The pipeline is `profile -> curate -> finalize -> reconcile -> collect -> compare`. Run status first, then read only the reference file for the stage it selects:
+
+| Stage       | Reference             |
+| ----------- | --------------------- |
+| `profile`   | `reward/profile.md`   |
+| `curate`    | `reward/curate.md`    |
+| `finalize`  | `reward/finalize.md`  |
+| `reconcile` | `reward/reconcile.md` |
+| `collect`   | `reward/collect.md`   |
+| `compare`   | `reward/compare.md`   |
+
+Shared reward-layer rules and helper references for artifact types and connector names live in `reward/README.md`.
+
 **Precondition.** Refresh the index only when the user asks about recent/latest work, new sessions may have appeared, or results look stale:
 
 ```bash

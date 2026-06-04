@@ -19,6 +19,9 @@ import { createInterface } from 'node:readline/promises';
 import semver from 'semver';
 import {
   assembleInsightPrompt,
+  applyCurationBatch,
+  assessExternalization,
+  applyProjectProfilePatch,
   CLAUDE_SKILLS_DIR,
   compactSession,
   CODEX_SKILLS_DIR,
@@ -27,23 +30,43 @@ import {
   createQuery,
   deleteQuery,
   ensureSuperdenseDirs,
+  finalizeArtifact,
+  getArtifact,
   getCompactor,
+  getCurationContext,
   getEnrichment,
+  getExternalization,
+  getArtifactRewards,
+  getCohort,
+  getVersionChain,
+  getRewardStatus,
+  listCohorts,
+  listVersionChains,
+  getProjectContext,
+  getProjectProfileResolution,
   getQuery,
   SYSTEM_RUN_ID,
   getSession,
   getSessionChildren,
   getSessionTree,
+  getWorkThread,
   indexAll,
+  listArtifacts,
+  listArtifactInbox,
   listCompactors,
+  listCurationInbox,
   listEnrichers,
+  listExternalizationInbox,
+  listExternalizations,
   listFilterCatalog,
   listFilters,
   listInsightRecipes,
   listQueries,
+  listProjectProfiles,
   listQueryMatchDetails,
   listSessionEnrichments,
   listSessions,
+  listWorkThreads,
   loadUserEnrichers,
   localClaudeSkillsDir,
   localCodexSkillsDir,
@@ -51,6 +74,9 @@ import {
   runDiscovery,
   runQueryEvaluation,
   runSavedQuery,
+  setProjectAttention,
+  markSessionForCuration,
+  recordRewardSnapshot,
   validateQueryDefinition,
   type AdHocQueryResult,
   type Compactor,
@@ -63,8 +89,12 @@ import open from 'open';
 
 const CLI_PACKAGE_NAME = '@nimrobo/superdense';
 const NPM_REGISTRY_PACKAGE_URL = `https://registry.npmjs.org/${CLI_PACKAGE_NAME.replace('/', '%2f')}`;
+const DEFAULT_REWARD_DOCS_BASE_URL = 'https://www.nimroboai.com/docs/reward';
 const SKIP_UPDATE_CHECK_ENV = 'SUPERDENSE_SKIP_UPDATE_CHECK';
 const REQUIRED_STUDIO_SKILLS = ['superdense', 'chain'];
+const REWARD_DOC_SECTIONS = ['usage', 'install', 'troubleshoot'] as const;
+
+type RewardDocSection = (typeof REWARD_DOC_SECTIONS)[number];
 
 interface CliIo {
   stdout: Pick<typeof console, 'log'>;
@@ -166,6 +196,11 @@ function serializeSession(
     parentSessionId: session.parentSessionId ?? null,
     fileMtime: session.fileMtime ?? null,
     lastIndexedAt: session.lastIndexedAt ?? null,
+    curationStatus: session.curationStatus ?? 'pending',
+    curatedRevision: session.curatedRevision ?? null,
+    curatedAt: session.curatedAt ?? null,
+    curationNote: session.curationNote ?? null,
+    curationPriorityAt: session.curationPriorityAt ?? null,
   };
   if (opts.includePath) out.logPath = session.logPath;
   return out;
@@ -196,6 +231,19 @@ async function readQueryDefinition(input: string | boolean | undefined): Promise
   if (typeof input !== 'string' || !input.trim()) throw new Error('--query is required');
   const raw = input.startsWith('@') ? await readFile(input.slice(1), 'utf8') : input;
   return JSON.parse(raw) as QueryDefinition;
+}
+
+async function readJsonObject(
+  input: string | boolean | undefined,
+  flag: string,
+): Promise<Record<string, unknown>> {
+  if (typeof input !== 'string' || !input.trim()) throw new Error(`--${flag} is required`);
+  const raw = input.startsWith('@') ? await readFile(input.slice(1), 'utf8') : input;
+  const parsed = JSON.parse(raw) as unknown;
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(`--${flag} must contain a JSON object`);
+  }
+  return parsed as Record<string, unknown>;
 }
 
 async function validateCliQueryDefinition(definition: QueryDefinition): Promise<void> {
@@ -614,6 +662,342 @@ async function handleEnricher(args: string[], io: CliIo): Promise<boolean> {
     return true;
   }
   throw new Error(`unknown enricher command: ${action}`);
+}
+
+async function handleProject(
+  args: string[],
+  flags: Record<string, string | boolean>,
+  io: CliIo,
+): Promise<boolean> {
+  const action = args[0] ?? 'list';
+  if (action === 'list') {
+    printJson(
+      {
+        items: listProjectProfiles({ needsAction: flags['needs-action'] === true }),
+      },
+      io,
+    );
+    return true;
+  }
+  const id = args[1];
+  if (!id) throw new Error(`project ${action} requires <id>`);
+  if (action === 'show') {
+    const result = getProjectProfileResolution(id);
+    if (!result) throw new Error(`project not found: ${id}`);
+    printJson(result, io);
+    return true;
+  }
+  if (action === 'context') {
+    const context = getProjectContext(id);
+    if (!context) throw new Error(`project not found: ${id}`);
+    printJson(context, io);
+    return true;
+  }
+  if (action === 'apply') {
+    const patch = await readJsonObject(flags.patch, 'patch');
+    printJson({ project: applyProjectProfilePatch(id, patch) }, io);
+    return true;
+  }
+  if (action === 'attention') {
+    if (flags.needed === true) {
+      const reasons =
+        typeof flags.reasons === 'string'
+          ? (JSON.parse(flags.reasons) as unknown)
+          : ['Marked for human attention'];
+      if (!Array.isArray(reasons) || reasons.some((reason) => typeof reason !== 'string')) {
+        throw new Error('--reasons must be a JSON array of strings');
+      }
+      printJson({ project: setProjectAttention(id, { needed: true, reasons }) }, io);
+      return true;
+    }
+    if (flags.resolved === true) {
+      printJson({ project: setProjectAttention(id, { needed: false }) }, io);
+      return true;
+    }
+    throw new Error('project attention requires --needed or --resolved');
+  }
+  throw new Error(`unknown project command: ${action}`);
+}
+
+function resolveCurrentSessionId(env: NodeJS.ProcessEnv = process.env): string {
+  if (env.SUPERDENSE_CURRENT_SESSION_ID) return env.SUPERDENSE_CURRENT_SESSION_ID;
+  if (env.CODEX_THREAD_ID) return `codex:${env.CODEX_THREAD_ID}`;
+  if (env.CLAUDE_CODE_SESSION_ID) return `claude-code:${env.CLAUDE_CODE_SESSION_ID}`;
+  if (env.CLAUDE_CODE_REMOTE_SESSION_ID) return `claude-code:${env.CLAUDE_CODE_REMOTE_SESSION_ID}`;
+  throw new Error(
+    'could not resolve the current session from the environment; use `superdense artifact mark --session <adapter:id>`',
+  );
+}
+
+async function handleArtifact(
+  args: string[],
+  flags: Record<string, string | boolean>,
+  io: CliIo,
+): Promise<boolean> {
+  const action = args[0];
+  if (action === 'mark-current') {
+    printJson({ marker: markSessionForCuration(resolveCurrentSessionId()) }, io);
+    return true;
+  }
+  if (action === 'mark') {
+    if (typeof flags.session !== 'string' || !flags.session.trim()) {
+      throw new Error('artifact mark requires --session <adapter:id>');
+    }
+    printJson({ marker: markSessionForCuration(flags.session.trim()) }, io);
+    return true;
+  }
+  if (action === 'inbox') {
+    printJson(listArtifactInbox({ limit: intFlag(flags, 'limit', 10, 1000) }), io);
+    return true;
+  }
+  if (action === 'finalize') {
+    printJson(finalizeArtifact(await readJsonObject(flags.input, 'input')), io);
+    return true;
+  }
+  if (action === 'list') {
+    printJson(
+      {
+        items: listArtifacts({
+          projectId: typeof flags.project === 'string' ? flags.project : undefined,
+          type: typeof flags.type === 'string' ? flags.type : undefined,
+        }),
+      },
+      io,
+    );
+    return true;
+  }
+  if (action === 'show') {
+    const id = args[1];
+    if (!id) throw new Error('artifact show requires <thread-id>');
+    const artifact = getArtifact(id);
+    if (!artifact) throw new Error(`artifact not found: ${id}`);
+    printJson({ artifact }, io);
+    return true;
+  }
+  throw new Error(`unknown artifact command: ${action ?? '(none)'}`);
+}
+
+async function handleCuration(
+  args: string[],
+  flags: Record<string, string | boolean>,
+  io: CliIo,
+): Promise<boolean> {
+  const action = args[0];
+  if (action === 'inbox') {
+    printJson(
+      listCurationInbox({
+        projectId: typeof flags.project === 'string' ? flags.project : undefined,
+        limit: intFlag(flags, 'limit', 10, 1000),
+      }),
+      io,
+    );
+    return true;
+  }
+  if (action === 'context') {
+    const sessionId = args[1];
+    if (!sessionId) throw new Error('curation context requires <root-session-id>');
+    printJson(getCurationContext(sessionId), io);
+    return true;
+  }
+  if (action === 'apply') {
+    printJson(applyCurationBatch(await readJsonObject(flags.input, 'input')), io);
+    return true;
+  }
+  throw new Error(`unknown curation command: ${action ?? '(none)'}`);
+}
+
+function handleThread(args: string[], flags: Record<string, string | boolean>, io: CliIo): boolean {
+  const action = args[0] ?? 'list';
+  if (action === 'list') {
+    printJson(
+      {
+        items: listWorkThreads({
+          projectId: typeof flags.project === 'string' ? flags.project : undefined,
+        }),
+      },
+      io,
+    );
+    return true;
+  }
+  if (action === 'show') {
+    const id = args[1];
+    if (!id) throw new Error('thread show requires <thread-id>');
+    const thread = getWorkThread(id);
+    if (!thread) throw new Error(`thread not found: ${id}`);
+    printJson({ thread }, io);
+    return true;
+  }
+  throw new Error(`unknown thread command: ${action}`);
+}
+
+async function handleExternalization(
+  args: string[],
+  flags: Record<string, string | boolean>,
+  io: CliIo,
+): Promise<boolean> {
+  const action = args[0];
+  if (action === 'inbox') {
+    printJson(
+      listExternalizationInbox({
+        limit: intFlag(flags, 'limit', 10, 1000),
+        cursor: typeof flags.cursor === 'string' ? flags.cursor : undefined,
+      }),
+      io,
+    );
+    return true;
+  }
+  if (action === 'list') {
+    const status = typeof flags.status === 'string' ? flags.status : undefined;
+    printJson({ items: listExternalizations({ status }) }, io);
+    return true;
+  }
+  if (action === 'show') {
+    const id = args[1];
+    if (!id) throw new Error('externalization show requires <artifact-id>');
+    const externalization = getExternalization(id);
+    if (!externalization) throw new Error(`artifact not found: ${id}`);
+    printJson({ externalization }, io);
+    return true;
+  }
+  if (action === 'assess') {
+    printJson(assessExternalization(await readJsonObject(flags.input, 'input')), io);
+    return true;
+  }
+  throw new Error(`unknown externalization command: ${args.join(' ') || '(none)'}`);
+}
+
+function rewardDocsBaseUrl(): string {
+  const base =
+    typeof process.env.SUPERDENSE_DOCS_BASE_URL === 'string' &&
+    process.env.SUPERDENSE_DOCS_BASE_URL.trim() !== ''
+      ? process.env.SUPERDENSE_DOCS_BASE_URL.trim()
+      : DEFAULT_REWARD_DOCS_BASE_URL;
+  return base.replace(/\/+$/, '');
+}
+
+function rewardDocsPath(...segments: string[]): string {
+  return `/${segments.map((segment) => encodeURIComponent(segment)).join('/')}`;
+}
+
+function isRewardDocSection(value: string): value is RewardDocSection {
+  return REWARD_DOC_SECTIONS.includes(value as RewardDocSection);
+}
+
+async function fetchRewardDocs(path: string): Promise<string> {
+  const url = `${rewardDocsBaseUrl()}${path}`;
+  try {
+    const response = await fetch(url, {
+      headers: { accept: 'text/markdown, text/plain;q=0.9, */*;q=0.1' },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) {
+      const statusText = response.statusText ? ` ${response.statusText}` : '';
+      throw new Error(`HTTP ${response.status}${statusText}`);
+    }
+    return await response.text();
+  } catch (err) {
+    throw new Error(
+      `reward docs unavailable: ${url} (${err instanceof Error ? err.message : String(err)}) - check your connection`,
+    );
+  }
+}
+
+async function handleRewardDocs(
+  args: string[],
+  flags: Record<string, string | boolean>,
+  io: CliIo,
+): Promise<boolean> {
+  const action = args[0];
+  if (action === 'artifacts') {
+    io.stdout.log(await fetchRewardDocs(rewardDocsPath('artifacts')));
+    return true;
+  }
+
+  if (action === 'connectors') {
+    const artifact = typeof flags.artifact === 'string' ? flags.artifact : undefined;
+    const connector = typeof flags.connector === 'string' ? flags.connector : undefined;
+    if ((artifact ? 1 : 0) + (connector ? 1 : 0) !== 1) {
+      throw new Error('reward docs connectors requires exactly one of --artifact or --connector');
+    }
+
+    if (artifact) {
+      io.stdout.log(await fetchRewardDocs(rewardDocsPath('artifacts', artifact, 'connectors')));
+      return true;
+    }
+
+    const section = typeof flags.section === 'string' ? flags.section : 'usage';
+    if (!isRewardDocSection(section)) {
+      throw new Error(
+        "reward docs connectors --section must be 'usage', 'install', or 'troubleshoot'",
+      );
+    }
+    io.stdout.log(await fetchRewardDocs(rewardDocsPath('connectors', connector!, section)));
+    return true;
+  }
+
+  throw new Error(`unknown reward docs command: ${args.join(' ') || '(none)'}`);
+}
+
+async function handleReward(
+  args: string[],
+  flags: Record<string, string | boolean>,
+  io: CliIo,
+): Promise<boolean> {
+  const action = args[0];
+  if (action === 'docs') {
+    return handleRewardDocs(args.slice(1), flags, io);
+  }
+  if (action === 'record') {
+    printJson(recordRewardSnapshot(await readJsonObject(flags.input, 'input')), io);
+    return true;
+  }
+  if (action === 'show') {
+    const id = args[1];
+    if (!id) throw new Error('reward show requires <artifact-id>');
+    const rewards = getArtifactRewards(id);
+    if (!rewards) throw new Error(`artifact not found: ${id}`);
+    printJson({ rewards }, io);
+    return true;
+  }
+  if (action === 'status') {
+    const projectId = typeof flags.project === 'string' ? flags.project : undefined;
+    printJson(getRewardStatus({ projectId }), io);
+    return true;
+  }
+  throw new Error(`unknown reward command: ${args.join(' ') || '(none)'}`);
+}
+
+function handleCohort(args: string[], flags: Record<string, string | boolean>, io: CliIo): boolean {
+  const action = args[0];
+  const projectId = typeof flags.project === 'string' ? flags.project : undefined;
+  if (action === 'list') {
+    const by = typeof flags.by === 'string' ? flags.by : 'type';
+    if (by !== 'type' && by !== 'connector') {
+      throw new Error("cohort list --by must be 'type' or 'connector'");
+    }
+    printJson({ items: listCohorts({ projectId, by }) }, io);
+    return true;
+  }
+  if (action === 'show') {
+    const type = args[1];
+    if (!type) throw new Error('cohort show requires <type>');
+    const connector = typeof flags.connector === 'string' ? flags.connector : undefined;
+    printJson({ cohort: getCohort({ type, connector, projectId }) }, io);
+    return true;
+  }
+  if (action === 'chains') {
+    printJson({ items: listVersionChains({ projectId }) }, io);
+    return true;
+  }
+  if (action === 'chain') {
+    const id = args[1];
+    if (!id) throw new Error('cohort chain requires <artifact-id>');
+    const chain = getVersionChain(id);
+    if (!chain) throw new Error(`artifact not found: ${id}`);
+    printJson({ chain }, io);
+    return true;
+  }
+  throw new Error(`unknown cohort command: ${args.join(' ') || '(none)'}`);
 }
 
 function handleInsight(args: string[], io: CliIo): boolean {
@@ -1049,6 +1433,41 @@ export async function runCli(
     return 0;
   }
 
+  if (cmd === 'project') {
+    await handleProject(args, flags, io);
+    return 0;
+  }
+
+  if (cmd === 'artifact') {
+    await handleArtifact(args, flags, io);
+    return 0;
+  }
+
+  if (cmd === 'curation') {
+    await handleCuration(args, flags, io);
+    return 0;
+  }
+
+  if (cmd === 'thread') {
+    handleThread(args, flags, io);
+    return 0;
+  }
+
+  if (cmd === 'externalization') {
+    await handleExternalization(args, flags, io);
+    return 0;
+  }
+
+  if (cmd === 'reward') {
+    await handleReward(args, flags, io);
+    return 0;
+  }
+
+  if (cmd === 'cohort') {
+    handleCohort(args, flags, io);
+    return 0;
+  }
+
   if (cmd === 'insight') {
     handleInsight(args, io);
     return 0;
@@ -1105,6 +1524,37 @@ export async function runCli(
         '  enricher show <n>   Show enricher details',
         '  insight list        List available insight recipes',
         '  insight prompt <n>  Print a copy-pasteable insight prompt for your coding agent',
+        '  project list        List detected projects',
+        '      --needs-action  Show unprofiled and human-attention projects only',
+        '  project show <id>   Show a canonical project profile',
+        '  project context <id>  Gather bounded evidence for profiling',
+        '  project apply <id>  Apply an atomic profile merge patch (--patch <json|@file>)',
+        '  project attention <id>  Mark attention --needed [--reasons <json>] or --resolved',
+        '  artifact mark-current  Mark the current agent session for curation',
+        '  artifact mark --session <adapter:id>  Mark an explicit session for curation',
+        '  artifact inbox     List ready threads awaiting artifact creation [--limit N]',
+        '  curation inbox      Get a bounded root-session review batch [--project <id>] [--limit N]',
+        '  curation context <root-session-id>  Load root and linked sub-agent review hints',
+        '  curation apply --input <json|@file>  Apply an atomic batch of reversible actions',
+        '  thread list         List mutable work threads [--project <id>]',
+        '  thread show <id>    Show a work thread and session memberships',
+        '  artifact finalize --input <json|@file>  Create a stable artifact payload from a ready thread',
+        '  artifact list       List finalized artifacts [--project <id>] [--type <t>]',
+        '  artifact show <thread-id>  Show a stable artifact payload and effective lineage',
+        '  externalization inbox  List unprocessed and blocked finalized artifacts [--limit N] [--cursor <opaque>]',
+        '  externalization list   List artifact externalization states [--status <s>]',
+        '  externalization show <artifact-id>  Show assessment and connector targets',
+        '  externalization assess --input <json|@file>  Replace one artifact assessment',
+        '  reward record --input <json|@file>  Record one multidimensional reward snapshot for a linked target',
+        '  reward show <artifact-id>  Show latest reward snapshot and series per linked target',
+        '  reward status       Show reward-layer punch-list and next action [--project <id>]',
+        '  reward docs artifacts  Fetch live reward artifact guidance markdown',
+        '  reward docs connectors --artifact <type>  Fetch live connector guidance for an artifact type',
+        '  reward docs connectors --connector <name> [--section usage|install|troubleshoot]',
+        '  cohort list         List comparable peer cohorts [--project <id>] [--by type|connector]',
+        '  cohort show <type>  Surface a cohort for comparison [--connector <c>] [--project <id>]',
+        '  cohort chains       List version chains (a deliverable across versions) [--project <id>]',
+        '  cohort chain <artifact-id>  Surface one artifact next to its own versions',
         '  skill install [n]   Install skills into Claude and Codex',
         '      --locally       Install skills into ./.claude and ./.codex for this cwd',
         '  index               Incremental session index',

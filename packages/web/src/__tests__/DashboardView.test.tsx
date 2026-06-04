@@ -8,6 +8,7 @@ vi.mock('../api.js', () => ({
     statsHeader: vi.fn(),
     statsWindow: vi.fn(),
     statsInsights: vi.fn(),
+    listProjects: vi.fn(),
   },
 }));
 
@@ -77,6 +78,7 @@ const defaultProps = {
   onReindex: vi.fn(),
   onOpenSession: vi.fn(),
   onOpenSessions: vi.fn(),
+  onOpenProject: vi.fn(),
 };
 
 describe('DashboardView', () => {
@@ -84,6 +86,7 @@ describe('DashboardView', () => {
     vi.mocked(apiModule.api.statsHeader).mockResolvedValue(mockHeader);
     vi.mocked(apiModule.api.statsWindow).mockResolvedValue(mockWindow);
     vi.mocked(apiModule.api.statsInsights).mockResolvedValue(mockInsights);
+    vi.mocked(apiModule.api.listProjects).mockResolvedValue({ items: [] });
   });
 
   afterEach(() => cleanup());
@@ -153,5 +156,35 @@ describe('DashboardView', () => {
     expect(screen.getByText('Focus pattern')).toBeDefined();
     expect(screen.getByText('Personal records')).toBeDefined();
     expect(screen.queryByText('Top queries')).toBeNull();
+  });
+
+  it('opens a project from the action queue', async () => {
+    const onOpenProject = vi.fn();
+    vi.mocked(apiModule.api.listProjects).mockResolvedValue({
+      items: [
+        {
+          id: 'p1',
+          projectKey: '/home/u/video',
+          status: 'unprofiled',
+          coveredBy: null,
+          name: null,
+          description: null,
+          roots: [],
+          artifactShapes: [],
+          evidenceSummary: [],
+          notes: null,
+          needsHumanAttention: false,
+          attentionReasons: [],
+          firstSeenAt: 1,
+          lastSeenAt: 2,
+          profiledAt: null,
+          updatedAt: 2,
+        },
+      ],
+    });
+    render(<DashboardView {...defaultProps} onOpenProject={onOpenProject} />);
+    await waitFor(() => screen.getByText('video'));
+    fireEvent.click(screen.getByText('video'));
+    expect(onOpenProject).toHaveBeenCalledWith('p1');
   });
 });

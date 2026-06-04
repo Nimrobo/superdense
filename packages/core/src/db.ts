@@ -16,6 +16,11 @@ export function getDb(): Database.Database {
   const db = new Database(DB_PATH);
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
+  // Conductor runs many agents in parallel against one DB. WAL lets readers and
+  // writers coexist, but concurrent writers still serialize; without a busy
+  // timeout the loser throws SQLITE_BUSY ("database is locked") immediately.
+  // Wait for a held lock instead of failing.
+  db.pragma('busy_timeout = 5000');
   db.function('REGEXP', { deterministic: true }, (pattern: unknown, value: unknown) => {
     if (value == null || pattern == null) return 0;
     try {
@@ -27,6 +32,35 @@ export function getDb(): Database.Database {
   migrate(db);
   dbInstance = db;
   return db;
+}
+
+/**
+ * Run a DB write and retry on SQLITE_BUSY. `busy_timeout` already makes a writer
+ * wait for a held lock, but a DEFERRED transaction that upgrades a read lock to a
+ * write lock while another writer holds it gets SQLITE_BUSY_SNAPSHOT immediately,
+ * ignoring the timeout. A few short synchronous backoffs clear that race under
+ * Conductor's parallel agents. Each backoff carries jitter so colliding writers
+ * don't re-collide on identical delays (thundering herd). The wrapped work must be
+ * atomic (a transaction), so a retry re-runs cleanly.
+ */
+export function withDbRetry<T>(fn: () => T, attempts = 5): T {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      return fn();
+    } catch (err) {
+      const code = (err as { code?: unknown }).code;
+      if (typeof code === 'string' && code.startsWith('SQLITE_BUSY') && attempt < attempts - 1) {
+        lastErr = err;
+        // better-sqlite3 is synchronous; sleep synchronously before retrying.
+        const backoffMs = 20 * (attempt + 1) + Math.floor(Math.random() * 20);
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, backoffMs);
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr;
 }
 
 /** Test-only: reset the cached instance so a fresh :memory: DB can be opened. */
@@ -133,6 +167,43 @@ function migrate(db: Database.Database): void {
   if (currentVersion < 4) {
     runDataMigrationV4(db);
     db.pragma('user_version = 4');
+  }
+  // V5 is still under development. Reconcile its schema on every open so
+  // pre-release databases already marked as V5 receive later V5 additions.
+  runDataMigrationV5(db);
+  if (currentVersion < 5) {
+    db.pragma('user_version = 5');
+  }
+  // V6 is reconciled on every open for the same reason as V5: development
+  // databases may already carry user_version=6 while the shape is evolving.
+  runDataMigrationV6(db, currentVersion < 6);
+  if (currentVersion < 6) {
+    db.pragma('user_version = 6');
+  }
+  // V7 folds Layer 3B artifact finalization onto work_thread (no new tables).
+  // Reconciled on every open for the same reason as V5/V6.
+  runDataMigrationV7(db);
+  if (currentVersion < 7) {
+    db.pragma('user_version = 7');
+  }
+  // V8 adds Layer 4 externalization reconciliation. The assessment is folded
+  // onto work_thread while connector-specific targets remain child rows.
+  runDataMigrationV8(db);
+  if (currentVersion < 8) {
+    db.pragma('user_version = 8');
+  }
+  // V9 adds Layer 4 reward collection: an append-only multidimensional reward
+  // snapshot time series anchored on linked externalization targets. Superdense
+  // never runs connectors; agents report snapshots.
+  runDataMigrationV9(db);
+  if (currentVersion < 9) {
+    db.pragma('user_version = 9');
+  }
+  // V10 adds an explicit ready queue and makes lineage append-only evidence
+  // with a fast effective-membership projection.
+  runDataMigrationV10(db);
+  if (currentVersion < 10) {
+    db.pragma('user_version = 10');
   }
 
   ensureSystemRun(db);
@@ -270,6 +341,305 @@ function runDataMigrationV4(db: Database.Database): void {
   tx();
 }
 
+function runDataMigrationV5(db: Database.Database): void {
+  const tx = db.transaction(() => {
+    // session_file: per-session write/read footprint. path_rel (pwd-relativized)
+    // is the clustering key and is indexed for inverse lookups (file -> sessions).
+    if (!tableExists(db, 'session_file')) {
+      db.exec(`
+        CREATE TABLE session_file (
+          session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+          path_rel   TEXT NOT NULL,
+          path_abs   TEXT NOT NULL,
+          role       TEXT NOT NULL,
+          writes     INTEGER NOT NULL DEFAULT 0,
+          reads      INTEGER NOT NULL DEFAULT 0,
+          ops        TEXT,
+          first_ts   INTEGER,
+          last_ts    INTEGER,
+          PRIMARY KEY (session_id, path_rel)
+        );
+      `);
+    }
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_session_file_path ON session_file(path_rel);
+      CREATE INDEX IF NOT EXISTS idx_session_file_session ON session_file(session_id);
+    `);
+    // plan_refs: named-plan anchor. plan_slug is indexed for inverse lookups
+    // (slug -> sessions sharing that plan = one artifact).
+    if (!tableExists(db, 'plan_refs')) {
+      db.exec(`
+        CREATE TABLE plan_refs (
+          session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+          plan_slug  TEXT NOT NULL,
+          kind       TEXT NOT NULL,
+          PRIMARY KEY (session_id, plan_slug, kind)
+        );
+      `);
+    }
+    db.exec('CREATE INDEX IF NOT EXISTS idx_plan_refs_slug ON plan_refs(plan_slug);');
+    if (!tableExists(db, 'project_profile')) {
+      db.exec(`
+        CREATE TABLE project_profile (
+          id                    TEXT PRIMARY KEY,
+          project_key           TEXT UNIQUE NOT NULL,
+          status                TEXT NOT NULL,
+          covered_by            TEXT REFERENCES project_profile(id),
+          name                  TEXT,
+          description           TEXT,
+          roots                 TEXT NOT NULL DEFAULT '[]',
+          artifact_shapes       TEXT NOT NULL DEFAULT '[]',
+          evidence_summary      TEXT NOT NULL DEFAULT '[]',
+          notes                 TEXT,
+          needs_human_attention INTEGER NOT NULL DEFAULT 0,
+          attention_reasons     TEXT NOT NULL DEFAULT '[]',
+          first_seen_at         INTEGER NOT NULL,
+          last_seen_at          INTEGER NOT NULL,
+          profiled_at           INTEGER,
+          updated_at            INTEGER NOT NULL
+        );
+      `);
+    }
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_project_profile_status
+        ON project_profile(status, needs_human_attention, last_seen_at);
+      CREATE INDEX IF NOT EXISTS idx_project_profile_covered_by
+        ON project_profile(covered_by);
+    `);
+
+    const now = Date.now();
+    db.prepare(
+      `INSERT OR IGNORE INTO project_profile (
+         id, project_key, status, first_seen_at, last_seen_at, updated_at
+       )
+       SELECT lower(hex(randomblob(16))), project_key, 'unprofiled',
+              COALESCE(MIN(created_at), MIN(modified_at), @now),
+              COALESCE(MAX(modified_at), MAX(created_at), @now),
+              @now
+         FROM sessions
+        WHERE project_key IS NOT NULL AND project_key != ''
+        GROUP BY project_key`,
+    ).run({ now });
+  });
+  tx();
+}
+
+function runDataMigrationV6(db: Database.Database, backfillHistoricalRevisions: boolean): void {
+  const tx = db.transaction(() => {
+    if (!columnExists(db, 'sessions', 'curation_status')) {
+      db.exec("ALTER TABLE sessions ADD COLUMN curation_status TEXT NOT NULL DEFAULT 'pending';");
+    }
+    if (!columnExists(db, 'sessions', 'curated_revision')) {
+      db.exec('ALTER TABLE sessions ADD COLUMN curated_revision TEXT;');
+    }
+    if (!columnExists(db, 'sessions', 'curated_at')) {
+      db.exec('ALTER TABLE sessions ADD COLUMN curated_at INTEGER;');
+    }
+    if (!columnExists(db, 'sessions', 'curation_note')) {
+      db.exec('ALTER TABLE sessions ADD COLUMN curation_note TEXT;');
+    }
+    if (!columnExists(db, 'sessions', 'curation_priority_at')) {
+      db.exec('ALTER TABLE sessions ADD COLUMN curation_priority_at INTEGER;');
+    }
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_sessions_curation
+        ON sessions(curation_status, curation_priority_at, modified_at);
+
+      CREATE TABLE IF NOT EXISTS pending_session_marker (
+        session_id TEXT PRIMARY KEY,
+        marked_at  INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS work_thread (
+        id                 TEXT PRIMARY KEY,
+        project_profile_id TEXT NOT NULL REFERENCES project_profile(id),
+        provisional_title  TEXT NOT NULL,
+        summary            TEXT,
+        status             TEXT NOT NULL DEFAULT 'open',
+        created_at         INTEGER NOT NULL,
+        updated_at         INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_work_thread_project
+        ON work_thread(project_profile_id, updated_at);
+
+      CREATE TABLE IF NOT EXISTS work_thread_session (
+        thread_id  TEXT NOT NULL REFERENCES work_thread(id) ON DELETE CASCADE,
+        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        role       TEXT NOT NULL,
+        rationale  TEXT,
+        PRIMARY KEY (thread_id, session_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_work_thread_session_session
+        ON work_thread_session(session_id);
+    `);
+
+    // Rows that predate the inbox are historical backlog. Recording a baseline
+    // revision lets inbox assembly place them after newly discovered sessions.
+    if (backfillHistoricalRevisions) {
+      db.exec(`
+        UPDATE sessions
+           SET curated_revision = json_array(file_mtime, modified_at, message_count)
+         WHERE curated_revision IS NULL
+      `);
+    }
+  });
+  tx();
+}
+
+// Layer 3B folds artifact finalization onto work_thread: a finalized thread is
+// the artifact, its lineage is the existing work_thread_session rows. Only three
+// nullable columns are added; no new tables.
+function runDataMigrationV7(db: Database.Database): void {
+  const tx = db.transaction(() => {
+    if (!columnExists(db, 'work_thread', 'artifact_type')) {
+      db.exec('ALTER TABLE work_thread ADD COLUMN artifact_type TEXT;');
+    }
+    if (!columnExists(db, 'work_thread', 'payload')) {
+      db.exec('ALTER TABLE work_thread ADD COLUMN payload TEXT;');
+    }
+    if (!columnExists(db, 'work_thread', 'artifact_finalized_at')) {
+      db.exec('ALTER TABLE work_thread ADD COLUMN artifact_finalized_at INTEGER;');
+    }
+    db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_work_thread_artifact
+         ON work_thread(artifact_type, project_profile_id);`,
+    );
+  });
+  tx();
+}
+
+function runDataMigrationV8(db: Database.Database): void {
+  const tx = db.transaction(() => {
+    if (!columnExists(db, 'work_thread', 'externalization_status')) {
+      db.exec('ALTER TABLE work_thread ADD COLUMN externalization_status TEXT;');
+    }
+    if (!columnExists(db, 'work_thread', 'externalization_evidence')) {
+      db.exec('ALTER TABLE work_thread ADD COLUMN externalization_evidence TEXT;');
+    }
+    if (!columnExists(db, 'work_thread', 'externalization_updated_at')) {
+      db.exec('ALTER TABLE work_thread ADD COLUMN externalization_updated_at INTEGER;');
+    }
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_work_thread_externalization
+        ON work_thread(externalization_status, artifact_finalized_at);
+
+      CREATE TABLE IF NOT EXISTS externalization_target (
+        id          TEXT PRIMARY KEY,
+        artifact_id TEXT NOT NULL REFERENCES work_thread(id) ON DELETE CASCADE,
+        connector   TEXT NOT NULL,
+        status      TEXT NOT NULL CHECK (
+          status IN ('linked', 'needs_connector', 'not_found', 'ambiguous')
+        ),
+        locator     TEXT,
+        evidence    TEXT,
+        created_at  INTEGER NOT NULL,
+        updated_at  INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_externalization_target_artifact
+        ON externalization_target(artifact_id, status);
+      CREATE INDEX IF NOT EXISTS idx_externalization_target_connector
+        ON externalization_target(connector, status);
+    `);
+  });
+  tx();
+}
+
+function runDataMigrationV9(db: Database.Database): void {
+  const tx = db.transaction(() => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS reward_snapshot (
+        id          TEXT PRIMARY KEY,
+        target_id   TEXT NOT NULL REFERENCES externalization_target(id) ON DELETE CASCADE,
+        captured_at INTEGER NOT NULL,
+        metrics     TEXT NOT NULL,
+        primary_dim TEXT,
+        source      TEXT,
+        evidence    TEXT,
+        created_at  INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_reward_snapshot_target
+        ON reward_snapshot(target_id, captured_at);
+    `);
+  });
+  tx();
+}
+
+function runDataMigrationV10(db: Database.Database): void {
+  const tx = db.transaction(() => {
+    if (!columnExists(db, 'work_thread', 'ready_at')) {
+      db.exec('ALTER TABLE work_thread ADD COLUMN ready_at INTEGER;');
+    }
+    if (!columnExists(db, 'work_thread', 'readiness_rationale')) {
+      db.exec('ALTER TABLE work_thread ADD COLUMN readiness_rationale TEXT;');
+    }
+    if (!columnExists(db, 'work_thread', 'predecessor_artifact_id')) {
+      db.exec(
+        'ALTER TABLE work_thread ADD COLUMN predecessor_artifact_id TEXT REFERENCES work_thread(id);',
+      );
+    }
+    db.exec(`
+      UPDATE work_thread
+         SET status = 'ready',
+             ready_at = COALESCE(ready_at, updated_at),
+             readiness_rationale = COALESCE(
+               readiness_rationale,
+               CASE status
+                 WHEN 'finalized' THEN 'Migrated from pre-V10 finalized thread'
+                 ELSE 'Migrated from pre-release V10 ready thread'
+               END
+             )
+       WHERE status IN ('finalized', 'ready')
+         AND artifact_type IS NULL;
+
+      CREATE TABLE IF NOT EXISTS work_thread_lineage_event (
+        id          TEXT PRIMARY KEY,
+        thread_id   TEXT NOT NULL REFERENCES work_thread(id) ON DELETE CASCADE,
+        session_id  TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        event_type  TEXT NOT NULL CHECK (event_type IN ('attach', 'retract')),
+        role        TEXT NOT NULL CHECK (role IN ('contributor', 'evidence')),
+        rationale   TEXT,
+        created_at  INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_work_thread_lineage_event_thread
+        ON work_thread_lineage_event(thread_id, created_at, id);
+      CREATE INDEX IF NOT EXISTS idx_work_thread_lineage_event_session
+        ON work_thread_lineage_event(session_id, created_at);
+
+      DROP TABLE IF EXISTS work_thread_frontier;
+    `);
+
+    // Existing memberships predate the event stream. Give each one a
+    // deterministic synthetic attach event only when no audited event exists.
+    // Remove duplicates created by the earlier pre-release reconciliation.
+    db.exec(`
+      DELETE FROM work_thread_lineage_event AS synthetic
+       WHERE synthetic.id = 'v10-backfill:' || synthetic.thread_id || ':' || synthetic.session_id
+         AND EXISTS (
+           SELECT 1
+             FROM work_thread_lineage_event AS audited
+            WHERE audited.thread_id = synthetic.thread_id
+              AND audited.session_id = synthetic.session_id
+              AND audited.id != synthetic.id
+         );
+
+      INSERT OR IGNORE INTO work_thread_lineage_event (
+        id, thread_id, session_id, event_type, role, rationale, created_at
+      )
+      SELECT 'v10-backfill:' || thread_id || ':' || session_id,
+             thread_id, session_id, 'attach', role,
+             'Backfilled from pre-V10 effective lineage', 0
+        FROM work_thread_session AS membership
+       WHERE NOT EXISTS (
+         SELECT 1
+           FROM work_thread_lineage_event AS event
+          WHERE event.thread_id = membership.thread_id
+            AND event.session_id = membership.session_id
+       );
+    `);
+  });
+  tx();
+}
+
 function ensureSystemRun(db: Database.Database): void {
   const now = Date.now();
   db.prepare(
@@ -284,6 +654,7 @@ export function _migrateForTests(db: Database.Database): void {
 
 export function upsertSession(s: Session): void {
   const db = getDb();
+  const projectKey = resolveProjectKey(s.pwd);
   db.prepare(
     `
     INSERT INTO sessions (
@@ -319,7 +690,7 @@ export function upsertSession(s: Session): void {
     sessionId: s.sessionId,
     logPath: s.logPath,
     pwd: s.pwd,
-    projectKey: resolveProjectKey(s.pwd),
+    projectKey,
     firstPrompt: s.firstPrompt ?? null,
     summary: s.summary ?? null,
     messageCount: s.messageCount ?? null,
@@ -332,6 +703,39 @@ export function upsertSession(s: Session): void {
     fileMtime: s.fileMtime ?? null,
     lastIndexedAt: s.lastIndexedAt ?? null,
   });
+  registerObservedProject(projectKey, s.modifiedAt ?? s.createdAt ?? Date.now());
+}
+
+/** Register a conservatively detected project without overwriting agent profile data. */
+export function registerObservedProject(projectKey: string, observedAt = Date.now()): string {
+  if (!projectKey) throw new Error('project key is required');
+  const db = getDb();
+  const existing = db
+    .prepare('SELECT id FROM project_profile WHERE project_key = ?')
+    .get(projectKey) as { id: string } | undefined;
+  if (existing) {
+    const update = db.prepare(
+      `UPDATE project_profile
+          SET last_seen_at = MAX(last_seen_at, ?)
+        WHERE id = ?`,
+    );
+    const parent = db.prepare('SELECT covered_by FROM project_profile WHERE id = ?');
+    const visited = new Set<string>();
+    let id: string | null = existing.id;
+    while (id && !visited.has(id)) {
+      visited.add(id);
+      update.run(observedAt, id);
+      id = (parent.get(id) as { covered_by: string | null } | undefined)?.covered_by ?? null;
+    }
+    return existing.id;
+  }
+  const id = randomUUID();
+  db.prepare(
+    `INSERT INTO project_profile (
+       id, project_key, status, first_seen_at, last_seen_at, updated_at
+     ) VALUES (?, ?, 'unprofiled', ?, ?, ?)`,
+  ).run(id, projectKey, observedAt, observedAt, Date.now());
+  return id;
 }
 
 export interface SessionFilter {
@@ -1085,6 +1489,82 @@ export function listSessionEnrichments(
       computedAt: row.computed_at,
     };
   });
+}
+
+// ---- session_file / plan_refs (the Layer-1 join surface, projected from enrichments)
+
+export interface SessionFileInput {
+  pathRel: string;
+  pathAbs: string;
+  role: string;
+  writes: number;
+  reads: number;
+  ops: Record<string, number>;
+  firstTs: number | null;
+  lastTs: number | null;
+}
+
+export interface PlanRefInput {
+  slug: string;
+  kind: string;
+}
+
+/** Replace a session's write/read footprint atomically (delete-then-insert). */
+export function replaceSessionFiles(sessionId: string, files: SessionFileInput[]): void {
+  const db = getDb();
+  const tx = db.transaction(() => {
+    db.prepare('DELETE FROM session_file WHERE session_id = ?').run(sessionId);
+    const insert = db.prepare(
+      `INSERT OR REPLACE INTO session_file
+         (session_id, path_rel, path_abs, role, writes, reads, ops, first_ts, last_ts)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    for (const f of files) {
+      insert.run(
+        sessionId,
+        f.pathRel,
+        f.pathAbs,
+        f.role,
+        f.writes,
+        f.reads,
+        JSON.stringify(f.ops ?? {}),
+        f.firstTs,
+        f.lastTs,
+      );
+    }
+  });
+  tx();
+}
+
+/** Replace a session's plan references atomically (delete-then-insert). */
+export function replacePlanRefs(sessionId: string, refs: PlanRefInput[]): void {
+  const db = getDb();
+  const tx = db.transaction(() => {
+    db.prepare('DELETE FROM plan_refs WHERE session_id = ?').run(sessionId);
+    const insert = db.prepare(
+      'INSERT OR IGNORE INTO plan_refs (session_id, plan_slug, kind) VALUES (?, ?, ?)',
+    );
+    for (const r of refs) insert.run(sessionId, r.slug, r.kind);
+  });
+  tx();
+}
+
+/** Inverse lookup: which sessions touched this pwd-relative path. */
+export function sessionsByPathRel(pathRel: string): string[] {
+  return (
+    getDb()
+      .prepare('SELECT session_id FROM session_file WHERE path_rel = ?')
+      .all(pathRel) as Array<{ session_id: string }>
+  ).map((r) => r.session_id);
+}
+
+/** Inverse lookup: which sessions reference this plan slug. */
+export function sessionsByPlanSlug(slug: string): string[] {
+  return (
+    getDb()
+      .prepare('SELECT DISTINCT session_id FROM plan_refs WHERE plan_slug = ?')
+      .all(slug) as Array<{ session_id: string }>
+  ).map((r) => r.session_id);
 }
 
 export interface InsightRunRow {
