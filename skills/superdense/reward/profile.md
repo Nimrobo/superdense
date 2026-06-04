@@ -41,7 +41,7 @@ Profile one detected Superdense project. This is a local, structural description
 
 ## Artifact Shapes
 
-Before choosing `artifactShapes[].type`, consult `reward/artifact-types.md`. Artifact type is a cohort-normalization guide, not an enum: reuse a common type when it fits, and create a project-specific lower-kebab type only when the common types would make comparison misleading.
+Before choosing `artifactShapes[].type`, run `superdense reward docs artifacts`. Artifact type is a cohort-normalization guide, not an enum: reuse a common type when it fits, and create a project-specific lower-kebab type only when the common types would make comparison misleading.
 
 Use an open artifact type name and one strict local detector:
 

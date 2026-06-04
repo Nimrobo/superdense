@@ -205,6 +205,7 @@ const rewardStatus: core.RewardStatus = {
 const originalClaudeSkillsDir = process.env.CLAUDE_SKILLS_DIR;
 const originalCodexSkillsDir = process.env.CODEX_SKILLS_DIR;
 const originalSkipUpdateCheck = process.env.SUPERDENSE_SKIP_UPDATE_CHECK;
+const originalDocsBaseUrl = process.env.SUPERDENSE_DOCS_BASE_URL;
 const originalCwd = process.cwd();
 const originalStdinIsTty = Object.getOwnPropertyDescriptor(process.stdin, 'isTTY');
 const tempRoots: string[] = [];
@@ -261,6 +262,7 @@ beforeEach(() => {
   delete process.env.CLAUDE_SKILLS_DIR;
   delete process.env.CODEX_SKILLS_DIR;
   delete process.env.SUPERDENSE_SKIP_UPDATE_CHECK;
+  delete process.env.SUPERDENSE_DOCS_BASE_URL;
   vi.mocked(core.getSession).mockReturnValue(session);
   vi.mocked(core.getSessionChildren).mockReturnValue([]);
   vi.mocked(core.getSessionTree).mockReturnValue({
@@ -433,6 +435,8 @@ afterEach(() => {
   else process.env.CODEX_SKILLS_DIR = originalCodexSkillsDir;
   if (originalSkipUpdateCheck == null) delete process.env.SUPERDENSE_SKIP_UPDATE_CHECK;
   else process.env.SUPERDENSE_SKIP_UPDATE_CHECK = originalSkipUpdateCheck;
+  if (originalDocsBaseUrl == null) delete process.env.SUPERDENSE_DOCS_BASE_URL;
+  else process.env.SUPERDENSE_DOCS_BASE_URL = originalDocsBaseUrl;
   if (originalStdinIsTty) Object.defineProperty(process.stdin, 'isTTY', originalStdinIsTty);
   else delete (process.stdin as Partial<typeof process.stdin>).isTTY;
 });
@@ -1091,6 +1095,93 @@ describe('superdense cli agent commands', () => {
 
     expect(core.getRewardStatus).toHaveBeenCalledWith({ projectId: 'p1' });
     expect(json(out.stdout[0]!)).toEqual(rewardStatus);
+  });
+
+  it('fetches live reward artifact docs from the default base URL', async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => '# Artifact docs',
+    } as Response);
+    const out = io();
+
+    await runCli(['reward', 'docs', 'artifacts'], out.io);
+
+    expect(fetch).toHaveBeenCalledWith(
+      'https://www.nimroboai.com/docs/reward/artifacts',
+      expect.objectContaining({
+        headers: { accept: 'text/markdown, text/plain;q=0.9, */*;q=0.1' },
+      }),
+    );
+    expect(out.stdout).toEqual(['# Artifact docs']);
+  });
+
+  it('fetches live reward connector docs using slash routes and an overridable base URL', async () => {
+    process.env.SUPERDENSE_DOCS_BASE_URL = 'https://docs.test/reward/';
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => 'connector docs',
+    } as Response);
+
+    const artifactOut = io();
+    await runCli(['reward', 'docs', 'connectors', '--artifact', 'post'], artifactOut.io);
+    expect(fetch).toHaveBeenLastCalledWith(
+      'https://docs.test/reward/artifacts/post/connectors',
+      expect.any(Object),
+    );
+    expect(artifactOut.stdout).toEqual(['connector docs']);
+
+    const usageOut = io();
+    await runCli(['reward', 'docs', 'connectors', '--connector', 'x'], usageOut.io);
+    expect(fetch).toHaveBeenLastCalledWith(
+      'https://docs.test/reward/connectors/x/usage',
+      expect.any(Object),
+    );
+    expect(usageOut.stdout).toEqual(['connector docs']);
+
+    const installOut = io();
+    await runCli(
+      ['reward', 'docs', 'connectors', '--connector', 'x', '--section', 'install'],
+      installOut.io,
+    );
+    expect(fetch).toHaveBeenLastCalledWith(
+      'https://docs.test/reward/connectors/x/install',
+      expect.any(Object),
+    );
+    expect(installOut.stdout).toEqual(['connector docs']);
+  });
+
+  it('validates reward connector doc selectors and sections', async () => {
+    await expect(runCli(['reward', 'docs', 'connectors'], io().io)).rejects.toThrow(
+      'reward docs connectors requires exactly one of --artifact or --connector',
+    );
+
+    await expect(
+      runCli(
+        ['reward', 'docs', 'connectors', '--artifact', 'post', '--connector', 'x'],
+        io().io,
+      ),
+    ).rejects.toThrow('reward docs connectors requires exactly one of --artifact or --connector');
+
+    await expect(
+      runCli(
+        ['reward', 'docs', 'connectors', '--connector', 'x', '--section', 'setup'],
+        io().io,
+      ),
+    ).rejects.toThrow(
+      "reward docs connectors --section must be 'usage', 'install', or 'troubleshoot'",
+    );
+
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('surfaces reward docs fetch failures with the attempted URL and connectivity hint', async () => {
+    vi.mocked(fetch).mockRejectedValue(new Error('offline'));
+
+    await expect(runCli(['reward', 'docs', 'artifacts'], io().io)).rejects.toThrow(
+      'reward docs unavailable: https://www.nimroboai.com/docs/reward/artifacts (offline) - check your connection',
+    );
   });
 
   it('throws intended errors for missing query, session, and compactor', async () => {

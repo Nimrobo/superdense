@@ -89,8 +89,12 @@ import open from 'open';
 
 const CLI_PACKAGE_NAME = '@nimrobo/superdense';
 const NPM_REGISTRY_PACKAGE_URL = `https://registry.npmjs.org/${CLI_PACKAGE_NAME.replace('/', '%2f')}`;
+const DEFAULT_REWARD_DOCS_BASE_URL = 'https://www.nimroboai.com/docs/reward';
 const SKIP_UPDATE_CHECK_ENV = 'SUPERDENSE_SKIP_UPDATE_CHECK';
 const REQUIRED_STUDIO_SKILLS = ['superdense', 'chain'];
+const REWARD_DOC_SECTIONS = ['usage', 'install', 'troubleshoot'] as const;
+
+type RewardDocSection = (typeof REWARD_DOC_SECTIONS)[number];
 
 interface CliIo {
   stdout: Pick<typeof console, 'log'>;
@@ -862,12 +866,87 @@ async function handleExternalization(
   throw new Error(`unknown externalization command: ${args.join(' ') || '(none)'}`);
 }
 
+function rewardDocsBaseUrl(): string {
+  const base =
+    typeof process.env.SUPERDENSE_DOCS_BASE_URL === 'string' &&
+    process.env.SUPERDENSE_DOCS_BASE_URL.trim() !== ''
+      ? process.env.SUPERDENSE_DOCS_BASE_URL.trim()
+      : DEFAULT_REWARD_DOCS_BASE_URL;
+  return base.replace(/\/+$/, '');
+}
+
+function rewardDocsPath(...segments: string[]): string {
+  return `/${segments.map((segment) => encodeURIComponent(segment)).join('/')}`;
+}
+
+function isRewardDocSection(value: string): value is RewardDocSection {
+  return REWARD_DOC_SECTIONS.includes(value as RewardDocSection);
+}
+
+async function fetchRewardDocs(path: string): Promise<string> {
+  const url = `${rewardDocsBaseUrl()}${path}`;
+  try {
+    const response = await fetch(url, {
+      headers: { accept: 'text/markdown, text/plain;q=0.9, */*;q=0.1' },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) {
+      const statusText = response.statusText ? ` ${response.statusText}` : '';
+      throw new Error(`HTTP ${response.status}${statusText}`);
+    }
+    return await response.text();
+  } catch (err) {
+    throw new Error(
+      `reward docs unavailable: ${url} (${err instanceof Error ? err.message : String(err)}) - check your connection`,
+    );
+  }
+}
+
+async function handleRewardDocs(
+  args: string[],
+  flags: Record<string, string | boolean>,
+  io: CliIo,
+): Promise<boolean> {
+  const action = args[0];
+  if (action === 'artifacts') {
+    io.stdout.log(await fetchRewardDocs(rewardDocsPath('artifacts')));
+    return true;
+  }
+
+  if (action === 'connectors') {
+    const artifact = typeof flags.artifact === 'string' ? flags.artifact : undefined;
+    const connector = typeof flags.connector === 'string' ? flags.connector : undefined;
+    if ((artifact ? 1 : 0) + (connector ? 1 : 0) !== 1) {
+      throw new Error('reward docs connectors requires exactly one of --artifact or --connector');
+    }
+
+    if (artifact) {
+      io.stdout.log(await fetchRewardDocs(rewardDocsPath('artifacts', artifact, 'connectors')));
+      return true;
+    }
+
+    const section = typeof flags.section === 'string' ? flags.section : 'usage';
+    if (!isRewardDocSection(section)) {
+      throw new Error(
+        "reward docs connectors --section must be 'usage', 'install', or 'troubleshoot'",
+      );
+    }
+    io.stdout.log(await fetchRewardDocs(rewardDocsPath('connectors', connector!, section)));
+    return true;
+  }
+
+  throw new Error(`unknown reward docs command: ${args.join(' ') || '(none)'}`);
+}
+
 async function handleReward(
   args: string[],
   flags: Record<string, string | boolean>,
   io: CliIo,
 ): Promise<boolean> {
   const action = args[0];
+  if (action === 'docs') {
+    return handleRewardDocs(args.slice(1), flags, io);
+  }
   if (action === 'record') {
     printJson(recordRewardSnapshot(await readJsonObject(flags.input, 'input')), io);
     return true;
@@ -1469,6 +1548,9 @@ export async function runCli(
         '  reward record --input <json|@file>  Record one multidimensional reward snapshot for a linked target',
         '  reward show <artifact-id>  Show latest reward snapshot and series per linked target',
         '  reward status       Show reward-layer punch-list and next action [--project <id>]',
+        '  reward docs artifacts  Fetch live reward artifact guidance markdown',
+        '  reward docs connectors --artifact <type>  Fetch live connector guidance for an artifact type',
+        '  reward docs connectors --connector <name> [--section usage|install|troubleshoot]',
         '  cohort list         List comparable peer cohorts [--project <id>] [--by type|connector]',
         '  cohort show <type>  Surface a cohort for comparison [--connector <c>] [--project <id>]',
         '  cohort chains       List version chains (a deliverable across versions) [--project <id>]',

@@ -18,7 +18,7 @@ Process the Layer 4 inbox: decide whether finalized artifacts stayed internal or
    superdense curation context <root-session-id>
    ```
 
-   Decide whether the artifact remained internal or infer each external connector it needs. Consult `reward/connectors.md` for common connector labels, locator formats, and evidence standards. The `connector` value is a free-text platform label you choose, such as `github`, `npm`, `x`, `youtube`, or `substack`; it is not tied to any installed CLI. Do not mutate an external service, and do not attach matches found only through general web browsing. If indexed context is insufficient, follow the shared escalation policy in `reward/README.md`.
+   Decide whether the artifact remained internal or infer each external connector it needs. Run `superdense reward docs connectors --artifact <type>` for connector candidates, locator formats, and evidence standards for that artifact type. When a target is `needs_connector`, run `superdense reward docs connectors --connector <name> --section install` for installation or auth help. The `connector` value is a free-text platform label you choose, such as `github`, `npm`, `x`, `youtube`, or `substack`; it is not tied to a Superdense-installed CLI. Do not mutate an external service, and do not attach matches found only through general web browsing. If indexed context is insufficient, follow the shared escalation policy in `reward/README.md`.
 
 3. Replace the current assessment:
 

@@ -19,7 +19,7 @@ Process one bounded Layer 3B ready queue. Curation has already grouped sessions 
 
    If indexed context is insufficient, follow the shared escalation policy in `reward/README.md`.
 
-3. When the thread clearly represents one output, consult `reward/artifact-types.md`, choose an open-vocabulary `type`, a `title`, and a stable `payload`, then create the artifact:
+3. When the thread clearly represents one output, run `superdense reward docs artifacts`, choose an open-vocabulary `type`, a `title`, and a stable `payload`, then create the artifact:
 
    ```bash
    superdense artifact finalize --input '{"threadId":"<id>","type":"software-change","title":"...","payload":{"files":["src/x.ts"]}}'
