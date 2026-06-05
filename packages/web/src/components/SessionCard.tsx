@@ -22,6 +22,7 @@ export function SessionCard({ session, onClick, href }: SessionCardProps) {
   const messageCount = messageCountLabel(session.messageCount);
   const lastActive = formatRelativeTime(session.modifiedAt);
   const cost = formatCostLabel(session.sessionCost);
+  const workflow = session.workflowSummary?.hasWorkflow;
 
   const content = (
     <>
@@ -37,6 +38,7 @@ export function SessionCard({ session, onClick, href }: SessionCardProps) {
           ID {session.id}
         </span>
         {session.gitBranch && <span className="badge">{session.gitBranch}</span>}
+        {workflow && <span className="badge">workflow</span>}
         {messageCount && <span>{messageCount}</span>}
         {cost && <span className="badge cost-chip">{cost}</span>}
         {duration && <span>{duration}</span>}

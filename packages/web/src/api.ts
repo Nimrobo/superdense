@@ -12,6 +12,53 @@ export interface Session {
   createdAt?: number | null;
   modifiedAt?: number | null;
   sessionCost?: SessionCostValue | null;
+  workflowSummary?: WorkflowSummaryValue | null;
+}
+
+export interface WorkflowSummaryAgent {
+  agentId: string;
+  label?: string;
+  phaseTitle?: string;
+  phaseIndex?: number;
+  state?: string;
+  model?: string;
+  startedAt?: number;
+  durationMs?: number;
+  toolCalls?: number;
+  tokens?: number;
+  promptPreview?: string;
+  resultPreview?: string;
+}
+
+export interface WorkflowSummaryRun {
+  runId: string;
+  workflowName?: string;
+  status?: string;
+  agentCount?: number;
+  taskId?: string;
+  scriptPath?: string;
+  taskOutputPath?: string;
+  timestamp?: string;
+  startTime?: number;
+  durationMs?: number;
+  totalTokens?: number;
+  totalToolCalls?: number;
+  phases: Array<{ title?: string; detail?: string }>;
+  agents: WorkflowSummaryAgent[];
+}
+
+export interface WorkflowSummaryValue {
+  v: 1;
+  hasWorkflow: boolean;
+  workflowRunCount: number;
+  workflowToolCallCount: number;
+  workflowEnabled: boolean | null;
+  effort: string | null;
+  ultraEffort: boolean;
+  totalAgents: number;
+  totalTokens: number;
+  totalToolCalls: number;
+  runs: WorkflowSummaryRun[];
 }
 
 export type CostPricingStatus = 'estimated' | 'partial' | 'token_only';

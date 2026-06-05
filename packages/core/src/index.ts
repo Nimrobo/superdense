@@ -40,6 +40,11 @@ export type {
   SessionCostValue,
   TokenTotals,
 } from './enrichers/session-cost.js';
+export type {
+  WorkflowSummaryAgent,
+  WorkflowSummaryRun,
+  WorkflowSummaryValue,
+} from './enrichers/workflow-summary.js';
 export {
   listCompactors,
   registerCompactor,

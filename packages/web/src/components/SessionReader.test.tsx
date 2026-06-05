@@ -221,6 +221,57 @@ describe('SessionReader', () => {
     expect(screen.getByText('No summary yet.')).toBeInTheDocument();
   });
 
+  it('renders workflow summary metadata when present', async () => {
+    mockSession({
+      workflowSummary: {
+        v: 1,
+        hasWorkflow: true,
+        workflowRunCount: 1,
+        workflowToolCallCount: 1,
+        workflowEnabled: true,
+        effort: 'ultracode',
+        ultraEffort: true,
+        totalAgents: 11,
+        totalTokens: 356922,
+        totalToolCalls: 83,
+        runs: [
+          {
+            runId: 'wf_abc',
+            workflowName: 'reward-layer-comms-review',
+            status: 'completed',
+            agentCount: 11,
+            totalTokens: 356922,
+            totalToolCalls: 83,
+            phases: [{ title: 'Read', detail: 'read docs' }],
+            agents: [],
+          },
+        ],
+      },
+    });
+
+    await renderReader();
+    expect(screen.getByText('workflow')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Summary' }));
+
+    expect(screen.getByRole('heading', { name: 'Workflow' })).toBeInTheDocument();
+    expect(screen.getByText('ultracode')).toBeInTheDocument();
+    expect(screen.getByText('reward-layer-comms-review')).toBeInTheDocument();
+    expect(screen.getByText('completed')).toBeInTheDocument();
+    expect(screen.getAllByText('11 agents').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('356.9K tokens').length).toBeGreaterThan(0);
+  });
+
+  it('omits the workflow section when the session has no workflow summary', async () => {
+    mockSession({ workflowSummary: null });
+
+    await renderReader();
+    expect(screen.queryByText('workflow')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Summary' }));
+    expect(screen.queryByRole('heading', { name: 'Workflow' })).not.toBeInTheDocument();
+  });
+
   it('filters system events and tool calls without adapter-specific assumptions', async () => {
     mockTranscript([
       { role: 'system', text: 'system setup details' },

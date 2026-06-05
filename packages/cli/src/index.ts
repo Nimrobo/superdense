@@ -203,8 +203,20 @@ function serializeSession(
     curationNote: session.curationNote ?? null,
     curationPriorityAt: session.curationPriorityAt ?? null,
   };
+  const workflowSummary = getEnrichment(session.id, SYSTEM_RUN_ID, 'workflow_summary')?.value;
+  if (workflowSummaryHasWorkflow(workflowSummary)) {
+    out.workflowSummary = workflowSummary;
+  }
   if (opts.includePath) out.logPath = session.logPath;
   return out;
+}
+
+function workflowSummaryHasWorkflow(value: unknown): boolean {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    (value as { hasWorkflow?: unknown }).hasWorkflow === true
+  );
 }
 
 function serializeQueryMatch(

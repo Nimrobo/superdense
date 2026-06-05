@@ -35,6 +35,37 @@ interface IndexFile {
   entries: IndexEntry[];
 }
 
+interface WorkflowAgentProgress {
+  type?: string;
+  agentId?: string;
+  label?: string;
+  phaseIndex?: number;
+  phaseTitle?: string;
+  state?: string;
+  model?: string;
+  startedAt?: number;
+  durationMs?: number;
+  toolCalls?: number;
+  tokens?: number;
+  promptPreview?: string;
+  resultPreview?: string;
+}
+
+interface WorkflowRunFile {
+  runId?: string;
+  workflowName?: string;
+  status?: string;
+  agentCount?: number;
+  taskId?: string;
+  scriptPath?: string;
+  timestamp?: string;
+  startTime?: number;
+  durationMs?: number;
+  totalTokens?: number;
+  totalToolCalls?: number;
+  workflowProgress?: WorkflowAgentProgress[];
+}
+
 function toMs(s?: string): number | undefined {
   if (!s) return undefined;
   const t = Date.parse(s);
@@ -265,15 +296,15 @@ export const claudeCodeAdapter: Adapter = {
     for (const dir of projectDirs) {
       const projectPath = join(projectsDir, dir);
       const subagentsDir = join(projectPath, parentSessionId, 'subagents');
+      const pwdGuess = decodeProjectDir(dir);
+      const out: DiscoveredSubAgent[] = [];
+
       let agentFiles: string[];
       try {
         agentFiles = await readdir(subagentsDir);
       } catch {
-        continue;
+        agentFiles = [];
       }
-
-      const pwdGuess = decodeProjectDir(dir);
-      const out: DiscoveredSubAgent[] = [];
 
       for (const f of agentFiles) {
         if (!f.endsWith('.jsonl')) continue;
@@ -308,6 +339,74 @@ export const claudeCodeAdapter: Adapter = {
         });
       }
 
+      const workflowRuns = await readWorkflowRuns(projectPath, parentSessionId);
+      for (const run of workflowRuns) {
+        const workflowRunId = run.runId;
+        if (!workflowRunId) continue;
+        const workflowAgentsDir = join(subagentsDir, 'workflows', workflowRunId);
+        let workflowAgentFiles: string[];
+        try {
+          workflowAgentFiles = await readdir(workflowAgentsDir);
+        } catch {
+          continue;
+        }
+        const progressByAgent = new Map<string, WorkflowAgentProgress>();
+        for (const item of run.workflowProgress ?? []) {
+          if (item.type === 'workflow_agent' && item.agentId) {
+            progressByAgent.set(item.agentId, item);
+          }
+        }
+
+        for (const f of workflowAgentFiles) {
+          if (!f.endsWith('.jsonl')) continue;
+          const logPath = join(workflowAgentsDir, f);
+          let mtime: number | undefined;
+          try {
+            mtime = (await stat(logPath)).mtimeMs;
+          } catch {
+            continue;
+          }
+          const head = await scanJsonlHead(logPath);
+          const filenameAgentId = f.startsWith('agent-')
+            ? f.slice('agent-'.length, -'.jsonl'.length)
+            : f.slice(0, -'.jsonl'.length);
+          const agentId = head.agentId ?? filenameAgentId;
+          const progress = progressByAgent.get(agentId);
+          const metadata = compactObject({
+            workflowRunId,
+            workflowName: run.workflowName,
+            agentId,
+            label: progress?.label,
+            phaseTitle: progress?.phaseTitle,
+            phaseIndex: progress?.phaseIndex,
+            state: progress?.state,
+            model: progress?.model,
+            startedAt: progress?.startedAt,
+            durationMs: progress?.durationMs,
+            toolCalls: progress?.toolCalls,
+            tokens: progress?.tokens,
+            promptPreview: progress?.promptPreview,
+            resultPreview: progress?.resultPreview,
+          });
+          out.push({
+            session: {
+              sessionId: `${parentSessionId}:workflow-${workflowRunId}:agent-${agentId}`,
+              logPath,
+              pwd: head.cwd ?? pwdGuess,
+              firstPrompt: head.firstPrompt,
+              gitBranch: head.gitBranch,
+              createdAt: progress?.startedAt ?? mtime,
+              modifiedAt:
+                progress?.startedAt != null && progress.durationMs != null
+                  ? progress.startedAt + progress.durationMs
+                  : mtime,
+            },
+            relation: 'subagent',
+            metadata,
+          });
+        }
+      }
+
       if (out.length > 0) return out;
     }
 
@@ -322,6 +421,38 @@ export const claudeCodeAdapter: Adapter = {
     return statLogFile(session.logPath);
   },
 };
+
+async function readWorkflowRuns(
+  projectPath: string,
+  parentSessionId: string,
+): Promise<WorkflowRunFile[]> {
+  const workflowsDir = join(projectPath, parentSessionId, 'workflows');
+  let files: string[];
+  try {
+    files = await readdir(workflowsDir);
+  } catch {
+    return [];
+  }
+  const out: WorkflowRunFile[] = [];
+  for (const file of files) {
+    if (!file.endsWith('.json')) continue;
+    try {
+      const parsed = JSON.parse(await readFile(join(workflowsDir, file), 'utf8'));
+      if (parsed && typeof parsed === 'object') out.push(parsed as WorkflowRunFile);
+    } catch {
+      /* ignore malformed workflow metadata */
+    }
+  }
+  return out;
+}
+
+function compactObject(input: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (value != null) out[key] = value;
+  }
+  return out;
+}
 
 export async function statLogFile(logPath: string): Promise<number | undefined> {
   try {

@@ -25,6 +25,7 @@ import { sessionKindEnricher } from './session-kind.js';
 import { subagentSummaryEnricher } from './subagent-summary.js';
 import { toolCountsEnricher } from './tool-counts.js';
 import type { Enricher } from './types.js';
+import { workflowSummaryEnricher } from './workflow-summary.js';
 
 const BUILTINS: Enricher[] = [
   toolCountsEnricher,
@@ -36,6 +37,7 @@ const BUILTINS: Enricher[] = [
   activeDurationEnricher,
   planModeEnricher,
   sessionCostEnricher,
+  workflowSummaryEnricher,
   subagentSummaryEnricher,
   fileFootprintEnricher,
   planRefsEnricher,

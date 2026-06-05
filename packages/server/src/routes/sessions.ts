@@ -3,11 +3,13 @@ import {
   compactSession,
   countSessions,
   getCompactor,
+  getEnrichment,
   getSessionCost,
   getSessionCostValue,
   getSession,
   iterSessionEvents,
   listSessions,
+  SYSTEM_RUN_ID,
   type Session,
   type Compactor,
 } from '@nimrobo/superdense-core';
@@ -25,8 +27,23 @@ function isAllowedCompactorName(name: string): name is 'trace' | 'salience' {
   return name === 'trace' || name === 'salience';
 }
 
-function serializeSession(session: Session): Session & { sessionCost: unknown } {
-  return { ...session, sessionCost: getSessionCostValue(session.id) };
+function serializeSession(
+  session: Session,
+): Session & { sessionCost: unknown; workflowSummary: unknown } {
+  const workflowSummary = getEnrichment(session.id, SYSTEM_RUN_ID, 'workflow_summary')?.value;
+  return {
+    ...session,
+    sessionCost: getSessionCostValue(session.id),
+    workflowSummary: workflowSummaryHasWorkflow(workflowSummary) ? workflowSummary : null,
+  };
+}
+
+function workflowSummaryHasWorkflow(value: unknown): boolean {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    (value as { hasWorkflow?: unknown }).hasWorkflow === true
+  );
 }
 
 export async function registerSessionsRoutes(app: FastifyInstance): Promise<void> {

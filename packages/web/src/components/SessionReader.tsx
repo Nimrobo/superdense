@@ -136,6 +136,7 @@ function SessionHeader({ session, onBack }: { session: Session; onBack: () => vo
           </span>
           {session.gitBranch && <span>{session.gitBranch}</span>}
           <span>{session.agent}</span>
+          {session.workflowSummary?.hasWorkflow && <span>workflow</span>}
           {duration && <span>{duration}</span>}
           {messageCount && <span>{messageCount}</span>}
           {started && <span title={formatFullTime(session.createdAt)}>started {started}</span>}
@@ -332,9 +333,44 @@ function formatTokenCount(value: number): string {
 function SummaryTab({ session }: { session: Session }) {
   const firstPrompt = meaningfulPromptText(session.firstPrompt);
   const summary = session.summary?.trim();
+  const workflow = session.workflowSummary?.hasWorkflow ? session.workflowSummary : null;
 
   return (
     <div className="session-summary">
+      {workflow && (
+        <section className="session-summary-section">
+          <h3>Workflow</h3>
+          <div className="cost-grid">
+            <CostMetric label="Runs" value={String(workflow.workflowRunCount)} />
+            <CostMetric label="Agents" value={String(workflow.totalAgents)} />
+            <CostMetric label="Tokens" value={formatTokenCount(workflow.totalTokens)} />
+            <CostMetric label="Tool calls" value={String(workflow.totalToolCalls)} />
+            {workflow.effort && <CostMetric label="Effort" value={workflow.effort} />}
+            <CostMetric
+              label="Enabled"
+              value={
+                workflow.workflowEnabled == null
+                  ? 'unknown'
+                  : workflow.workflowEnabled
+                    ? 'yes'
+                    : 'no'
+              }
+            />
+          </div>
+          {workflow.runs.length > 0 && (
+            <div className="cost-list">
+              {workflow.runs.map((run) => (
+                <div className="cost-list-row" key={run.runId}>
+                  <span className="mono">{run.workflowName ?? run.runId}</span>
+                  <span>{run.status ?? 'unknown'}</span>
+                  <span>{run.agentCount ?? run.agents.length} agents</span>
+                  <span>{formatTokenCount(run.totalTokens ?? 0)} tokens</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
       {firstPrompt && (
         <section className="session-summary-section">
           <h3>First prompt</h3>
@@ -347,7 +383,9 @@ function SummaryTab({ session }: { session: Session }) {
           <div>{summary}</div>
         </section>
       )}
-      {!firstPrompt && !summary && <div className="session-summary-empty">No summary yet.</div>}
+      {!firstPrompt && !summary && !workflow && (
+        <div className="session-summary-empty">No summary yet.</div>
+      )}
       <details className="session-details-disclosure">
         <summary>Details</summary>
         <div className="session-detail-row">

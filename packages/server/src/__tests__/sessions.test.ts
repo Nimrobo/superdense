@@ -5,11 +5,13 @@ vi.mock('@nimrobo/superdense-core', () => ({
   compactSession: vi.fn(),
   countSessions: vi.fn(),
   getCompactor: vi.fn(),
+  getEnrichment: vi.fn(),
   getSession: vi.fn(),
   getSessionCost: vi.fn(),
   getSessionCostValue: vi.fn(),
   iterSessionEvents: vi.fn(),
   listSessions: vi.fn(),
+  SYSTEM_RUN_ID: 'system',
 }));
 
 import * as core from '@nimrobo/superdense-core';
@@ -56,6 +58,7 @@ beforeEach(() => {
   vi.mocked(core.countSessions).mockReturnValue(0);
   vi.mocked(core.listSessions).mockReturnValue([]);
   vi.mocked(core.getSession).mockReturnValue(session);
+  vi.mocked(core.getEnrichment).mockReturnValue(null);
   vi.mocked(core.getSessionCostValue).mockReturnValue(null);
   vi.mocked(core.getSessionCost).mockReturnValue({
     sessionId: session.id,
@@ -149,6 +152,59 @@ describe('sessions routes', () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ sessionCost: { estimatedCostUsd: 0.01 } });
+  });
+
+  it('decorates session responses with workflow summary when available', async () => {
+    vi.mocked(core.getEnrichment).mockReturnValue({
+      version: 1,
+      computedAt: 1,
+      value: {
+        v: 1,
+        hasWorkflow: true,
+        workflowRunCount: 1,
+        workflowToolCallCount: 1,
+        workflowEnabled: true,
+        effort: 'ultracode',
+        ultraEffort: true,
+        totalAgents: 11,
+        totalTokens: 356922,
+        totalToolCalls: 83,
+        runs: [],
+      },
+    });
+    const app = await buildApp();
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/sessions/unknown%3Asession-1',
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(core.getEnrichment).toHaveBeenCalledWith(
+      'unknown:session-1',
+      'system',
+      'workflow_summary',
+    );
+    expect(res.json()).toMatchObject({
+      workflowSummary: { hasWorkflow: true, totalAgents: 11, effort: 'ultracode' },
+    });
+  });
+
+  it('returns a null workflow summary when the enrichment has no workflow', async () => {
+    vi.mocked(core.getEnrichment).mockReturnValue({
+      version: 1,
+      computedAt: 1,
+      value: { v: 1, hasWorkflow: false, workflowRunCount: 0, runs: [] },
+    });
+    const app = await buildApp();
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/sessions/unknown%3Asession-1',
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ workflowSummary: null });
   });
 
   it('runs the trace compactor for a session', async () => {
