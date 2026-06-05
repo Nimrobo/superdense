@@ -11,6 +11,66 @@ export interface Session {
   gitBranch?: string | null;
   createdAt?: number | null;
   modifiedAt?: number | null;
+  sessionCost?: SessionCostValue | null;
+}
+
+export type CostPricingStatus = 'estimated' | 'partial' | 'token_only';
+
+export interface TokenTotals {
+  inputTokens: number;
+  cachedInputTokens: number;
+  cacheCreationInputTokens: number;
+  cacheCreation5mInputTokens: number;
+  cacheCreation1hInputTokens: number;
+  outputTokens: number;
+  reasoningOutputTokens: number;
+  totalTokens: number;
+}
+
+export interface SessionCostModelBreakdown {
+  provider: string;
+  model: string;
+  tokenTotals: TokenTotals;
+  estimatedCostUsd: number | null;
+  pricingStatus: CostPricingStatus;
+  usageEventCount: number;
+}
+
+export interface SessionCostValue {
+  v: 1;
+  kind: 'api_equivalent_estimate';
+  pricingCatalogVersion: string;
+  pricingSources: string[];
+  pricingStatus: CostPricingStatus;
+  estimatedCostUsd: number | null;
+  tokenTotals: TokenTotals;
+  modelBreakdown: SessionCostModelBreakdown[];
+  unpricedModels: string[];
+  usageEventCount: number;
+}
+
+export interface SessionCostAggregate {
+  estimatedCostUsd: number | null;
+  pricingStatus: CostPricingStatus;
+  tokenTotals: TokenTotals;
+  unpricedModels: string[];
+  sessionCount: number;
+  pricedSessionCount: number;
+}
+
+export interface SessionCostTreeChild {
+  sessionId: string;
+  relation: string;
+  self: SessionCostValue | null;
+  totalWithSubagents: SessionCostAggregate;
+  children?: SessionCostTreeChild[];
+}
+
+export interface SessionCostResult {
+  sessionId: string;
+  self: SessionCostValue | null;
+  directSubagents: SessionCostTreeChild[];
+  totalWithSubagents: SessionCostAggregate;
 }
 
 export interface TranscriptEvent {
@@ -410,6 +470,12 @@ export const api = {
     return j<{ items: Session[]; total: number }>(`/api/sessions?${sp}`);
   },
   getSession: (id: string) => j<Session>(`/api/sessions/${encodeURIComponent(id)}`),
+  getSessionCost: (id: string, opts: { tree?: boolean; depth?: number } = {}) => {
+    const sp = new URLSearchParams();
+    if (opts.tree) sp.set('tree', 'true');
+    if (opts.depth != null) sp.set('depth', String(opts.depth));
+    return j<SessionCostResult>(`/api/sessions/${encodeURIComponent(id)}/cost?${sp}`);
+  },
   getTranscript: (id: string, opts: { offset?: number; limit?: number } = {}) => {
     const sp = new URLSearchParams();
     if (opts.offset) sp.set('offset', String(opts.offset));

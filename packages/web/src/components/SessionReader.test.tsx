@@ -11,6 +11,7 @@ import { api, type Session, type SessionCompactorResponse, type TranscriptEvent 
 vi.mock('../api.js', () => ({
   api: {
     getSession: vi.fn(),
+    getSessionCost: vi.fn(),
     getTranscript: vi.fn(),
     runSessionCompactor: vi.fn(),
   },
@@ -52,6 +53,92 @@ function mockCompactor(result: unknown = { v: 1 }) {
   });
 }
 
+function mockCost() {
+  vi.mocked(api.getSessionCost).mockResolvedValue({
+    sessionId: baseSession.id,
+    self: {
+      v: 1,
+      kind: 'api_equivalent_estimate',
+      pricingCatalogVersion: '2026-06-05',
+      pricingSources: [],
+      pricingStatus: 'estimated',
+      estimatedCostUsd: 0.012345,
+      tokenTotals: {
+        inputTokens: 1000,
+        cachedInputTokens: 100,
+        cacheCreationInputTokens: 0,
+        cacheCreation5mInputTokens: 0,
+        cacheCreation1hInputTokens: 0,
+        outputTokens: 200,
+        reasoningOutputTokens: 50,
+        totalTokens: 1200,
+      },
+      modelBreakdown: [
+        {
+          provider: 'openai',
+          model: 'gpt-5.4',
+          tokenTotals: {
+            inputTokens: 1000,
+            cachedInputTokens: 100,
+            cacheCreationInputTokens: 0,
+            cacheCreation5mInputTokens: 0,
+            cacheCreation1hInputTokens: 0,
+            outputTokens: 200,
+            reasoningOutputTokens: 50,
+            totalTokens: 1200,
+          },
+          estimatedCostUsd: 0.00425,
+          pricingStatus: 'estimated',
+          usageEventCount: 1,
+        },
+      ],
+      unpricedModels: [],
+      usageEventCount: 1,
+    },
+    directSubagents: [
+      {
+        sessionId: 'agent:child-1',
+        relation: 'subagent',
+        self: null,
+        totalWithSubagents: {
+          estimatedCostUsd: 0.01,
+          pricingStatus: 'estimated',
+          tokenTotals: {
+            inputTokens: 2000,
+            cachedInputTokens: 0,
+            cacheCreationInputTokens: 0,
+            cacheCreation5mInputTokens: 0,
+            cacheCreation1hInputTokens: 0,
+            outputTokens: 300,
+            reasoningOutputTokens: 0,
+            totalTokens: 2300,
+          },
+          unpricedModels: [],
+          sessionCount: 1,
+          pricedSessionCount: 1,
+        },
+      },
+    ],
+    totalWithSubagents: {
+      estimatedCostUsd: 0.022345,
+      pricingStatus: 'estimated',
+      tokenTotals: {
+        inputTokens: 3000,
+        cachedInputTokens: 100,
+        cacheCreationInputTokens: 0,
+        cacheCreation5mInputTokens: 0,
+        cacheCreation1hInputTokens: 0,
+        outputTokens: 500,
+        reasoningOutputTokens: 50,
+        totalTokens: 3500,
+      },
+      unpricedModels: [],
+      sessionCount: 2,
+      pricedSessionCount: 2,
+    },
+  });
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason?: unknown) => void;
@@ -77,6 +164,7 @@ describe('SessionReader', () => {
     mockSession();
     mockTranscript([]);
     mockCompactor();
+    mockCost();
   });
 
   it('renders a composed header and hides log path behind details', async () => {
@@ -181,6 +269,74 @@ describe('SessionReader', () => {
     expect(api.runSessionCompactor).toHaveBeenCalledWith('agent:session-1', 'trace');
     expect(json.textContent).toBe(JSON.stringify(traceResponse, null, 2));
     expect(screen.getByRole('button', { name: 'Copy JSON' })).toBeInTheDocument();
+  });
+
+  it('loads session and sub-agent cost on the Cost tab', async () => {
+    await renderReader();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Cost' }));
+
+    expect(api.getSessionCost).toHaveBeenCalledWith('agent:session-1', { tree: true, depth: 20 });
+    expect(await screen.findByText('Estimate')).toBeInTheDocument();
+    expect(screen.getAllByText('Sub-agents').length).toBeGreaterThan(0);
+    expect(screen.getByText('agent:child-1')).toBeInTheDocument();
+    expect(screen.getByText('gpt-5.4')).toBeInTheDocument();
+  });
+
+  it('shows sub-agent cost even when the parent session has no self cost', async () => {
+    vi.mocked(api.getSessionCost).mockResolvedValueOnce({
+      sessionId: baseSession.id,
+      self: null,
+      directSubagents: [
+        {
+          sessionId: 'agent:child-only',
+          relation: 'subagent',
+          self: null,
+          totalWithSubagents: {
+            estimatedCostUsd: 0.02,
+            pricingStatus: 'estimated',
+            tokenTotals: {
+              inputTokens: 4000,
+              cachedInputTokens: 0,
+              cacheCreationInputTokens: 0,
+              cacheCreation5mInputTokens: 0,
+              cacheCreation1hInputTokens: 0,
+              outputTokens: 500,
+              reasoningOutputTokens: 0,
+              totalTokens: 4500,
+            },
+            unpricedModels: [],
+            sessionCount: 1,
+            pricedSessionCount: 1,
+          },
+        },
+      ],
+      totalWithSubagents: {
+        estimatedCostUsd: 0.02,
+        pricingStatus: 'estimated',
+        tokenTotals: {
+          inputTokens: 4000,
+          cachedInputTokens: 0,
+          cacheCreationInputTokens: 0,
+          cacheCreation5mInputTokens: 0,
+          cacheCreation1hInputTokens: 0,
+          outputTokens: 500,
+          reasoningOutputTokens: 0,
+          totalTokens: 4500,
+        },
+        unpricedModels: [],
+        sessionCount: 1,
+        pricedSessionCount: 1,
+      },
+    });
+
+    await renderReader();
+    await userEvent.click(screen.getByRole('button', { name: 'Cost' }));
+
+    expect(await screen.findByText('Estimate')).toBeInTheDocument();
+    expect(screen.getByText('agent:child-only')).toBeInTheDocument();
+    expect(screen.getAllByText('$0.020').length).toBeGreaterThan(0);
+    expect(screen.queryByText('No cost data.')).not.toBeInTheDocument();
   });
 
   it('switches between cached trace output and salience output', async () => {

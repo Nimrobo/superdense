@@ -3,9 +3,12 @@ import {
   compactSession,
   countSessions,
   getCompactor,
+  getSessionCost,
+  getSessionCostValue,
   getSession,
   iterSessionEvents,
   listSessions,
+  type Session,
   type Compactor,
 } from '@nimrobo/superdense-core';
 
@@ -22,13 +25,17 @@ function isAllowedCompactorName(name: string): name is 'trace' | 'salience' {
   return name === 'trace' || name === 'salience';
 }
 
+function serializeSession(session: Session): Session & { sessionCost: unknown } {
+  return { ...session, sessionCost: getSessionCostValue(session.id) };
+}
+
 export async function registerSessionsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/sessions', async (req) => {
     const q = req.query as Record<string, string | undefined>;
     const limit = q.limit ? Math.min(parseInt(q.limit, 10) || 200, 1000) : 200;
     const offset = q.offset ? parseInt(q.offset, 10) || 0 : 0;
     const filter = { agent: q.agent, pwd: q.pwd, q: q.q, limit, offset };
-    const items = listSessions(filter);
+    const items = listSessions(filter).map(serializeSession);
     const total = countSessions(filter);
     return { items, total, limit, offset };
   });
@@ -40,7 +47,20 @@ export async function registerSessionsRoutes(app: FastifyInstance): Promise<void
       reply.status(404);
       return { error: 'not found' };
     }
-    return s;
+    return serializeSession(s);
+  });
+
+  app.get('/api/sessions/:id/cost', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const q = req.query as Record<string, string | undefined>;
+    const tree = q.tree === 'true' || q.tree === '1';
+    const depth = q.depth ? Math.min(parseInt(q.depth, 10) || 20, 20) : 20;
+    const result = getSessionCost(id, { tree, depth });
+    if (!result) {
+      reply.status(404);
+      return { error: 'not found' };
+    }
+    return result;
   });
 
   app.get('/api/sessions/:id/transcript', async (req, reply) => {

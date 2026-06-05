@@ -28,6 +28,18 @@ export {
   clearEnricherCache,
 } from './enrichers/index.js';
 export type { Enricher, EnricherContext } from './enrichers/types.js';
+export { getSessionCost, getSessionCostValue } from './session-cost.js';
+export type {
+  SessionCostAggregate,
+  SessionCostResult,
+  SessionCostTreeChild,
+} from './session-cost.js';
+export type {
+  CostPricingStatus,
+  SessionCostModelBreakdown,
+  SessionCostValue,
+  TokenTotals,
+} from './enrichers/session-cost.js';
 export {
   listCompactors,
   registerCompactor,

@@ -105,6 +105,46 @@ describe('claudeCodeAdapter discovery', () => {
 });
 
 describe('claudeCodeAdapter.iterEvents', () => {
+  it('normalizes assistant usage rows into usage events', async () => {
+    const events = await collectEvents([
+      {
+        type: 'assistant',
+        timestamp: '2026-05-21T04:00:00.000Z',
+        message: {
+          role: 'assistant',
+          model: 'claude-haiku-4-5-20251001',
+          usage: {
+            input_tokens: 1000,
+            cache_read_input_tokens: 200,
+            cache_creation_input_tokens: 300,
+            cache_creation: {
+              ephemeral_5m_input_tokens: 100,
+              ephemeral_1h_input_tokens: 200,
+            },
+            output_tokens: 50,
+          },
+          content: 'Done',
+        },
+      },
+    ]);
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        kind: 'usage',
+        model: 'claude-haiku-4-5-20251001',
+        modelProvider: 'anthropic',
+        tokenUsage: expect.objectContaining({
+          inputTokens: 1000,
+          cachedInputTokens: 200,
+          cacheCreationInputTokens: 300,
+          cacheCreation5mInputTokens: 100,
+          cacheCreation1hInputTokens: 200,
+          outputTokens: 50,
+        }),
+      }),
+    );
+  });
+
   it('normalizes Claude tool calls and results with pairable ids', async () => {
     const events = await collectEvents([
       {

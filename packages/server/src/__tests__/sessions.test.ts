@@ -6,6 +6,8 @@ vi.mock('@nimrobo/superdense-core', () => ({
   countSessions: vi.fn(),
   getCompactor: vi.fn(),
   getSession: vi.fn(),
+  getSessionCost: vi.fn(),
+  getSessionCostValue: vi.fn(),
   iterSessionEvents: vi.fn(),
   listSessions: vi.fn(),
 }));
@@ -54,6 +56,29 @@ beforeEach(() => {
   vi.mocked(core.countSessions).mockReturnValue(0);
   vi.mocked(core.listSessions).mockReturnValue([]);
   vi.mocked(core.getSession).mockReturnValue(session);
+  vi.mocked(core.getSessionCostValue).mockReturnValue(null);
+  vi.mocked(core.getSessionCost).mockReturnValue({
+    sessionId: session.id,
+    self: null,
+    directSubagents: [],
+    totalWithSubagents: {
+      estimatedCostUsd: null,
+      pricingStatus: 'token_only',
+      tokenTotals: {
+        inputTokens: 0,
+        cachedInputTokens: 0,
+        cacheCreationInputTokens: 0,
+        cacheCreation5mInputTokens: 0,
+        cacheCreation1hInputTokens: 0,
+        outputTokens: 0,
+        reasoningOutputTokens: 0,
+        totalTokens: 0,
+      },
+      unpricedModels: [],
+      sessionCount: 0,
+      pricedSessionCount: 0,
+    },
+  });
   vi.mocked(core.iterSessionEvents).mockReturnValue(emptyEvents());
   vi.mocked(core.getCompactor).mockImplementation((name) => {
     if (name === 'trace') return traceCompactor;
@@ -75,6 +100,55 @@ describe('sessions routes', () => {
     expect(res.statusCode).toBe(200);
     expect(core.iterSessionEvents).toHaveBeenCalledWith(session);
     expect(res.json()).toMatchObject({ items: [], missing: true });
+  });
+
+  it('returns session cost with tree aggregation options', async () => {
+    const app = await buildApp();
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/sessions/unknown%3Asession-1/cost?tree=true&depth=3',
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(core.getSessionCost).toHaveBeenCalledWith('unknown:session-1', {
+      tree: true,
+      depth: 3,
+    });
+    expect(res.json()).toMatchObject({ sessionId: 'unknown:session-1' });
+  });
+
+  it('decorates session responses with self cost when available', async () => {
+    vi.mocked(core.getSessionCostValue).mockReturnValue({
+      v: 1,
+      kind: 'api_equivalent_estimate',
+      pricingCatalogVersion: '2026-06-05',
+      pricingSources: [],
+      pricingStatus: 'estimated',
+      estimatedCostUsd: 0.01,
+      tokenTotals: {
+        inputTokens: 1,
+        cachedInputTokens: 0,
+        cacheCreationInputTokens: 0,
+        cacheCreation5mInputTokens: 0,
+        cacheCreation1hInputTokens: 0,
+        outputTokens: 1,
+        reasoningOutputTokens: 0,
+        totalTokens: 2,
+      },
+      modelBreakdown: [],
+      unpricedModels: [],
+      usageEventCount: 1,
+    });
+    const app = await buildApp();
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/sessions/unknown%3Asession-1',
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ sessionCost: { estimatedCostUsd: 0.01 } });
   });
 
   it('runs the trace compactor for a session', async () => {

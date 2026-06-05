@@ -48,6 +48,7 @@ import {
   SYSTEM_RUN_ID,
   getSession,
   getSessionChildren,
+  getSessionCost,
   getSessionTree,
   getWorkThread,
   indexAll,
@@ -497,6 +498,17 @@ async function handleSession(
     serialized.subagentCount = children.length;
     serialized.subagentIds = children.map((c) => c.childId);
     printJson({ session: serialized }, io);
+    return true;
+  }
+  if (action === 'cost') {
+    const id = args[1];
+    if (!id) throw new Error('session cost requires <session-id>');
+    getExistingSession(id);
+    const result = getSessionCost(id, {
+      tree: flags.tree === true,
+      depth: intFlag(flags, 'depth', 20, 20),
+    });
+    printJson(result, io);
     return true;
   }
   if (action === 'children') {
@@ -1503,6 +1515,7 @@ export async function runCli(
         '  session list        List indexed sessions (root sessions only by default)',
         '      --include-subagents  Include sub-agent sessions in listing',
         '  session show <id>   Show session metadata (includes hasSubagents, subagentIds)',
+        '  session cost <id>   Show estimated API-equivalent cost (--tree, --depth N)',
         '  session children <id>  List direct sub-agent children of a session',
         '      --full          Include full session metadata for each child',
         '  session tree <id>   Show recursive sub-agent tree (--depth N, default 1)',

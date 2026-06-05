@@ -21,6 +21,7 @@ export function SessionCard({ session, onClick, href }: SessionCardProps) {
   const duration = formatDuration(session.createdAt, session.modifiedAt);
   const messageCount = messageCountLabel(session.messageCount);
   const lastActive = formatRelativeTime(session.modifiedAt);
+  const cost = formatCostLabel(session.sessionCost);
 
   const content = (
     <>
@@ -37,6 +38,7 @@ export function SessionCard({ session, onClick, href }: SessionCardProps) {
         </span>
         {session.gitBranch && <span className="badge">{session.gitBranch}</span>}
         {messageCount && <span>{messageCount}</span>}
+        {cost && <span className="badge cost-chip">{cost}</span>}
         {duration && <span>{duration}</span>}
         {lastActive && <span>{lastActive}</span>}
       </div>
@@ -56,4 +58,23 @@ export function SessionCard({ session, onClick, href }: SessionCardProps) {
       {content}
     </div>
   );
+}
+
+function formatCostLabel(cost: Session['sessionCost']): string | null {
+  if (!cost) return null;
+  if (typeof cost.estimatedCostUsd === 'number') return formatUsd(cost.estimatedCostUsd);
+  const tokens = cost.tokenTotals.totalTokens;
+  return tokens > 0 ? `${formatTokenCount(tokens)} tokens` : null;
+}
+
+function formatUsd(value: number): string {
+  if (value >= 1) return `$${value.toFixed(2)}`;
+  if (value >= 0.01) return `$${value.toFixed(3)}`;
+  return `$${value.toFixed(4)}`;
+}
+
+function formatTokenCount(value: number): string {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
+  return value.toLocaleString();
 }

@@ -3,7 +3,13 @@ import { join } from 'node:path';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
-import type { Adapter, DiscoveredSession, DiscoveredSubAgent, TranscriptEvent } from '../types.js';
+import type {
+  Adapter,
+  DiscoveredSession,
+  DiscoveredSubAgent,
+  TokenUsage,
+  TranscriptEvent,
+} from '../types.js';
 import { extractFirstMeaningfulPrompt, extractMeaningfulPrompt } from './prompt.js';
 
 function claudeProjectsDir(): string {
@@ -33,6 +39,36 @@ function toMs(s?: string): number | undefined {
   if (!s) return undefined;
   const t = Date.parse(s);
   return Number.isFinite(t) ? t : undefined;
+}
+
+function numberField(obj: unknown, key: string): number | undefined {
+  if (!obj || typeof obj !== 'object') return undefined;
+  const value = (obj as Record<string, unknown>)[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function claudeTokenUsage(obj: unknown): TokenUsage | undefined {
+  if (!obj || typeof obj !== 'object') return undefined;
+  const usage = obj as Record<string, unknown>;
+  const cacheCreation = usage.cache_creation;
+  const out: TokenUsage = {};
+  const inputTokens = numberField(usage, 'input_tokens');
+  const outputTokens = numberField(usage, 'output_tokens');
+  const cachedInputTokens = numberField(usage, 'cache_read_input_tokens');
+  const cacheCreationInputTokens = numberField(usage, 'cache_creation_input_tokens');
+  const cacheCreation5mInputTokens = numberField(cacheCreation, 'ephemeral_5m_input_tokens');
+  const cacheCreation1hInputTokens = numberField(cacheCreation, 'ephemeral_1h_input_tokens');
+  if (inputTokens != null) out.inputTokens = inputTokens;
+  if (outputTokens != null) out.outputTokens = outputTokens;
+  if (cachedInputTokens != null) out.cachedInputTokens = cachedInputTokens;
+  if (cacheCreationInputTokens != null) out.cacheCreationInputTokens = cacheCreationInputTokens;
+  if (cacheCreation5mInputTokens != null) {
+    out.cacheCreation5mInputTokens = cacheCreation5mInputTokens;
+  }
+  if (cacheCreation1hInputTokens != null) {
+    out.cacheCreation1hInputTokens = cacheCreation1hInputTokens;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 export function decodeProjectDir(dir: string): string {
@@ -404,6 +440,18 @@ function* extractEvents(obj: any): Generator<TranscriptEvent> {
           ? 'system'
           : undefined;
   const message = obj?.message;
+  const usage = claudeTokenUsage(message?.usage);
+  if (usage) {
+    yield {
+      ts,
+      kind: 'usage',
+      role,
+      model: typeof message?.model === 'string' ? message.model : undefined,
+      modelProvider: 'anthropic',
+      tokenUsage: usage,
+      raw: obj,
+    };
+  }
   const content = message?.content;
   // Text content
   if (typeof content === 'string') {
