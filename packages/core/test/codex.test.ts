@@ -450,6 +450,58 @@ describe('codexAdapter', () => {
     ]);
   });
 
+  it('normalizes token_count rows into usage events without transcript text', async () => {
+    const dir = await makeTempDir();
+    const rolloutPath = join(dir, 'rollout.jsonl');
+    await writeFile(
+      rolloutPath,
+      [
+        JSON.stringify({
+          timestamp: '2026-05-21T04:00:00.000Z',
+          type: 'turn_context',
+          payload: { collaboration_mode: { settings: { model: 'gpt-5.4' } } },
+        }),
+        JSON.stringify({
+          timestamp: '2026-05-21T04:00:01.000Z',
+          type: 'event_msg',
+          payload: {
+            type: 'token_count',
+            info: {
+              last_token_usage: {
+                input_tokens: 1000,
+                cached_input_tokens: 100,
+                output_tokens: 200,
+                reasoning_output_tokens: 50,
+                total_tokens: 1200,
+              },
+              total_token_usage: {
+                input_tokens: 3000,
+                cached_input_tokens: 300,
+                output_tokens: 500,
+                reasoning_output_tokens: 125,
+                total_tokens: 3500,
+              },
+            },
+          },
+        }),
+      ].join('\n'),
+      'utf8',
+    );
+
+    const events = [];
+    for await (const event of codexAdapter.iterEvents(rolloutPath)) events.push(event);
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        kind: 'usage',
+        model: 'gpt-5.4',
+        modelProvider: 'openai',
+        tokenUsage: expect.objectContaining({ inputTokens: 1000, cachedInputTokens: 100 }),
+        cumulativeTokenUsage: expect.objectContaining({ totalTokens: 3500 }),
+      }),
+    );
+  });
+
   it('normalizes native custom apply_patch calls so file footprints retain writes', async () => {
     const dir = await makeTempDir();
     const rolloutPath = join(dir, 'rollout.jsonl');

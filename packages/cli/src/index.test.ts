@@ -54,6 +54,7 @@ vi.mock('@nimrobo/superdense-core', () => ({
   getRewardStatus: vi.fn(),
   getSession: vi.fn(),
   getSessionChildren: vi.fn(),
+  getSessionCost: vi.fn(),
   getSessionTree: vi.fn(),
   getWorkThread: vi.fn(),
   indexAll: vi.fn(),
@@ -264,6 +265,48 @@ beforeEach(() => {
   delete process.env.SUPERDENSE_SKIP_UPDATE_CHECK;
   delete process.env.SUPERDENSE_DOCS_BASE_URL;
   vi.mocked(core.getSession).mockReturnValue(session);
+  vi.mocked(core.getSessionCost).mockReturnValue({
+    sessionId: 'codex:abc123',
+    self: {
+      v: 1,
+      kind: 'api_equivalent_estimate',
+      pricingCatalogVersion: '2026-06-05',
+      pricingSources: [],
+      pricingStatus: 'estimated',
+      estimatedCostUsd: 0.012345,
+      tokenTotals: {
+        inputTokens: 1000,
+        cachedInputTokens: 0,
+        cacheCreationInputTokens: 0,
+        cacheCreation5mInputTokens: 0,
+        cacheCreation1hInputTokens: 0,
+        outputTokens: 100,
+        reasoningOutputTokens: 0,
+        totalTokens: 1100,
+      },
+      modelBreakdown: [],
+      unpricedModels: [],
+      usageEventCount: 1,
+    },
+    directSubagents: [],
+    totalWithSubagents: {
+      estimatedCostUsd: 0.012345,
+      pricingStatus: 'estimated',
+      tokenTotals: {
+        inputTokens: 1000,
+        cachedInputTokens: 0,
+        cacheCreationInputTokens: 0,
+        cacheCreation5mInputTokens: 0,
+        cacheCreation1hInputTokens: 0,
+        outputTokens: 100,
+        reasoningOutputTokens: 0,
+        totalTokens: 1100,
+      },
+      unpricedModels: [],
+      sessionCount: 1,
+      pricedSessionCount: 1,
+    },
+  });
   vi.mocked(core.getSessionChildren).mockReturnValue([]);
   vi.mocked(core.getSessionTree).mockReturnValue({
     id: 'codex:abc123',
@@ -734,6 +777,20 @@ describe('superdense cli agent commands', () => {
         relation: 'root',
         children: [{ id: 'codex:child', relation: 'subagent', children: [] }],
       },
+    });
+  });
+
+  it('prints estimated session cost with optional tree aggregation', async () => {
+    const out = io();
+
+    await runCli(['session', 'cost', 'codex:abc123', '--tree', '--depth', '3'], out.io);
+
+    expect(core.getSession).toHaveBeenCalledWith('codex:abc123');
+    expect(core.getSessionCost).toHaveBeenCalledWith('codex:abc123', { tree: true, depth: 3 });
+    expect(json(out.stdout[0]!)).toMatchObject({
+      sessionId: 'codex:abc123',
+      self: { estimatedCostUsd: 0.012345 },
+      totalWithSubagents: { estimatedCostUsd: 0.012345 },
     });
   });
 

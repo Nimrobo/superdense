@@ -38,6 +38,34 @@ describe('SessionCard', () => {
     expect(link).toHaveAttribute('rel', 'noopener noreferrer');
   });
 
+  it('renders a workflow badge only when the session ran a workflow', () => {
+    const { rerender } = render(<SessionCard session={session} onClick={vi.fn()} />);
+    expect(screen.queryByText('workflow')).not.toBeInTheDocument();
+
+    rerender(
+      <SessionCard
+        session={{
+          ...session,
+          workflowSummary: {
+            v: 1,
+            hasWorkflow: true,
+            workflowRunCount: 1,
+            workflowToolCallCount: 1,
+            workflowEnabled: true,
+            effort: 'ultracode',
+            ultraEffort: true,
+            totalAgents: 3,
+            totalTokens: 100,
+            totalToolCalls: 5,
+            runs: [],
+          },
+        }}
+        onClick={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('workflow')).toBeInTheDocument();
+  });
+
   it('falls back instead of rendering stale internal prompts as titles', () => {
     render(
       <SessionCard

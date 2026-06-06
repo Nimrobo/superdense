@@ -4,6 +4,10 @@ import {
   type CompactorName,
   type Session,
   type SessionCompactorResponse,
+  type SessionCostAggregate,
+  type SessionCostResult,
+  type SessionCostValue,
+  type TokenTotals,
   type TranscriptEvent,
 } from '../api.js';
 import {
@@ -33,13 +37,16 @@ type TranscriptDisplayRow =
 
 export function SessionReader({ id, onBack }: Props) {
   const [session, setSession] = useState<Session | null>(null);
-  const [tab, setTab] = useState<'conversation' | 'summary'>('conversation');
+  const [tab, setTab] = useState<'conversation' | 'summary' | 'cost'>('conversation');
   const [events, setEvents] = useState<TranscriptEvent[] | null>(null);
+  const [cost, setCost] = useState<SessionCostResult | null>(null);
   const [loadingEvents, setLoadingEvents] = useState(false);
+  const [loadingCost, setLoadingCost] = useState(false);
 
   useEffect(() => {
     setSession(null);
     setEvents(null);
+    setCost(null);
     api.getSession(id).then(setSession).catch(console.error);
   }, [id]);
 
@@ -51,6 +58,15 @@ export function SessionReader({ id, onBack }: Props) {
       .then((r) => setEvents(r.items))
       .finally(() => setLoadingEvents(false));
   }, [tab, id, events]);
+
+  useEffect(() => {
+    if (tab !== 'cost' || cost !== null) return;
+    setLoadingCost(true);
+    api
+      .getSessionCost(id, { tree: true, depth: 20 })
+      .then(setCost)
+      .finally(() => setLoadingCost(false));
+  }, [tab, id, cost]);
 
   if (!session)
     return (
@@ -76,6 +92,12 @@ export function SessionReader({ id, onBack }: Props) {
           >
             Summary
           </button>
+          <button
+            className={`tab ${tab === 'cost' ? 'active' : ''}`}
+            onClick={() => setTab('cost')}
+          >
+            Cost
+          </button>
         </div>
 
         {tab === 'conversation' && (
@@ -83,6 +105,8 @@ export function SessionReader({ id, onBack }: Props) {
         )}
 
         {tab === 'summary' && <SummaryTab session={session} />}
+
+        {tab === 'cost' && <CostTab cost={cost} loading={loadingCost} />}
       </div>
     </>
   );
@@ -112,6 +136,7 @@ function SessionHeader({ session, onBack }: { session: Session; onBack: () => vo
           </span>
           {session.gitBranch && <span>{session.gitBranch}</span>}
           <span>{session.agent}</span>
+          {session.workflowSummary?.hasWorkflow && <span>workflow</span>}
           {duration && <span>{duration}</span>}
           {messageCount && <span>{messageCount}</span>}
           {started && <span title={formatFullTime(session.createdAt)}>started {started}</span>}
@@ -127,12 +152,240 @@ function SessionHeader({ session, onBack }: { session: Session; onBack: () => vo
   );
 }
 
+function CostTab({ cost, loading }: { cost: SessionCostResult | null; loading: boolean }) {
+  if (loading) return <div className="empty">Loading cost...</div>;
+  if (!cost || !hasAggregateCost(cost.totalWithSubagents)) {
+    return <div className="empty">No cost data.</div>;
+  }
+  const subagentCost = cost.self
+    ? subtractAggregate(cost.totalWithSubagents, cost.self)
+    : cost.totalWithSubagents;
+  return (
+    <div className="session-cost">
+      <section className="session-summary-section">
+        <h3>Estimate</h3>
+        <div className="cost-grid">
+          <CostMetric label="Self" value={cost.self ? formatCost(cost.self) : '$0.0000'} />
+          <CostMetric label="Sub-agents" value={formatAggregateCost(subagentCost)} />
+          <CostMetric label="Total" value={formatAggregateCost(cost.totalWithSubagents)} />
+          <CostMetric
+            label="Tokens"
+            value={formatTokenCount(cost.totalWithSubagents.tokenTotals.totalTokens)}
+          />
+          <CostMetric label="Pricing" value={formatPricingStatus(cost.totalWithSubagents)} />
+          {cost.self && (
+            <CostMetric label="Catalog" value={cost.self.pricingCatalogVersion || 'unknown'} />
+          )}
+        </div>
+      </section>
+      {cost.self && (
+        <section className="session-summary-section">
+          <h3>Self tokens</h3>
+          <TokenTable totals={cost.self.tokenTotals} />
+        </section>
+      )}
+      {cost.self && cost.self.modelBreakdown.length > 0 && (
+        <section className="session-summary-section">
+          <h3>Models</h3>
+          <div className="cost-list">
+            {cost.self.modelBreakdown.map((item) => (
+              <div className="cost-list-row" key={`${item.provider}:${item.model}`}>
+                <span className="mono">{item.model}</span>
+                <span>{item.provider}</span>
+                <span>{formatCost(item)}</span>
+                <span>{formatTokenCount(item.tokenTotals.totalTokens)} tokens</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+      {cost.directSubagents.length > 0 && (
+        <section className="session-summary-section">
+          <h3>Sub-agents</h3>
+          <div className="cost-list">
+            {cost.directSubagents.map((child) => {
+              const label = subagentLabel(child.metadata);
+              return (
+                <div className="cost-list-row" key={child.sessionId}>
+                  <span className="cost-subagent-name">
+                    {label && <span className="cost-subagent-label">{label}</span>}
+                    <span className="mono cost-subagent-id">{child.sessionId}</span>
+                  </span>
+                  <span>{formatAggregateCost(child.totalWithSubagents)}</span>
+                  <span>
+                    {formatTokenCount(child.totalWithSubagents.tokenTotals.totalTokens)} tokens
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function CostMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="cost-metric">
+      <div className="cost-metric-label">{label}</div>
+      <div className="cost-metric-value">{value}</div>
+    </div>
+  );
+}
+
+function TokenTable({ totals }: { totals: TokenTotals }) {
+  const allRows: Array<[string, number]> = [
+    ['Input', totals.inputTokens],
+    ['Cached input', totals.cachedInputTokens],
+    ['Cache write', totals.cacheCreationInputTokens],
+    ['Output', totals.outputTokens],
+    ['Reasoning output', totals.reasoningOutputTokens],
+  ];
+  const rows = allRows.filter(([, value]) => value > 0);
+  if (rows.length === 0) return <div className="session-summary-empty">No token usage.</div>;
+  return (
+    <div className="cost-token-table">
+      {rows.map(([label, value]) => (
+        <div className="cost-token-row" key={label}>
+          <span>{label}</span>
+          <span>{Number(value).toLocaleString()}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function hasAggregateCost(cost: SessionCostAggregate): boolean {
+  return (
+    cost.tokenTotals.totalTokens > 0 ||
+    typeof cost.estimatedCostUsd === 'number' ||
+    cost.unpricedModels.length > 0
+  );
+}
+
+function subtractAggregate(
+  total: SessionCostAggregate,
+  self: SessionCostValue,
+): SessionCostAggregate {
+  const tokenTotals = subtractTokens(total.tokenTotals, self.tokenTotals);
+  const estimatedCostUsd =
+    typeof total.estimatedCostUsd !== 'number'
+      ? null
+      : typeof self.estimatedCostUsd === 'number'
+        ? Math.max(0, total.estimatedCostUsd - self.estimatedCostUsd)
+        : total.estimatedCostUsd;
+  return {
+    ...total,
+    estimatedCostUsd,
+    tokenTotals,
+    sessionCount: Math.max(0, total.sessionCount - 1),
+    pricedSessionCount: Math.max(
+      0,
+      total.pricedSessionCount - (self.estimatedCostUsd == null ? 0 : 1),
+    ),
+  };
+}
+
+function subtractTokens(total: TokenTotals, self: TokenTotals): TokenTotals {
+  return {
+    inputTokens: Math.max(0, total.inputTokens - self.inputTokens),
+    cachedInputTokens: Math.max(0, total.cachedInputTokens - self.cachedInputTokens),
+    cacheCreationInputTokens: Math.max(
+      0,
+      total.cacheCreationInputTokens - self.cacheCreationInputTokens,
+    ),
+    cacheCreation5mInputTokens: Math.max(
+      0,
+      total.cacheCreation5mInputTokens - self.cacheCreation5mInputTokens,
+    ),
+    cacheCreation1hInputTokens: Math.max(
+      0,
+      total.cacheCreation1hInputTokens - self.cacheCreation1hInputTokens,
+    ),
+    outputTokens: Math.max(0, total.outputTokens - self.outputTokens),
+    reasoningOutputTokens: Math.max(0, total.reasoningOutputTokens - self.reasoningOutputTokens),
+    totalTokens: Math.max(0, total.totalTokens - self.totalTokens),
+  };
+}
+
+function subagentLabel(meta?: Record<string, unknown> | null): string | null {
+  if (!meta) return null;
+  const phase = typeof meta.phaseTitle === 'string' ? meta.phaseTitle : null;
+  const label = typeof meta.label === 'string' ? meta.label : null;
+  if (phase && label) return `${phase} · ${label}`;
+  return label ?? phase ?? null;
+}
+
+function formatAggregateCost(cost: SessionCostAggregate): string {
+  if (typeof cost.estimatedCostUsd === 'number') return formatUsd(cost.estimatedCostUsd);
+  return cost.tokenTotals.totalTokens > 0 ? 'token-only' : '$0.0000';
+}
+
+function formatCost(cost: Pick<SessionCostValue, 'estimatedCostUsd' | 'tokenTotals'>): string {
+  if (typeof cost.estimatedCostUsd === 'number') return formatUsd(cost.estimatedCostUsd);
+  return cost.tokenTotals.totalTokens > 0 ? 'token-only' : '$0.0000';
+}
+
+function formatPricingStatus(cost: Pick<SessionCostAggregate, 'pricingStatus'>): string {
+  if (cost.pricingStatus === 'estimated') return 'Estimated';
+  if (cost.pricingStatus === 'partial') return 'Partial';
+  return 'Token-only';
+}
+
+function formatUsd(value: number): string {
+  if (value >= 1) return `$${value.toFixed(2)}`;
+  if (value >= 0.01) return `$${value.toFixed(3)}`;
+  return `$${value.toFixed(4)}`;
+}
+
+function formatTokenCount(value: number): string {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
+  return value.toLocaleString();
+}
+
 function SummaryTab({ session }: { session: Session }) {
   const firstPrompt = meaningfulPromptText(session.firstPrompt);
   const summary = session.summary?.trim();
+  const workflow = session.workflowSummary?.hasWorkflow ? session.workflowSummary : null;
 
   return (
     <div className="session-summary">
+      {workflow && (
+        <section className="session-summary-section">
+          <h3>Workflow</h3>
+          <div className="cost-grid">
+            <CostMetric label="Runs" value={String(workflow.workflowRunCount)} />
+            <CostMetric label="Agents" value={String(workflow.totalAgents)} />
+            <CostMetric label="Tokens" value={formatTokenCount(workflow.totalTokens)} />
+            <CostMetric label="Tool calls" value={String(workflow.totalToolCalls)} />
+            {workflow.effort && <CostMetric label="Effort" value={workflow.effort} />}
+            <CostMetric
+              label="Enabled"
+              value={
+                workflow.workflowEnabled == null
+                  ? 'unknown'
+                  : workflow.workflowEnabled
+                    ? 'yes'
+                    : 'no'
+              }
+            />
+          </div>
+          {workflow.runs.length > 0 && (
+            <div className="cost-list">
+              {workflow.runs.map((run) => (
+                <div className="cost-list-row" key={run.runId}>
+                  <span className="mono">{run.workflowName ?? run.runId}</span>
+                  <span>{run.status ?? 'unknown'}</span>
+                  <span>{run.agentCount ?? run.agents.length} agents</span>
+                  <span>{formatTokenCount(run.totalTokens ?? 0)} tokens</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
       {firstPrompt && (
         <section className="session-summary-section">
           <h3>First prompt</h3>
@@ -145,7 +398,9 @@ function SummaryTab({ session }: { session: Session }) {
           <div>{summary}</div>
         </section>
       )}
-      {!firstPrompt && !summary && <div className="session-summary-empty">No summary yet.</div>}
+      {!firstPrompt && !summary && !workflow && (
+        <div className="session-summary-empty">No summary yet.</div>
+      )}
       <details className="session-details-disclosure">
         <summary>Details</summary>
         <div className="session-detail-row">

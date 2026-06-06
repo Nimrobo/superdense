@@ -102,9 +102,257 @@ describe('claudeCodeAdapter discovery', () => {
       },
     });
   });
+
+  it('discovers dynamic workflow agents as sub-agent sessions with workflow metadata', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'superdense-claude-workflow-subagents-'));
+    const projectsDir = join(tempDir, 'projects');
+    const projectDir = join(projectsDir, '-repo');
+    const parentId = 'parent-1';
+    const workflowId = 'wf_abc123';
+    const workflowDir = join(projectDir, parentId, 'subagents', 'workflows', workflowId);
+    const workflowsDir = join(projectDir, parentId, 'workflows');
+    const childPath = join(workflowDir, 'agent-a1.jsonl');
+    await mkdir(workflowDir, { recursive: true });
+    await mkdir(workflowsDir, { recursive: true });
+    await writeFile(
+      join(workflowsDir, `${workflowId}.json`),
+      JSON.stringify({
+        runId: workflowId,
+        workflowName: 'reward-layer-comms-review',
+        status: 'completed',
+        workflowProgress: [
+          {
+            type: 'workflow_agent',
+            agentId: 'a1',
+            label: 'persona:senior-skimmer',
+            phaseTitle: 'Read',
+            phaseIndex: 1,
+            state: 'done',
+            model: 'claude-opus-4-8',
+            startedAt: 1000,
+            durationMs: 250,
+            toolCalls: 4,
+            tokens: 12345,
+            promptPreview: 'Read this README',
+            resultPreview: 'Looks clear',
+          },
+        ],
+      }),
+      'utf8',
+    );
+    await writeFile(
+      childPath,
+      JSON.stringify({
+        cwd: '/repo',
+        agentId: 'a1',
+        type: 'user',
+        message: { role: 'user', content: 'Audit the README' },
+      }),
+      'utf8',
+    );
+    process.env.CLAUDE_PROJECTS_DIR = projectsDir;
+
+    const children = await claudeCodeAdapter.discoverSubAgentSessions(parentId);
+
+    expect(children).toHaveLength(1);
+    expect(children[0]).toMatchObject({
+      relation: 'subagent',
+      metadata: {
+        workflowRunId: workflowId,
+        workflowName: 'reward-layer-comms-review',
+        agentId: 'a1',
+        label: 'persona:senior-skimmer',
+        phaseTitle: 'Read',
+        phaseIndex: 1,
+        state: 'done',
+        model: 'claude-opus-4-8',
+        startedAt: 1000,
+        durationMs: 250,
+        toolCalls: 4,
+        tokens: 12345,
+        promptPreview: 'Read this README',
+        resultPreview: 'Looks clear',
+      },
+      session: {
+        sessionId: `${parentId}:workflow-${workflowId}:agent-a1`,
+        logPath: childPath,
+        pwd: '/repo',
+        firstPrompt: 'Audit the README',
+        createdAt: 1000,
+        modifiedAt: 1250,
+      },
+    });
+  });
+
+  it('discovers workflow agents across multiple runs with unique session ids', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'superdense-claude-workflow-multi-'));
+    const projectsDir = join(tempDir, 'projects');
+    const projectDir = join(projectsDir, '-repo');
+    const parentId = 'parent-1';
+    const workflowsDir = join(projectDir, parentId, 'workflows');
+    await mkdir(workflowsDir, { recursive: true });
+
+    for (const [runId, agentId] of [
+      ['wf_one', 'a1'],
+      ['wf_two', 'a1'],
+    ]) {
+      const agentDir = join(projectDir, parentId, 'subagents', 'workflows', runId);
+      await mkdir(agentDir, { recursive: true });
+      await writeFile(
+        join(agentDir, `agent-${agentId}.jsonl`),
+        JSON.stringify({
+          cwd: '/repo',
+          agentId,
+          type: 'user',
+          message: { role: 'user', content: 'go' },
+        }),
+        'utf8',
+      );
+      await writeFile(
+        join(workflowsDir, `${runId}.json`),
+        JSON.stringify({
+          runId,
+          workflowProgress: [{ type: 'workflow_agent', agentId, label: `lbl-${runId}` }],
+        }),
+        'utf8',
+      );
+    }
+    process.env.CLAUDE_PROJECTS_DIR = projectsDir;
+
+    const children = await claudeCodeAdapter.discoverSubAgentSessions(parentId);
+    const ids = children.map((c) => c.session.sessionId).sort();
+    expect(ids).toEqual([
+      `${parentId}:workflow-wf_one:agent-a1`,
+      `${parentId}:workflow-wf_two:agent-a1`,
+    ]);
+  });
+
+  it('falls back to filename + mtime when a workflow agent has no progress entry', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'superdense-claude-workflow-noprogress-'));
+    const projectsDir = join(tempDir, 'projects');
+    const projectDir = join(projectsDir, '-repo');
+    const parentId = 'parent-1';
+    const runId = 'wf_x';
+    const agentDir = join(projectDir, parentId, 'subagents', 'workflows', runId);
+    await mkdir(agentDir, { recursive: true });
+    await mkdir(join(projectDir, parentId, 'workflows'), { recursive: true });
+    const childPath = join(agentDir, 'agent-orphan.jsonl');
+    await writeFile(
+      childPath,
+      JSON.stringify({ cwd: '/repo', type: 'user', message: { role: 'user', content: 'hi' } }),
+      'utf8',
+    );
+    await writeFile(
+      join(projectDir, parentId, 'workflows', `${runId}.json`),
+      JSON.stringify({ runId, workflowProgress: [] }),
+      'utf8',
+    );
+    process.env.CLAUDE_PROJECTS_DIR = projectsDir;
+
+    const children = await claudeCodeAdapter.discoverSubAgentSessions(parentId);
+    expect(children).toHaveLength(1);
+    expect(children[0].metadata).toMatchObject({ workflowRunId: runId, agentId: 'orphan' });
+    expect(children[0].metadata).not.toHaveProperty('label');
+    expect(children[0].session.createdAt).toBe(children[0].session.modifiedAt);
+  });
+
+  it('returns regular subagents even when no workflows directory exists', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'superdense-claude-workflow-onlyreg-'));
+    const projectsDir = join(tempDir, 'projects');
+    const projectDir = join(projectsDir, '-repo');
+    const parentId = 'parent-1';
+    const subagentsDir = join(projectDir, parentId, 'subagents');
+    await mkdir(subagentsDir, { recursive: true });
+    await writeFile(
+      join(subagentsDir, 'agent-worker.jsonl'),
+      JSON.stringify({
+        cwd: '/repo',
+        agentId: 'worker',
+        type: 'user',
+        message: { role: 'user', content: 'go' },
+      }),
+      'utf8',
+    );
+    process.env.CLAUDE_PROJECTS_DIR = projectsDir;
+
+    const children = await claudeCodeAdapter.discoverSubAgentSessions(parentId);
+    expect(children.map((c) => c.session.sessionId)).toEqual([`${parentId}:agent-worker`]);
+  });
+
+  it('discovers workflow agents even when the subagents directory has no regular agents', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'superdense-claude-workflow-onlywf-'));
+    const projectsDir = join(tempDir, 'projects');
+    const projectDir = join(projectsDir, '-repo');
+    const parentId = 'parent-1';
+    const runId = 'wf_solo';
+    const agentDir = join(projectDir, parentId, 'subagents', 'workflows', runId);
+    await mkdir(agentDir, { recursive: true });
+    await mkdir(join(projectDir, parentId, 'workflows'), { recursive: true });
+    await writeFile(
+      join(agentDir, 'agent-a1.jsonl'),
+      JSON.stringify({
+        cwd: '/repo',
+        agentId: 'a1',
+        type: 'user',
+        message: { role: 'user', content: 'go' },
+      }),
+      'utf8',
+    );
+    await writeFile(
+      join(projectDir, parentId, 'workflows', `${runId}.json`),
+      JSON.stringify({ runId, workflowProgress: [{ type: 'workflow_agent', agentId: 'a1' }] }),
+      'utf8',
+    );
+    process.env.CLAUDE_PROJECTS_DIR = projectsDir;
+
+    const children = await claudeCodeAdapter.discoverSubAgentSessions(parentId);
+    expect(children.map((c) => c.session.sessionId)).toEqual([
+      `${parentId}:workflow-${runId}:agent-a1`,
+    ]);
+  });
 });
 
 describe('claudeCodeAdapter.iterEvents', () => {
+  it('normalizes assistant usage rows into usage events', async () => {
+    const events = await collectEvents([
+      {
+        type: 'assistant',
+        timestamp: '2026-05-21T04:00:00.000Z',
+        message: {
+          role: 'assistant',
+          model: 'claude-haiku-4-5-20251001',
+          usage: {
+            input_tokens: 1000,
+            cache_read_input_tokens: 200,
+            cache_creation_input_tokens: 300,
+            cache_creation: {
+              ephemeral_5m_input_tokens: 100,
+              ephemeral_1h_input_tokens: 200,
+            },
+            output_tokens: 50,
+          },
+          content: 'Done',
+        },
+      },
+    ]);
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        kind: 'usage',
+        model: 'claude-haiku-4-5-20251001',
+        modelProvider: 'anthropic',
+        tokenUsage: expect.objectContaining({
+          inputTokens: 1000,
+          cachedInputTokens: 200,
+          cacheCreationInputTokens: 300,
+          cacheCreation5mInputTokens: 100,
+          cacheCreation1hInputTokens: 200,
+          outputTokens: 50,
+        }),
+      }),
+    );
+  });
+
   it('normalizes Claude tool calls and results with pairable ids', async () => {
     const events = await collectEvents([
       {
