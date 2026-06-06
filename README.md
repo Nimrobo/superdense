@@ -11,9 +11,23 @@ Superdense indexes your agents' past sessions, groups them into the real things 
 
 Those sessions already hold useful evidence — what broke, what worked, which files mattered, which commands repeated, where the agent got stuck — but raw logs are too long and scattered to reuse directly. Superdense compacts them so an agent can extract patterns, workflows, failures, and proof of work. It indexes local sessions from Claude Code, Codex, OpenCode, and friends.
 
+## Try it now
+
+```bash
+npm i -g @nimrobo/superdense   # Node 20+
+superdense studio              # boots Studio, indexes your sessions, installs the agent skill
+```
+
+`superdense studio` opens the local UI at `http://127.0.0.1:4242` — browse prior agent work with filters, saved queries, and compacted session views. One binary ships everything (indexer, server, web UI), and nothing leaves your machine.
+
+Then drive it from your coding agent — shortest first:
+
+- **Give your agent recent context — `/chain fix the auth bug`.** The agent automatically receives the 3 most recent session IDs for the workspace and reads what happened in them — no digging up IDs or pasting history. If no sessions exist yet, `/chain` indexes first.
+- **Run the outcome loop — `/superdense run the reward layer for this project`.** The agent runs `superdense reward status`, which names the next actionable stage and walks the pipeline one bounded batch at a time — you never have to remember the stage order. Prefer to drive it yourself? Run `superdense reward status` directly (add `--project <id>` to focus one — list ids with `superdense project list --needs-action`).
+
 ## The outcome loop
 
-Most ways to learn from outcomes hand you a score — a reward model emits a number, an analytics tool ranks the winners. Superdense surfaces the same evidence locally and leaves the call to you. **It never scores anything.**
+**Your next build starts from what already shipped and how it actually landed — not a blank slate.** Superdense puts real outcomes in front of your agent, locally, so it learns what worked and carries it into the next build.
 
 Superdense already indexes what your agents did. The outcome loop **closes the loop**: it groups those sessions into the real things you shipped — a PR, a post, a release — links each to where it went live, records how it actually performed, and pulls that evidence into your next run. Local, agent-driven, folded over the sessions you already have — no second database, no cloud.
 
@@ -24,10 +38,10 @@ Superdense already indexes what your agents did. The outcome loop **closes the l
                    → reconcile: link it to github.com/acme/app/pull/214
                    → collect: 18 review comments, merged in 2 days
                    → compare: next time you build something similar, the agent sees PR #214
-                     and what made it land fast — and you decide what to reuse.
+                     and what made it land fast — and pulls that into the new build.
 ```
 
-Nothing there is scored. Superdense surfaces the past work and its real outcomes side by side; you make the call.
+Superdense hands your agent the real outcome, not a verdict — so it learns what made the work land.
 
 The pipeline walks `profile → curate → finalize → reconcile → collect → compare`:
 
@@ -38,7 +52,7 @@ The pipeline walks `profile → curate → finalize → reconcile → collect �
 | `finalize`  | **Freeze** a ready thread into a stable _artifact_ (a PR, a post, a release).  | point to the actual thing you shipped, frozen and addressable.                              |
 | `reconcile` | **Link** an artifact to where it went live (GitHub, X, npm, YouTube, …).       | tie the work to its real-world identity.                                                    |
 | `collect`   | **Record** how it performed out there (views, reactions, downloads, …).        | capture the outcome, not just the effort.                                                   |
-| `compare`   | **Surface** how past peers of the same kind actually did.                      | start the next build from evidence instead of guessing. Superdense never ranks; you decide. |
+| `compare`   | **Surface** how past peers of the same kind actually did.                      | start the next build from evidence instead of guessing.                                     |
 
 That last row is the loop closing: `compare` is what the agent reads _before_ the next `profile`/`curate` pass on the thing you ship next.
 
@@ -49,21 +63,7 @@ That last row is the loop closing: `compare` is what the agent reads _before_ th
 - **thread** — related sessions that together produced one real output; mutable while you curate.
 - **artifact** — the frozen record of one shipped thing; stable once finalized, lineage stays append-only.
 - **connector** — a plain platform label you choose (`github`, `x`, `npm`, …) marking where an artifact went live. A string, not software Superdense installs.
-- **cohort** — peer artifacts of the same kind, surfaced side by side with their outcomes. Superdense groups them; it never ranks them.
-
-## Try it now
-
-```bash
-npm i -g @nimrobo/superdense
-superdense studio     # boots the local UI, indexes sessions, installs the skill
-```
-
-Requires Node 20+. The single `superdense` binary ships everything — the indexer, the local server, and the web UI. Studio (`http://127.0.0.1:4242`) lets you browse prior agent work with filters, saved queries, and compacted session views.
-
-Then drive it from your coding agent — shortest first:
-
-- **Quick win — `/chain fix the auth bug`.** The agent automatically receives the 3 most recent session IDs for the current workspace and can read what happened in them, without you digging up IDs or pasting history. If no sessions exist yet, `/chain` triggers an incremental index first.
-- **The loop — `/superdense run the reward layer for this project`.** The agent runs `superdense reward status`, which names the next actionable stage and walks the pipeline one bounded batch at a time. You never have to remember the stage order. Want to drive it yourself? Run `superdense reward status` directly (add `--project <id>` to focus one project — list ids with `superdense project list --needs-action`).
+- **cohort** — peer artifacts of the same kind, surfaced side by side with their outcomes.
 
 ## What's under the hood
 
@@ -82,6 +82,13 @@ What ships:
 - **Insight recipes** — packaged prompts for higher-level analysis: finding repo-specific skills to build, proposing durable context files, ranking standout sessions, mining recurring failures and workflows.
 - **Skill** — a packaged Claude/Codex skill that teaches agents how to use Superdense during future work.
 
+**Core vocabulary** (the retrieval engine the commands below operate on):
+
+- **session** — one transcript from one agent run, indexed by `<agent>:<native-session-id>`.
+- **query** — ad hoc filter JSON (+ optional enrichers) you can run without saving.
+- **compactor** — a heavier summarizer that reads the raw log (e.g. `salience`, `trace`).
+- **insight recipe** — a reusable prompt that guides an agent through a compacted-session analysis, such as finding skills, context files, or standout sessions.
+
 ## CLI cheat sheet
 
 ```bash
@@ -92,6 +99,8 @@ superdense saved-query list                      # list saved filters
 superdense saved-query run <id>                  # replay one
 superdense compactor run salience <session-id>   # what happened?
 superdense compactor run trace <session-id>      # what sequence did the agent follow?
+superdense insight list                          # list available insight recipes
+superdense insight prompt <name>                 # print a paste-ready insight prompt
 superdense skill install                         # install the superdense skill into Claude + Codex
 superdense help                                  # full command list
 ```
