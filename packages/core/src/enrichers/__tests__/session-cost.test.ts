@@ -315,6 +315,22 @@ describe('sessionCostEnricher', () => {
       },
     });
   });
+
+  it('threads session link metadata into directSubagents cost tree nodes', async () => {
+    const child = { ...base, id: 'child', sessionId: 'child', isSubagent: true };
+    upsertSession(base);
+    upsertSession({ ...child, parentSessionId: 'root' });
+    upsertSessionLink('root', 'child', 'workflow', { phaseTitle: 'Review', label: 'find bugs', phaseIndex: 0 }, 1000);
+    upsertEnrichment('root', SYSTEM_RUN_ID, 'session_cost', 1, costValue(0.01, 100), 1);
+    upsertEnrichment('child', SYSTEM_RUN_ID, 'session_cost', 1, costValue(0.02, 200), 1);
+
+    const result = getSessionCost('root', { tree: true, depth: 20 });
+
+    expect(result?.directSubagents[0]).toMatchObject({
+      sessionId: 'child',
+      metadata: { phaseTitle: 'Review', label: 'find bugs', phaseIndex: 0 },
+    });
+  });
 });
 
 function costValue(estimatedCostUsd: number, totalTokens: number) {

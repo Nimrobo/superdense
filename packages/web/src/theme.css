@@ -409,6 +409,18 @@ a {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.cost-subagent-name {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.cost-subagent-label {
+  color: var(--text);
+}
+.cost-subagent-id {
+  font-size: 10px;
+  color: var(--text-muted);
+}
 .session-details-disclosure {
   border-top: 1px solid var(--border);
   margin-top: 18px;

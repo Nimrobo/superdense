@@ -334,6 +334,61 @@ describe('SessionReader', () => {
     expect(screen.getByText('gpt-5.4')).toBeInTheDocument();
   });
 
+  it('renders phase·label as primary text with session ID in small font for workflow sub-agents', async () => {
+    vi.mocked(api.getSessionCost).mockResolvedValueOnce({
+      sessionId: baseSession.id,
+      self: null,
+      directSubagents: [
+        {
+          sessionId: 'agent:workflow-child',
+          relation: 'workflow',
+          self: null,
+          metadata: { phaseTitle: 'Review', label: 'find bugs', phaseIndex: 0 },
+          totalWithSubagents: {
+            estimatedCostUsd: 0.01,
+            pricingStatus: 'estimated',
+            tokenTotals: {
+              inputTokens: 1000,
+              cachedInputTokens: 0,
+              cacheCreationInputTokens: 0,
+              cacheCreation5mInputTokens: 0,
+              cacheCreation1hInputTokens: 0,
+              outputTokens: 100,
+              reasoningOutputTokens: 0,
+              totalTokens: 1100,
+            },
+            unpricedModels: [],
+            sessionCount: 1,
+            pricedSessionCount: 1,
+          },
+        },
+      ],
+      totalWithSubagents: {
+        estimatedCostUsd: 0.01,
+        pricingStatus: 'estimated',
+        tokenTotals: {
+          inputTokens: 1000,
+          cachedInputTokens: 0,
+          cacheCreationInputTokens: 0,
+          cacheCreation5mInputTokens: 0,
+          cacheCreation1hInputTokens: 0,
+          outputTokens: 100,
+          reasoningOutputTokens: 0,
+          totalTokens: 1100,
+        },
+        unpricedModels: [],
+        sessionCount: 1,
+        pricedSessionCount: 1,
+      },
+    });
+
+    await renderReader();
+    await userEvent.click(screen.getByRole('button', { name: 'Cost' }));
+
+    expect(await screen.findByText('Review · find bugs')).toBeInTheDocument();
+    expect(screen.getByText('agent:workflow-child')).toBeInTheDocument();
+  });
+
   it('shows sub-agent cost even when the parent session has no self cost', async () => {
     vi.mocked(api.getSessionCost).mockResolvedValueOnce({
       sessionId: baseSession.id,

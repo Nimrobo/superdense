@@ -203,15 +203,21 @@ function CostTab({ cost, loading }: { cost: SessionCostResult | null; loading: b
         <section className="session-summary-section">
           <h3>Sub-agents</h3>
           <div className="cost-list">
-            {cost.directSubagents.map((child) => (
-              <div className="cost-list-row" key={child.sessionId}>
-                <span className="mono">{child.sessionId}</span>
-                <span>{formatAggregateCost(child.totalWithSubagents)}</span>
-                <span>
-                  {formatTokenCount(child.totalWithSubagents.tokenTotals.totalTokens)} tokens
-                </span>
-              </div>
-            ))}
+            {cost.directSubagents.map((child) => {
+              const label = subagentLabel(child.metadata);
+              return (
+                <div className="cost-list-row" key={child.sessionId}>
+                  <span className="cost-subagent-name">
+                    {label && <span className="cost-subagent-label">{label}</span>}
+                    <span className="mono cost-subagent-id">{child.sessionId}</span>
+                  </span>
+                  <span>{formatAggregateCost(child.totalWithSubagents)}</span>
+                  <span>
+                    {formatTokenCount(child.totalWithSubagents.tokenTotals.totalTokens)} tokens
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </section>
       )}
@@ -300,6 +306,14 @@ function subtractTokens(total: TokenTotals, self: TokenTotals): TokenTotals {
     reasoningOutputTokens: Math.max(0, total.reasoningOutputTokens - self.reasoningOutputTokens),
     totalTokens: Math.max(0, total.totalTokens - self.totalTokens),
   };
+}
+
+function subagentLabel(meta?: Record<string, unknown> | null): string | null {
+  if (!meta) return null;
+  const phase = typeof meta.phaseTitle === 'string' ? meta.phaseTitle : null;
+  const label = typeof meta.label === 'string' ? meta.label : null;
+  if (phase && label) return `${phase} · ${label}`;
+  return label ?? phase ?? null;
 }
 
 function formatAggregateCost(cost: SessionCostAggregate): string {

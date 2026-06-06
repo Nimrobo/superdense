@@ -12,6 +12,7 @@ export interface SessionCostTreeChild {
   relation: string;
   self: SessionCostValue | null;
   totalWithSubagents: SessionCostAggregate;
+  metadata?: Record<string, unknown> | null;
   children?: SessionCostTreeChild[];
 }
 
@@ -41,7 +42,7 @@ export function getSessionCost(
   const self = getSessionCostValue(sessionId);
   const directSubagents = opts.tree
     ? getSessionChildren(sessionId).map((child) =>
-        buildChildCost(child.childId, child.relation, depth),
+        buildChildCost(child.childId, child.relation, child.metadata, depth),
       )
     : [];
   const totalWithSubagents = aggregateCosts(
@@ -56,12 +57,17 @@ export function getSessionCostValue(sessionId: string): SessionCostValue | null 
   return isSessionCostValue(value) ? value : null;
 }
 
-function buildChildCost(sessionId: string, relation: string, depth: number): SessionCostTreeChild {
+function buildChildCost(
+  sessionId: string,
+  relation: string,
+  metadata: Record<string, unknown> | null,
+  depth: number,
+): SessionCostTreeChild {
   const self = getSessionCostValue(sessionId);
   const children =
     depth > 1
       ? getSessionChildren(sessionId).map((child) =>
-          buildChildCost(child.childId, child.relation, depth - 1),
+          buildChildCost(child.childId, child.relation, child.metadata, depth - 1),
         )
       : [];
   const totalWithSubagents = aggregateCosts(
@@ -73,6 +79,7 @@ function buildChildCost(sessionId: string, relation: string, depth: number): Ses
     relation,
     self,
     totalWithSubagents,
+    ...(metadata ? { metadata } : {}),
     ...(children.length ? { children } : {}),
   };
 }

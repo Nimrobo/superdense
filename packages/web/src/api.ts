@@ -11,7 +11,7 @@ export interface Session {
   gitBranch?: string | null;
   createdAt?: number | null;
   modifiedAt?: number | null;
-  sessionCost?: SessionCostValue | null;
+  sessionCost?: SessionCostAggregate | null;
   workflowSummary?: WorkflowSummaryValue | null;
 }
 
@@ -110,6 +110,7 @@ export interface SessionCostTreeChild {
   relation: string;
   self: SessionCostValue | null;
   totalWithSubagents: SessionCostAggregate;
+  metadata?: Record<string, unknown> | null;
   children?: SessionCostTreeChild[];
 }
 

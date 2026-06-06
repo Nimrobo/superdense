@@ -5,7 +5,6 @@ import {
   getCompactor,
   getEnrichment,
   getSessionCost,
-  getSessionCostValue,
   getSession,
   iterSessionEvents,
   listSessions,
@@ -33,7 +32,7 @@ function serializeSession(
   const workflowSummary = getEnrichment(session.id, SYSTEM_RUN_ID, 'workflow_summary')?.value;
   return {
     ...session,
-    sessionCost: getSessionCostValue(session.id),
+    sessionCost: getSessionCost(session.id, { tree: true })?.totalWithSubagents ?? null,
     workflowSummary: workflowSummaryHasWorkflow(workflowSummary) ? workflowSummary : null,
   };
 }

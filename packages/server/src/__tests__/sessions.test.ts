@@ -121,27 +121,28 @@ describe('sessions routes', () => {
     expect(res.json()).toMatchObject({ sessionId: 'unknown:session-1' });
   });
 
-  it('decorates session responses with self cost when available', async () => {
-    vi.mocked(core.getSessionCostValue).mockReturnValue({
-      v: 1,
-      kind: 'api_equivalent_estimate',
-      pricingCatalogVersion: '2026-06-05',
-      pricingSources: [],
-      pricingStatus: 'estimated',
-      estimatedCostUsd: 0.01,
-      tokenTotals: {
-        inputTokens: 1,
-        cachedInputTokens: 0,
-        cacheCreationInputTokens: 0,
-        cacheCreation5mInputTokens: 0,
-        cacheCreation1hInputTokens: 0,
-        outputTokens: 1,
-        reasoningOutputTokens: 0,
-        totalTokens: 2,
+  it('decorates session responses with total cost including sub-agents when available', async () => {
+    vi.mocked(core.getSessionCost).mockReturnValue({
+      sessionId: session.id,
+      self: null,
+      directSubagents: [],
+      totalWithSubagents: {
+        estimatedCostUsd: 0.05,
+        pricingStatus: 'estimated',
+        tokenTotals: {
+          inputTokens: 1000,
+          cachedInputTokens: 0,
+          cacheCreationInputTokens: 0,
+          cacheCreation5mInputTokens: 0,
+          cacheCreation1hInputTokens: 0,
+          outputTokens: 200,
+          reasoningOutputTokens: 0,
+          totalTokens: 1200,
+        },
+        unpricedModels: [],
+        sessionCount: 3,
+        pricedSessionCount: 3,
       },
-      modelBreakdown: [],
-      unpricedModels: [],
-      usageEventCount: 1,
     });
     const app = await buildApp();
 
@@ -151,7 +152,8 @@ describe('sessions routes', () => {
     });
 
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toMatchObject({ sessionCost: { estimatedCostUsd: 0.01 } });
+    expect(core.getSessionCost).toHaveBeenCalledWith(session.id, { tree: true });
+    expect(res.json()).toMatchObject({ sessionCost: { estimatedCostUsd: 0.05, sessionCount: 3 } });
   });
 
   it('decorates session responses with workflow summary when available', async () => {
