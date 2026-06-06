@@ -76,13 +76,13 @@ The pipeline walks `profile → curate → finalize → reconcile → collect �
 | Stage       | What it does                                                                   | So you can                                                                                  |
 | ----------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
 | `profile`   | Describe the project once — its roots and the kinds of things it ships.        | bootstrap the loop so later stages know what to look for.                                   |
-| `curate`    | Group related sessions into a *thread* — the scattered work behind one output. | address a shipped thing as one unit instead of hunting across logs.                         |
-| `finalize`  | **Freeze** a ready thread into a stable *artifact* (a PR, a post, a release).  | point to the actual thing you shipped, frozen and addressable.                              |
+| `curate`    | Group related sessions into a _thread_ — the scattered work behind one output. | address a shipped thing as one unit instead of hunting across logs.                         |
+| `finalize`  | **Freeze** a ready thread into a stable _artifact_ (a PR, a post, a release).  | point to the actual thing you shipped, frozen and addressable.                              |
 | `reconcile` | **Link** an artifact to where it went live (GitHub, X, npm, YouTube, …).       | tie the work to its real-world identity.                                                    |
 | `collect`   | **Record** how it performed out there (views, reactions, downloads, …).        | capture the outcome, not just the effort.                                                   |
 | `compare`   | **Surface** how past peers of the same kind actually did.                      | start the next build from evidence instead of guessing. Superdense never ranks; you decide. |
 
-That last row is the loop closing: `compare` is what the agent reads *before* the next `profile`/`curate` pass on the thing you ship next.
+That last row is the loop closing: `compare` is what the agent reads _before_ the next `profile`/`curate` pass on the thing you ship next.
 
 **Reward vocabulary** (all of it folds over your existing session index — no second database):
 
