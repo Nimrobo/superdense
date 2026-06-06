@@ -47,28 +47,51 @@ If no sessions exist yet, `/chain` triggers an incremental index automatically. 
 
 ## Reward layer
 
-Superdense already indexes what your agents did. The reward layer closes the loop: it lets agents group those sessions into the real things you shipped — a PR, a post, a release — link each one to where it went live, record how it actually performed, and pull that evidence into the next run. It's local and agent-driven, and it never scores anything: Superdense surfaces the evidence, you make the call.
+Most ways to learn from outcomes hand you a score — a reward model emits a number, an analytics tool ranks the winners. Superdense's reward layer surfaces the same evidence locally and leaves the call to you. **It never scores anything.**
 
-**How to begin.** Open Studio so Superdense is running and your sessions are indexed, then ask your coding agent to run the layer:
+Superdense already indexes what your agents did. The reward layer **closes the loop**: it groups those sessions into the real things you shipped — a PR, a post, a release — links each to where it went live, records how it actually performed, and pulls that evidence into your next run. Local, agent-driven, folded over the sessions you already have — no second database, no cloud.
+
+**One loop, concretely** (illustrative numbers). Say three sessions went into one pull request:
+
+```text
+3 indexed sessions → curate into one thread → finalize as a stable artifact ("PR #214: streaming parser")
+                   → reconcile: link it to github.com/acme/app/pull/214
+                   → collect: 18 review comments, merged in 2 days
+                   → compare: next time you build something similar, the agent sees PR #214
+                     and what made it land fast — and you decide what to reuse.
+```
+
+Nothing there is scored. Superdense surfaces the past work and its real outcomes side by side; you make the call.
+
+**How to begin.** Open Studio (`superdense studio`) so Superdense is running and your sessions are indexed, then point your coding agent at the layer:
 
 ```text
 /superdense run the reward layer for this project
 ```
 
-The agent runs `superdense reward status`, which reports the next actionable stage and walks the pipeline one bounded batch at a time — the first pass starts at `profile`. You can also run `superdense reward status` yourself to see the punch list (add `--project <id>` to focus one project).
+This resolves to one command — `superdense reward status` — which the agent runs to find the next actionable stage and walk the pipeline one bounded batch at a time (the first pass starts at `profile`, which is setup). You never have to remember the stage order: status names the next move, the agent executes only that, then checks back in. Want to drive it yourself? Run `superdense reward status` directly (add `--project <id>` to focus one project — list ids with `superdense project list --needs-action`).
 
-The pipeline is `profile → curate → finalize → reconcile → collect → compare`:
+The pipeline walks `profile → curate → finalize → reconcile → collect → compare`:
 
-| Stage       | What it does                                                                      |
-| ----------- | --------------------------------------------------------------------------------- |
-| `profile`   | Describe the project once — its roots and the kinds of artifacts it produces.     |
-| `curate`    | Group indexed sessions into threads that each represent one real output.          |
-| `finalize`  | Promote a ready thread into a stable artifact record.                             |
-| `reconcile` | Link an artifact to where it went live (GitHub, X, npm, YouTube, …).              |
-| `collect`   | Record real-world metrics for linked artifacts (views, reactions, …).             |
-| `compare`   | Before shipping the next one, see how past peers performed and reuse what worked. |
+| Stage       | What it does                                                                   | So you can                                                                                  |
+| ----------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| `profile`   | Describe the project once — its roots and the kinds of things it ships.        | bootstrap the loop so later stages know what to look for.                                   |
+| `curate`    | Group related sessions into a *thread* — the scattered work behind one output. | address a shipped thing as one unit instead of hunting across logs.                         |
+| `finalize`  | **Freeze** a ready thread into a stable *artifact* (a PR, a post, a release).  | point to the actual thing you shipped, frozen and addressable.                              |
+| `reconcile` | **Link** an artifact to where it went live (GitHub, X, npm, YouTube, …).       | tie the work to its real-world identity.                                                    |
+| `collect`   | **Record** how it performed out there (views, reactions, downloads, …).        | capture the outcome, not just the effort.                                                   |
+| `compare`   | **Surface** how past peers of the same kind actually did.                      | start the next build from evidence instead of guessing. Superdense never ranks; you decide. |
 
-Full stage references and the `superdense reward docs artifacts` / `superdense reward docs connectors …` helpers live in [`skills/superdense/reward/README.md`](./skills/superdense/reward/README.md).
+That last row is the loop closing: `compare` is what the agent reads *before* the next `profile`/`curate` pass on the thing you ship next.
+
+**Reward vocabulary** (all of it folds over your existing session index — no second database):
+
+- **thread** — related sessions that together produced one real output; mutable while you curate.
+- **artifact** — the frozen record of one shipped thing; stable once finalized, lineage stays append-only.
+- **connector** — a plain platform label you choose (`github`, `x`, `npm`, …) marking where an artifact went live. A string, not software Superdense installs.
+- **cohort** — peer artifacts of the same kind, surfaced side by side with their outcomes. Superdense groups them; it never ranks them.
+
+`reconcile` and `collect` reach into the real world, so they're where you (or the agent) supply the numbers — link an artifact to its live URL, then fetch its metrics with whatever you already use (a platform CLI, the provider's API, or the public page). Superdense records what you bring back; it never installs a connector or phones a cloud. Full stage references and the `superdense reward docs artifacts` / `superdense reward docs connectors …` helpers live in [`skills/superdense/reward/README.md`](./skills/superdense/reward/README.md).
 
 ## How Superdense works
 
