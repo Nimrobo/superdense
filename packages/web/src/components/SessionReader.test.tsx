@@ -445,6 +445,132 @@ describe('SessionReader', () => {
     expect(screen.queryByText('No cost data.')).not.toBeInTheDocument();
   });
 
+  it('keeps the sub-agent estimate when parent self cost is token-only', async () => {
+    vi.mocked(api.getSessionCost).mockResolvedValueOnce({
+      sessionId: baseSession.id,
+      self: {
+        v: 1,
+        kind: 'api_equivalent_estimate',
+        pricingCatalogVersion: '2026-06-05',
+        pricingSources: [],
+        pricingStatus: 'token_only',
+        estimatedCostUsd: null,
+        tokenTotals: {
+          inputTokens: 100,
+          cachedInputTokens: 0,
+          cacheCreationInputTokens: 0,
+          cacheCreation5mInputTokens: 0,
+          cacheCreation1hInputTokens: 0,
+          outputTokens: 0,
+          reasoningOutputTokens: 0,
+          totalTokens: 100,
+        },
+        modelBreakdown: [],
+        unpricedModels: ['openai:unknown-model'],
+        usageEventCount: 1,
+      },
+      directSubagents: [
+        {
+          sessionId: 'agent:priced-child',
+          relation: 'subagent',
+          self: null,
+          totalWithSubagents: {
+            estimatedCostUsd: 0.02,
+            pricingStatus: 'estimated',
+            tokenTotals: {
+              inputTokens: 4000,
+              cachedInputTokens: 0,
+              cacheCreationInputTokens: 0,
+              cacheCreation5mInputTokens: 0,
+              cacheCreation1hInputTokens: 0,
+              outputTokens: 500,
+              reasoningOutputTokens: 0,
+              totalTokens: 4500,
+            },
+            unpricedModels: [],
+            sessionCount: 1,
+            pricedSessionCount: 1,
+          },
+        },
+      ],
+      totalWithSubagents: {
+        estimatedCostUsd: 0.02,
+        pricingStatus: 'partial',
+        tokenTotals: {
+          inputTokens: 4100,
+          cachedInputTokens: 0,
+          cacheCreationInputTokens: 0,
+          cacheCreation5mInputTokens: 0,
+          cacheCreation1hInputTokens: 0,
+          outputTokens: 500,
+          reasoningOutputTokens: 0,
+          totalTokens: 4600,
+        },
+        unpricedModels: ['openai:unknown-model'],
+        sessionCount: 2,
+        pricedSessionCount: 1,
+      },
+    });
+
+    await renderReader();
+    await userEvent.click(screen.getByRole('button', { name: 'Cost' }));
+
+    expect(await screen.findByText('Estimate')).toBeInTheDocument();
+    expect(screen.getAllByText('$0.020').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('token-only')).toHaveLength(1);
+  });
+
+  it('treats an empty always-run cost enrichment as no cost data', async () => {
+    vi.mocked(api.getSessionCost).mockResolvedValueOnce({
+      sessionId: baseSession.id,
+      self: {
+        v: 1,
+        kind: 'api_equivalent_estimate',
+        pricingCatalogVersion: '2026-06-05',
+        pricingSources: [],
+        pricingStatus: 'token_only',
+        estimatedCostUsd: null,
+        tokenTotals: {
+          inputTokens: 0,
+          cachedInputTokens: 0,
+          cacheCreationInputTokens: 0,
+          cacheCreation5mInputTokens: 0,
+          cacheCreation1hInputTokens: 0,
+          outputTokens: 0,
+          reasoningOutputTokens: 0,
+          totalTokens: 0,
+        },
+        modelBreakdown: [],
+        unpricedModels: [],
+        usageEventCount: 0,
+      },
+      directSubagents: [],
+      totalWithSubagents: {
+        estimatedCostUsd: null,
+        pricingStatus: 'token_only',
+        tokenTotals: {
+          inputTokens: 0,
+          cachedInputTokens: 0,
+          cacheCreationInputTokens: 0,
+          cacheCreation5mInputTokens: 0,
+          cacheCreation1hInputTokens: 0,
+          outputTokens: 0,
+          reasoningOutputTokens: 0,
+          totalTokens: 0,
+        },
+        unpricedModels: [],
+        sessionCount: 1,
+        pricedSessionCount: 0,
+      },
+    });
+
+    await renderReader();
+    await userEvent.click(screen.getByRole('button', { name: 'Cost' }));
+
+    expect(await screen.findByText('No cost data.')).toBeInTheDocument();
+    expect(screen.queryByText('Estimate')).not.toBeInTheDocument();
+  });
+
   it('switches between cached trace output and salience output', async () => {
     const traceResponse: SessionCompactorResponse = {
       session: baseSession,

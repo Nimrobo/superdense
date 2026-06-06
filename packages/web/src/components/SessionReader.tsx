@@ -260,7 +260,6 @@ function hasAggregateCost(cost: SessionCostAggregate): boolean {
   return (
     cost.tokenTotals.totalTokens > 0 ||
     typeof cost.estimatedCostUsd === 'number' ||
-    cost.sessionCount > 0 ||
     cost.unpricedModels.length > 0
   );
 }
@@ -271,9 +270,11 @@ function subtractAggregate(
 ): SessionCostAggregate {
   const tokenTotals = subtractTokens(total.tokenTotals, self.tokenTotals);
   const estimatedCostUsd =
-    typeof total.estimatedCostUsd === 'number' && typeof self.estimatedCostUsd === 'number'
-      ? Math.max(0, total.estimatedCostUsd - self.estimatedCostUsd)
-      : null;
+    typeof total.estimatedCostUsd !== 'number'
+      ? null
+      : typeof self.estimatedCostUsd === 'number'
+        ? Math.max(0, total.estimatedCostUsd - self.estimatedCostUsd)
+        : total.estimatedCostUsd;
   return {
     ...total,
     estimatedCostUsd,
