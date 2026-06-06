@@ -11,6 +11,7 @@ import { api, type Session, type SessionCompactorResponse, type TranscriptEvent 
 vi.mock('../api.js', () => ({
   api: {
     getSession: vi.fn(),
+    getSessionCost: vi.fn(),
     getTranscript: vi.fn(),
     runSessionCompactor: vi.fn(),
   },
@@ -52,6 +53,92 @@ function mockCompactor(result: unknown = { v: 1 }) {
   });
 }
 
+function mockCost() {
+  vi.mocked(api.getSessionCost).mockResolvedValue({
+    sessionId: baseSession.id,
+    self: {
+      v: 1,
+      kind: 'api_equivalent_estimate',
+      pricingCatalogVersion: '2026-06-05',
+      pricingSources: [],
+      pricingStatus: 'estimated',
+      estimatedCostUsd: 0.012345,
+      tokenTotals: {
+        inputTokens: 1000,
+        cachedInputTokens: 100,
+        cacheCreationInputTokens: 0,
+        cacheCreation5mInputTokens: 0,
+        cacheCreation1hInputTokens: 0,
+        outputTokens: 200,
+        reasoningOutputTokens: 50,
+        totalTokens: 1200,
+      },
+      modelBreakdown: [
+        {
+          provider: 'openai',
+          model: 'gpt-5.4',
+          tokenTotals: {
+            inputTokens: 1000,
+            cachedInputTokens: 100,
+            cacheCreationInputTokens: 0,
+            cacheCreation5mInputTokens: 0,
+            cacheCreation1hInputTokens: 0,
+            outputTokens: 200,
+            reasoningOutputTokens: 50,
+            totalTokens: 1200,
+          },
+          estimatedCostUsd: 0.00425,
+          pricingStatus: 'estimated',
+          usageEventCount: 1,
+        },
+      ],
+      unpricedModels: [],
+      usageEventCount: 1,
+    },
+    directSubagents: [
+      {
+        sessionId: 'agent:child-1',
+        relation: 'subagent',
+        self: null,
+        totalWithSubagents: {
+          estimatedCostUsd: 0.01,
+          pricingStatus: 'estimated',
+          tokenTotals: {
+            inputTokens: 2000,
+            cachedInputTokens: 0,
+            cacheCreationInputTokens: 0,
+            cacheCreation5mInputTokens: 0,
+            cacheCreation1hInputTokens: 0,
+            outputTokens: 300,
+            reasoningOutputTokens: 0,
+            totalTokens: 2300,
+          },
+          unpricedModels: [],
+          sessionCount: 1,
+          pricedSessionCount: 1,
+        },
+      },
+    ],
+    totalWithSubagents: {
+      estimatedCostUsd: 0.022345,
+      pricingStatus: 'estimated',
+      tokenTotals: {
+        inputTokens: 3000,
+        cachedInputTokens: 100,
+        cacheCreationInputTokens: 0,
+        cacheCreation5mInputTokens: 0,
+        cacheCreation1hInputTokens: 0,
+        outputTokens: 500,
+        reasoningOutputTokens: 50,
+        totalTokens: 3500,
+      },
+      unpricedModels: [],
+      sessionCount: 2,
+      pricedSessionCount: 2,
+    },
+  });
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason?: unknown) => void;
@@ -77,6 +164,7 @@ describe('SessionReader', () => {
     mockSession();
     mockTranscript([]);
     mockCompactor();
+    mockCost();
   });
 
   it('renders a composed header and hides log path behind details', async () => {
@@ -133,6 +221,57 @@ describe('SessionReader', () => {
     expect(screen.getByText('No summary yet.')).toBeInTheDocument();
   });
 
+  it('renders workflow summary metadata when present', async () => {
+    mockSession({
+      workflowSummary: {
+        v: 1,
+        hasWorkflow: true,
+        workflowRunCount: 1,
+        workflowToolCallCount: 1,
+        workflowEnabled: true,
+        effort: 'ultracode',
+        ultraEffort: true,
+        totalAgents: 11,
+        totalTokens: 356922,
+        totalToolCalls: 83,
+        runs: [
+          {
+            runId: 'wf_abc',
+            workflowName: 'reward-layer-comms-review',
+            status: 'completed',
+            agentCount: 11,
+            totalTokens: 356922,
+            totalToolCalls: 83,
+            phases: [{ title: 'Read', detail: 'read docs' }],
+            agents: [],
+          },
+        ],
+      },
+    });
+
+    await renderReader();
+    expect(screen.getByText('workflow')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Summary' }));
+
+    expect(screen.getByRole('heading', { name: 'Workflow' })).toBeInTheDocument();
+    expect(screen.getByText('ultracode')).toBeInTheDocument();
+    expect(screen.getByText('reward-layer-comms-review')).toBeInTheDocument();
+    expect(screen.getByText('completed')).toBeInTheDocument();
+    expect(screen.getAllByText('11 agents').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('356.9K tokens').length).toBeGreaterThan(0);
+  });
+
+  it('omits the workflow section when the session has no workflow summary', async () => {
+    mockSession({ workflowSummary: null });
+
+    await renderReader();
+    expect(screen.queryByText('workflow')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Summary' }));
+    expect(screen.queryByRole('heading', { name: 'Workflow' })).not.toBeInTheDocument();
+  });
+
   it('filters system events and tool calls without adapter-specific assumptions', async () => {
     mockTranscript([
       { role: 'system', text: 'system setup details' },
@@ -181,6 +320,255 @@ describe('SessionReader', () => {
     expect(api.runSessionCompactor).toHaveBeenCalledWith('agent:session-1', 'trace');
     expect(json.textContent).toBe(JSON.stringify(traceResponse, null, 2));
     expect(screen.getByRole('button', { name: 'Copy JSON' })).toBeInTheDocument();
+  });
+
+  it('loads session and sub-agent cost on the Cost tab', async () => {
+    await renderReader();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Cost' }));
+
+    expect(api.getSessionCost).toHaveBeenCalledWith('agent:session-1', { tree: true, depth: 20 });
+    expect(await screen.findByText('Estimate')).toBeInTheDocument();
+    expect(screen.getAllByText('Sub-agents').length).toBeGreaterThan(0);
+    expect(screen.getByText('agent:child-1')).toBeInTheDocument();
+    expect(screen.getByText('gpt-5.4')).toBeInTheDocument();
+  });
+
+  it('renders phase·label as primary text with session ID in small font for workflow sub-agents', async () => {
+    vi.mocked(api.getSessionCost).mockResolvedValueOnce({
+      sessionId: baseSession.id,
+      self: null,
+      directSubagents: [
+        {
+          sessionId: 'agent:workflow-child',
+          relation: 'workflow',
+          self: null,
+          metadata: { phaseTitle: 'Review', label: 'find bugs', phaseIndex: 0 },
+          totalWithSubagents: {
+            estimatedCostUsd: 0.01,
+            pricingStatus: 'estimated',
+            tokenTotals: {
+              inputTokens: 1000,
+              cachedInputTokens: 0,
+              cacheCreationInputTokens: 0,
+              cacheCreation5mInputTokens: 0,
+              cacheCreation1hInputTokens: 0,
+              outputTokens: 100,
+              reasoningOutputTokens: 0,
+              totalTokens: 1100,
+            },
+            unpricedModels: [],
+            sessionCount: 1,
+            pricedSessionCount: 1,
+          },
+        },
+      ],
+      totalWithSubagents: {
+        estimatedCostUsd: 0.01,
+        pricingStatus: 'estimated',
+        tokenTotals: {
+          inputTokens: 1000,
+          cachedInputTokens: 0,
+          cacheCreationInputTokens: 0,
+          cacheCreation5mInputTokens: 0,
+          cacheCreation1hInputTokens: 0,
+          outputTokens: 100,
+          reasoningOutputTokens: 0,
+          totalTokens: 1100,
+        },
+        unpricedModels: [],
+        sessionCount: 1,
+        pricedSessionCount: 1,
+      },
+    });
+
+    await renderReader();
+    await userEvent.click(screen.getByRole('button', { name: 'Cost' }));
+
+    expect(await screen.findByText('Review · find bugs')).toBeInTheDocument();
+    expect(screen.getByText('agent:workflow-child')).toBeInTheDocument();
+  });
+
+  it('shows sub-agent cost even when the parent session has no self cost', async () => {
+    vi.mocked(api.getSessionCost).mockResolvedValueOnce({
+      sessionId: baseSession.id,
+      self: null,
+      directSubagents: [
+        {
+          sessionId: 'agent:child-only',
+          relation: 'subagent',
+          self: null,
+          totalWithSubagents: {
+            estimatedCostUsd: 0.02,
+            pricingStatus: 'estimated',
+            tokenTotals: {
+              inputTokens: 4000,
+              cachedInputTokens: 0,
+              cacheCreationInputTokens: 0,
+              cacheCreation5mInputTokens: 0,
+              cacheCreation1hInputTokens: 0,
+              outputTokens: 500,
+              reasoningOutputTokens: 0,
+              totalTokens: 4500,
+            },
+            unpricedModels: [],
+            sessionCount: 1,
+            pricedSessionCount: 1,
+          },
+        },
+      ],
+      totalWithSubagents: {
+        estimatedCostUsd: 0.02,
+        pricingStatus: 'estimated',
+        tokenTotals: {
+          inputTokens: 4000,
+          cachedInputTokens: 0,
+          cacheCreationInputTokens: 0,
+          cacheCreation5mInputTokens: 0,
+          cacheCreation1hInputTokens: 0,
+          outputTokens: 500,
+          reasoningOutputTokens: 0,
+          totalTokens: 4500,
+        },
+        unpricedModels: [],
+        sessionCount: 1,
+        pricedSessionCount: 1,
+      },
+    });
+
+    await renderReader();
+    await userEvent.click(screen.getByRole('button', { name: 'Cost' }));
+
+    expect(await screen.findByText('Estimate')).toBeInTheDocument();
+    expect(screen.getByText('agent:child-only')).toBeInTheDocument();
+    expect(screen.getAllByText('$0.020').length).toBeGreaterThan(0);
+    expect(screen.queryByText('No cost data.')).not.toBeInTheDocument();
+  });
+
+  it('keeps the sub-agent estimate when parent self cost is token-only', async () => {
+    vi.mocked(api.getSessionCost).mockResolvedValueOnce({
+      sessionId: baseSession.id,
+      self: {
+        v: 1,
+        kind: 'api_equivalent_estimate',
+        pricingCatalogVersion: '2026-06-05',
+        pricingSources: [],
+        pricingStatus: 'token_only',
+        estimatedCostUsd: null,
+        tokenTotals: {
+          inputTokens: 100,
+          cachedInputTokens: 0,
+          cacheCreationInputTokens: 0,
+          cacheCreation5mInputTokens: 0,
+          cacheCreation1hInputTokens: 0,
+          outputTokens: 0,
+          reasoningOutputTokens: 0,
+          totalTokens: 100,
+        },
+        modelBreakdown: [],
+        unpricedModels: ['openai:unknown-model'],
+        usageEventCount: 1,
+      },
+      directSubagents: [
+        {
+          sessionId: 'agent:priced-child',
+          relation: 'subagent',
+          self: null,
+          totalWithSubagents: {
+            estimatedCostUsd: 0.02,
+            pricingStatus: 'estimated',
+            tokenTotals: {
+              inputTokens: 4000,
+              cachedInputTokens: 0,
+              cacheCreationInputTokens: 0,
+              cacheCreation5mInputTokens: 0,
+              cacheCreation1hInputTokens: 0,
+              outputTokens: 500,
+              reasoningOutputTokens: 0,
+              totalTokens: 4500,
+            },
+            unpricedModels: [],
+            sessionCount: 1,
+            pricedSessionCount: 1,
+          },
+        },
+      ],
+      totalWithSubagents: {
+        estimatedCostUsd: 0.02,
+        pricingStatus: 'partial',
+        tokenTotals: {
+          inputTokens: 4100,
+          cachedInputTokens: 0,
+          cacheCreationInputTokens: 0,
+          cacheCreation5mInputTokens: 0,
+          cacheCreation1hInputTokens: 0,
+          outputTokens: 500,
+          reasoningOutputTokens: 0,
+          totalTokens: 4600,
+        },
+        unpricedModels: ['openai:unknown-model'],
+        sessionCount: 2,
+        pricedSessionCount: 1,
+      },
+    });
+
+    await renderReader();
+    await userEvent.click(screen.getByRole('button', { name: 'Cost' }));
+
+    expect(await screen.findByText('Estimate')).toBeInTheDocument();
+    expect(screen.getAllByText('$0.020').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('token-only')).toHaveLength(1);
+  });
+
+  it('treats an empty always-run cost enrichment as no cost data', async () => {
+    vi.mocked(api.getSessionCost).mockResolvedValueOnce({
+      sessionId: baseSession.id,
+      self: {
+        v: 1,
+        kind: 'api_equivalent_estimate',
+        pricingCatalogVersion: '2026-06-05',
+        pricingSources: [],
+        pricingStatus: 'token_only',
+        estimatedCostUsd: null,
+        tokenTotals: {
+          inputTokens: 0,
+          cachedInputTokens: 0,
+          cacheCreationInputTokens: 0,
+          cacheCreation5mInputTokens: 0,
+          cacheCreation1hInputTokens: 0,
+          outputTokens: 0,
+          reasoningOutputTokens: 0,
+          totalTokens: 0,
+        },
+        modelBreakdown: [],
+        unpricedModels: [],
+        usageEventCount: 0,
+      },
+      directSubagents: [],
+      totalWithSubagents: {
+        estimatedCostUsd: null,
+        pricingStatus: 'token_only',
+        tokenTotals: {
+          inputTokens: 0,
+          cachedInputTokens: 0,
+          cacheCreationInputTokens: 0,
+          cacheCreation5mInputTokens: 0,
+          cacheCreation1hInputTokens: 0,
+          outputTokens: 0,
+          reasoningOutputTokens: 0,
+          totalTokens: 0,
+        },
+        unpricedModels: [],
+        sessionCount: 1,
+        pricedSessionCount: 0,
+      },
+    });
+
+    await renderReader();
+    await userEvent.click(screen.getByRole('button', { name: 'Cost' }));
+
+    expect(await screen.findByText('No cost data.')).toBeInTheDocument();
+    expect(screen.queryByText('Estimate')).not.toBeInTheDocument();
   });
 
   it('switches between cached trace output and salience output', async () => {

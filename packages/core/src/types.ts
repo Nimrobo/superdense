@@ -41,7 +41,7 @@ export interface DiscoveredSession {
 
 export interface TranscriptEvent {
   ts?: number;
-  kind?: 'text' | 'tool_call' | 'tool_result' | 'mode_change';
+  kind?: 'text' | 'tool_call' | 'tool_result' | 'mode_change' | 'usage';
   toolCallId?: string;
   toolName?: string;
   inputText?: string;
@@ -50,7 +50,22 @@ export interface TranscriptEvent {
   isError?: boolean;
   mode?: string;
   prevMode?: string;
+  model?: string;
+  modelProvider?: string;
+  tokenUsage?: TokenUsage;
+  cumulativeTokenUsage?: TokenUsage;
   raw?: unknown;
+}
+
+export interface TokenUsage {
+  inputTokens?: number;
+  cachedInputTokens?: number;
+  cacheCreationInputTokens?: number;
+  cacheCreation5mInputTokens?: number;
+  cacheCreation1hInputTokens?: number;
+  outputTokens?: number;
+  reasoningOutputTokens?: number;
+  totalTokens?: number;
 }
 
 export interface DiscoveredSubAgent {

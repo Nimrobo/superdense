@@ -11,6 +11,114 @@ export interface Session {
   gitBranch?: string | null;
   createdAt?: number | null;
   modifiedAt?: number | null;
+  sessionCost?: SessionCostAggregate | null;
+  workflowSummary?: WorkflowSummaryValue | null;
+}
+
+export interface WorkflowSummaryAgent {
+  agentId: string;
+  label?: string;
+  phaseTitle?: string;
+  phaseIndex?: number;
+  state?: string;
+  model?: string;
+  startedAt?: number;
+  durationMs?: number;
+  toolCalls?: number;
+  tokens?: number;
+  promptPreview?: string;
+  resultPreview?: string;
+}
+
+export interface WorkflowSummaryRun {
+  runId: string;
+  workflowName?: string;
+  status?: string;
+  agentCount?: number;
+  taskId?: string;
+  scriptPath?: string;
+  taskOutputPath?: string;
+  timestamp?: string;
+  startTime?: number;
+  durationMs?: number;
+  totalTokens?: number;
+  totalToolCalls?: number;
+  phases: Array<{ title?: string; detail?: string }>;
+  agents: WorkflowSummaryAgent[];
+}
+
+export interface WorkflowSummaryValue {
+  v: 1;
+  hasWorkflow: boolean;
+  workflowRunCount: number;
+  workflowToolCallCount: number;
+  workflowEnabled: boolean | null;
+  effort: string | null;
+  ultraEffort: boolean;
+  totalAgents: number;
+  totalTokens: number;
+  totalToolCalls: number;
+  runs: WorkflowSummaryRun[];
+}
+
+export type CostPricingStatus = 'estimated' | 'partial' | 'token_only';
+
+export interface TokenTotals {
+  inputTokens: number;
+  cachedInputTokens: number;
+  cacheCreationInputTokens: number;
+  cacheCreation5mInputTokens: number;
+  cacheCreation1hInputTokens: number;
+  outputTokens: number;
+  reasoningOutputTokens: number;
+  totalTokens: number;
+}
+
+export interface SessionCostModelBreakdown {
+  provider: string;
+  model: string;
+  tokenTotals: TokenTotals;
+  estimatedCostUsd: number | null;
+  pricingStatus: CostPricingStatus;
+  usageEventCount: number;
+}
+
+export interface SessionCostValue {
+  v: 1;
+  kind: 'api_equivalent_estimate';
+  pricingCatalogVersion: string;
+  pricingSources: string[];
+  pricingStatus: CostPricingStatus;
+  estimatedCostUsd: number | null;
+  tokenTotals: TokenTotals;
+  modelBreakdown: SessionCostModelBreakdown[];
+  unpricedModels: string[];
+  usageEventCount: number;
+}
+
+export interface SessionCostAggregate {
+  estimatedCostUsd: number | null;
+  pricingStatus: CostPricingStatus;
+  tokenTotals: TokenTotals;
+  unpricedModels: string[];
+  sessionCount: number;
+  pricedSessionCount: number;
+}
+
+export interface SessionCostTreeChild {
+  sessionId: string;
+  relation: string;
+  self: SessionCostValue | null;
+  totalWithSubagents: SessionCostAggregate;
+  metadata?: Record<string, unknown> | null;
+  children?: SessionCostTreeChild[];
+}
+
+export interface SessionCostResult {
+  sessionId: string;
+  self: SessionCostValue | null;
+  directSubagents: SessionCostTreeChild[];
+  totalWithSubagents: SessionCostAggregate;
 }
 
 export interface TranscriptEvent {
@@ -410,6 +518,12 @@ export const api = {
     return j<{ items: Session[]; total: number }>(`/api/sessions?${sp}`);
   },
   getSession: (id: string) => j<Session>(`/api/sessions/${encodeURIComponent(id)}`),
+  getSessionCost: (id: string, opts: { tree?: boolean; depth?: number } = {}) => {
+    const sp = new URLSearchParams();
+    if (opts.tree) sp.set('tree', 'true');
+    if (opts.depth != null) sp.set('depth', String(opts.depth));
+    return j<SessionCostResult>(`/api/sessions/${encodeURIComponent(id)}/cost?${sp}`);
+  },
   getTranscript: (id: string, opts: { offset?: number; limit?: number } = {}) => {
     const sp = new URLSearchParams();
     if (opts.offset) sp.set('offset', String(opts.offset));

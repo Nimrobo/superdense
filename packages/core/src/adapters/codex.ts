@@ -4,7 +4,13 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import Database from 'better-sqlite3';
-import type { Adapter, DiscoveredSession, DiscoveredSubAgent, TranscriptEvent } from '../types.js';
+import type {
+  Adapter,
+  DiscoveredSession,
+  DiscoveredSubAgent,
+  TokenUsage,
+  TranscriptEvent,
+} from '../types.js';
 import { statLogFile } from './claude-code.js';
 import { extractMeaningfulPrompt } from './prompt.js';
 
@@ -59,6 +65,29 @@ function timestampMs(obj: unknown): number | undefined {
   if (typeof ts !== 'string') return undefined;
   const ms = Date.parse(ts);
   return Number.isFinite(ms) ? ms : undefined;
+}
+
+function numberField(obj: unknown, key: string): number | undefined {
+  if (!obj || typeof obj !== 'object') return undefined;
+  const value = (obj as Record<string, unknown>)[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function codexTokenUsage(obj: unknown): TokenUsage | undefined {
+  if (!obj || typeof obj !== 'object') return undefined;
+  const usage = obj as Record<string, unknown>;
+  const out: TokenUsage = {};
+  const inputTokens = numberField(usage, 'input_tokens');
+  const cachedInputTokens = numberField(usage, 'cached_input_tokens');
+  const outputTokens = numberField(usage, 'output_tokens');
+  const reasoningOutputTokens = numberField(usage, 'reasoning_output_tokens');
+  const totalTokens = numberField(usage, 'total_tokens');
+  if (inputTokens != null) out.inputTokens = inputTokens;
+  if (cachedInputTokens != null) out.cachedInputTokens = cachedInputTokens;
+  if (outputTokens != null) out.outputTokens = outputTokens;
+  if (reasoningOutputTokens != null) out.reasoningOutputTokens = reasoningOutputTokens;
+  if (totalTokens != null) out.totalTokens = totalTokens;
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 function isTranscriptRole(role: unknown): role is TranscriptEvent['role'] {
@@ -262,6 +291,8 @@ async function* iterCodexEvents(logPath: string): AsyncIterable<TranscriptEvent>
   }
   const rl = createInterface({ input: stream, crlfDelay: Infinity });
   let lastMode: string | undefined;
+  let currentModel: string | undefined;
+  let currentProvider: string | undefined;
   const toolResultErrors = new Map<string, boolean>();
   try {
     for await (const line of rl) {
@@ -269,6 +300,13 @@ async function* iterCodexEvents(logPath: string): AsyncIterable<TranscriptEvent>
       const obj = safeJsonParse(line);
       if (!obj || typeof obj !== 'object') continue;
       const record = obj as { type?: unknown; payload?: any };
+      if (typeof record.payload?.model === 'string') currentModel = record.payload.model;
+      if (typeof record.payload?.model_provider === 'string') {
+        currentProvider = record.payload.model_provider;
+      }
+      if (typeof record.payload?.collaboration_mode?.settings?.model === 'string') {
+        currentModel = record.payload.collaboration_mode.settings.model;
+      }
       if (record.type === 'turn_context') {
         const mode = record.payload?.collaboration_mode?.mode;
         if (typeof mode === 'string' && mode !== lastMode) {
@@ -278,6 +316,11 @@ async function* iterCodexEvents(logPath: string): AsyncIterable<TranscriptEvent>
         continue;
       }
       if (record.type === 'event_msg') {
+        const tokenEvent = extractCodexUsageEvent(obj, {
+          model: currentModel,
+          modelProvider: currentProvider,
+        });
+        if (tokenEvent) yield tokenEvent;
         const status = extractToolEndStatus(record.payload);
         if (status) toolResultErrors.set(status.callId, status.isError);
         continue;
@@ -292,6 +335,30 @@ async function* iterCodexEvents(logPath: string): AsyncIterable<TranscriptEvent>
       /* ignore */
     }
   }
+}
+
+function extractCodexUsageEvent(
+  obj: unknown,
+  defaults: { model?: string; modelProvider?: string } = {},
+): TranscriptEvent | undefined {
+  const record = obj as { type?: unknown; payload?: any };
+  if (record.type !== 'event_msg' || record.payload?.type !== 'token_count') return undefined;
+  const info = record.payload?.info;
+  const tokenUsage = codexTokenUsage(info?.last_token_usage);
+  const cumulativeTokenUsage = codexTokenUsage(info?.total_token_usage);
+  if (!tokenUsage && !cumulativeTokenUsage) return undefined;
+  return {
+    ts: timestampMs(obj),
+    kind: 'usage',
+    model: typeof record.payload?.model === 'string' ? record.payload.model : defaults.model,
+    modelProvider:
+      typeof record.payload?.model_provider === 'string'
+        ? record.payload.model_provider
+        : (defaults.modelProvider ?? 'openai'),
+    tokenUsage,
+    cumulativeTokenUsage,
+    raw: obj,
+  };
 }
 
 function extractToolEndStatus(payload: unknown): { callId: string; isError: boolean } | undefined {

@@ -20,10 +20,12 @@ import { insightRunEnricher } from './insight-run.js';
 import { readUserEnrichers } from './loader.js';
 import { planModeEnricher } from './plan-mode.js';
 import { planRefsEnricher, type PlanRef } from './plan-refs.js';
+import { sessionCostEnricher } from './session-cost.js';
 import { sessionKindEnricher } from './session-kind.js';
 import { subagentSummaryEnricher } from './subagent-summary.js';
 import { toolCountsEnricher } from './tool-counts.js';
 import type { Enricher } from './types.js';
+import { workflowSummaryEnricher } from './workflow-summary.js';
 
 const BUILTINS: Enricher[] = [
   toolCountsEnricher,
@@ -34,6 +36,8 @@ const BUILTINS: Enricher[] = [
   insightRunEnricher,
   activeDurationEnricher,
   planModeEnricher,
+  sessionCostEnricher,
+  workflowSummaryEnricher,
   subagentSummaryEnricher,
   fileFootprintEnricher,
   planRefsEnricher,
