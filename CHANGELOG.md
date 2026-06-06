@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.0](https://github.com/Nimrobo/superdense/compare/@nimrobo/superdense-v0.4.0...@nimrobo/superdense-v0.5.0) (2026-06-06)
+
+
+### Features
+
+* add session costing via adapter enrichers ([#62](https://github.com/Nimrobo/superdense/issues/62)) ([3731ab4](https://github.com/Nimrobo/superdense/commit/3731ab455ffabea7ebae7f6406681deb2e18cbdd))
+
+
+### Documentation
+
+* expand reward layer documentation with concrete examples and vocabulary ([#63](https://github.com/Nimrobo/superdense/issues/63)) ([fed2849](https://github.com/Nimrobo/superdense/commit/fed2849b260adfe585cfff8fddf5df12b7c00258))
+* improve README structure and reward layer clarity ([#64](https://github.com/Nimrobo/superdense/issues/64)) ([6af60ec](https://github.com/Nimrobo/superdense/commit/6af60ecbf30d3ae28863f53d870057076377e120))
+
 ## [0.4.0](https://github.com/Nimrobo/superdense/compare/@nimrobo/superdense-v0.3.1...@nimrobo/superdense-v0.4.0) (2026-06-04)
 
 
