@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, type CohortMember } from '../api.js';
+import { formatArtifactCostBadge } from '../costDisplay.js';
 import { formatRelativeTime } from '../sessionDisplay.js';
 import { RewardTargetList } from '../rewardDisplay.js';
 
@@ -22,11 +23,15 @@ function MemberCard({
 }) {
   const { artifact, rewards } = member;
   const linked = rewards.targets;
+  const cost = formatArtifactCostBadge(member.cost);
   return (
     <div className="project-card" style={{ cursor: 'default' }}>
       <div className="project-card-top">
         <strong>{artifact.provisionalTitle}</strong>
-        <span className="project-status">{badge ?? artifact.artifactType}</span>
+        <div className="project-card-badges">
+          <span className="project-status">{badge ?? artifact.artifactType}</span>
+          {cost && <span className="artifact-cost-badge">{cost}</span>}
+        </div>
       </div>
       <div className="project-card-description ellipsis">{payloadPreview(artifact.payload)}</div>
       <div className="muted small">

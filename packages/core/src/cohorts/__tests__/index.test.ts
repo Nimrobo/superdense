@@ -10,7 +10,13 @@ vi.mock('../../paths.js', () => ({
   ensureSuperdenseDirs: vi.fn(),
 }));
 
-import { _resetDbForTests, upsertSession } from '../../db.js';
+import {
+  _resetDbForTests,
+  SYSTEM_RUN_ID,
+  upsertEnrichment,
+  upsertSession,
+  upsertSessionLink,
+} from '../../db.js';
 import { listProjectProfiles } from '../../projects/index.js';
 import { applyCurationBatch, finalizeArtifact } from '../../curation/index.js';
 import { assessExternalization } from '../../externalization/index.js';
@@ -44,17 +50,64 @@ function session(id: string, pwd: string): Session {
   };
 }
 
+function tokenTotals(totalTokens: number) {
+  return {
+    inputTokens: totalTokens,
+    cachedInputTokens: 0,
+    cacheCreationInputTokens: 0,
+    cacheCreation5mInputTokens: 0,
+    cacheCreation1hInputTokens: 0,
+    outputTokens: 0,
+    reasoningOutputTokens: 0,
+    totalTokens,
+  };
+}
+
+function costValue(estimatedCostUsd: number | null, totalTokens: number) {
+  return {
+    v: 1,
+    kind: 'api_equivalent_estimate',
+    pricingCatalogVersion: 'test',
+    pricingSources: [],
+    pricingStatus: estimatedCostUsd == null ? 'token_only' : 'estimated',
+    estimatedCostUsd,
+    tokenTotals: tokenTotals(totalTokens),
+    modelBreakdown: [],
+    unpricedModels: [],
+    usageEventCount: totalTokens > 0 ? 1 : 0,
+  };
+}
+
+function recordCost(sessionId: string, estimatedCostUsd: number | null, totalTokens: number): void {
+  upsertEnrichment(
+    sessionId,
+    SYSTEM_RUN_ID,
+    'session_cost',
+    1,
+    costValue(estimatedCostUsd, totalTokens),
+    Date.now(),
+  );
+}
+
 function projectIdForPwd(pwd: string): string {
   return listProjectProfiles().find((profile) => profile.projectKey === pwd)!.id;
 }
 
 function createArtifact(
   id: string,
-  opts: { type?: string; pwd?: string; predecessorArtifactId?: string } = {},
+  opts: {
+    type?: string;
+    pwd?: string;
+    predecessorArtifactId?: string;
+    evidenceSessionIds?: string[];
+  } = {},
 ): void {
-  const { type = 'launch', pwd = '/repo', predecessorArtifactId } = opts;
+  const { type = 'launch', pwd = '/repo', predecessorArtifactId, evidenceSessionIds = [] } = opts;
   const sessionId = `codex:${id}`;
   upsertSession(session(sessionId, pwd));
+  for (const evidenceSessionId of evidenceSessionIds) {
+    upsertSession(session(evidenceSessionId, pwd));
+  }
   applyCurationBatch({
     actions: [
       {
@@ -64,7 +117,17 @@ function createArtifact(
         provisionalTitle: `${id} title`,
       },
       { type: 'thread.attach', threadId: id, sessionId, role: 'contributor' },
+      ...evidenceSessionIds.map((evidenceSessionId) => ({
+        type: 'thread.attach',
+        threadId: id,
+        sessionId: evidenceSessionId,
+        role: 'evidence',
+      })),
       { type: 'session.consume', sessionId },
+      ...evidenceSessionIds.map((evidenceSessionId) => ({
+        type: 'session.consume',
+        sessionId: evidenceSessionId,
+      })),
       { type: 'thread.mark-ready', threadId: id, rationale: 'ready' },
     ],
   });
@@ -146,12 +209,59 @@ describe('cohorts (Layer 5)', () => {
     expect(cohort.members.map((m) => m.artifact.id)).toEqual(['a2', 'a1']); // finalized DESC
 
     const member = cohort.members[0]!;
-    expect(Object.keys(member).sort()).toEqual(['artifact', 'externalization', 'rewards']);
+    expect(Object.keys(member).sort()).toEqual(['artifact', 'cost', 'externalization', 'rewards']);
     expect(member).not.toHaveProperty('score');
     expect(member).not.toHaveProperty('rank');
     expect(Array.isArray(member.artifact.lineageEvents)).toBe(true);
     expect(member.artifact.sessions?.length).toBeGreaterThan(0);
     expect(member.rewards.targets[0]?.snapshots).toHaveLength(1);
+  });
+
+  it('surfaces contributor run cost with sub-agent work next to cohort outcomes', () => {
+    createArtifact('a1', { evidenceSessionIds: ['codex:evidence-1'] });
+    const parentId = 'codex:a1';
+    const childId = 'codex:a1-child';
+    upsertSession({ ...session(childId, '/repo'), isSubagent: true, parentSessionId: parentId });
+    upsertSessionLink(parentId, childId, 'subagent', null, Date.now());
+    recordCost(parentId, 0.01, 100);
+    recordCost(childId, 0.02, 200);
+    recordCost('codex:evidence-1', 0.99, 9900);
+    const [target] = link('a1', [{ connector: 'x', locator: '111' }]);
+    recordRewardSnapshot({ targetId: target, metrics: { views: 10 }, primaryDim: 'views' });
+
+    const member = getCohort({ type: 'launch' }).members[0]!;
+
+    expect(member.cost).toMatchObject({
+      contributorSessionIds: [parentId],
+      contributors: [
+        {
+          sessionId: parentId,
+          totalCostingWithSubagents: {
+            estimatedCostUsd: 0.03,
+            tokenTotals: { totalTokens: 300 },
+            sessionCount: 2,
+          },
+        },
+      ],
+      totalCostingWithSubagents: {
+        estimatedCostUsd: 0.03,
+        tokenTotals: { totalTokens: 300 },
+        sessionCount: 2,
+      },
+    });
+    expect(member.rewards.targets[0]?.latest?.metrics).toEqual({ views: 10 });
+  });
+
+  it('preserves contributor ids when their cost data is missing', () => {
+    createArtifact('a1');
+
+    const member = getCohort({ type: 'launch' }).members[0]!;
+
+    expect(member.cost).toEqual({
+      contributorSessionIds: ['codex:a1'],
+      contributors: [{ sessionId: 'codex:a1', totalCostingWithSubagents: null }],
+      totalCostingWithSubagents: null,
+    });
   });
 
   it('filters cohort members to a connector when requested', () => {
@@ -190,11 +300,17 @@ describe('cohorts (Layer 5)', () => {
     createArtifact('v1');
     createArtifact('v2', { predecessorArtifactId: 'v1' });
     createArtifact('v3', { predecessorArtifactId: 'v2' });
+    recordCost('codex:v1', 0.01, 100);
+    recordCost('codex:v2', 0.02, 200);
+    recordCost('codex:v3', 0.03, 300);
 
     for (const anchor of ['v1', 'v2', 'v3']) {
       const chain = getVersionChain(anchor);
       expect(chain?.rootId).toBe('v1');
       expect(chain?.members.map((m) => m.artifact.id)).toEqual(['v1', 'v2', 'v3']);
+      expect(
+        chain?.members.map((m) => m.cost?.totalCostingWithSubagents?.estimatedCostUsd),
+      ).toEqual([0.01, 0.02, 0.03]);
     }
   });
 

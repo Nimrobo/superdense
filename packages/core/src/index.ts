@@ -171,6 +171,7 @@ export { getArtifactRewards, listRewardSnapshots, recordRewardSnapshot } from '.
 export type { ArtifactRewards, RewardSnapshot, RewardTargetSeries } from './rewards/index.js';
 export { getCohort, getVersionChain, listCohorts, listVersionChains } from './cohorts/index.js';
 export type {
+  ArtifactCost,
   Cohort,
   CohortAxis,
   CohortMember,

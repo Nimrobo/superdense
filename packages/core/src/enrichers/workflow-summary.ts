@@ -80,6 +80,21 @@ export const workflowSummaryEnricher: Enricher = {
   alwaysRun: true,
   description: 'Claude Code dynamic workflow summary detected from transcript and workflow files.',
   async run(ctx) {
+    if (ctx.session.agent !== 'claude-code') {
+      return {
+        v: 1,
+        hasWorkflow: false,
+        workflowRunCount: 0,
+        workflowToolCallCount: 0,
+        workflowEnabled: null,
+        effort: null,
+        ultraEffort: false,
+        totalAgents: 0,
+        totalTokens: 0,
+        totalToolCalls: 0,
+        runs: [],
+      } satisfies WorkflowSummaryValue;
+    }
     const [signals, runs] = await Promise.all([
       scanTranscript(ctx.logPath),
       readWorkflowRuns(ctx.logPath, ctx.session.sessionId),

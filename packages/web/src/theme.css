@@ -1054,6 +1054,12 @@ a {
   gap: 10px;
   justify-content: space-between;
 }
+.project-card-badges {
+  align-items: center;
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+}
 .project-card-description {
   color: var(--text-muted);
   font-size: 12px;
@@ -1075,6 +1081,17 @@ a {
   background: #fff7ed;
   border-color: #fed7aa;
   color: #9a3412;
+}
+.artifact-cost-badge {
+  background: var(--accent-soft);
+  border: 1px solid #d9e0fb;
+  border-radius: 999px;
+  color: var(--accent);
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  white-space: nowrap;
 }
 .command-box {
   background: var(--bg-soft);

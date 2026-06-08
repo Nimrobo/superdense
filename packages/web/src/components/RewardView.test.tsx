@@ -46,6 +46,13 @@ const openThread = {
   lifecycle: 'open',
 } as apiModule.WorkThread;
 
+const uncostedArtifactThread = {
+  ...artifactThread,
+  id: 'a2',
+  provisionalTitle: 'Uncosted launch',
+  payload: { text: 'no cost yet' },
+} as apiModule.WorkThread;
+
 const overview: apiModule.RewardOverview = {
   status: {
     projectId: null,
@@ -225,6 +232,54 @@ beforeEach(() => {
           artifact: artifactThread,
           externalization: artifactDetail.externalization,
           rewards: artifactDetail.rewards,
+          cost: {
+            contributorSessionIds: ['codex:a1'],
+            contributors: [
+              {
+                sessionId: 'codex:a1',
+                totalCostingWithSubagents: {
+                  estimatedCostUsd: 0.012345,
+                  pricingStatus: 'partial',
+                  tokenTotals: {
+                    inputTokens: 1000,
+                    cachedInputTokens: 0,
+                    cacheCreationInputTokens: 0,
+                    cacheCreation5mInputTokens: 0,
+                    cacheCreation1hInputTokens: 0,
+                    outputTokens: 100,
+                    reasoningOutputTokens: 0,
+                    totalTokens: 1100,
+                  },
+                  unpricedModels: ['openai:unknown'],
+                  sessionCount: 1,
+                  pricedSessionCount: 1,
+                },
+              },
+            ],
+            totalCostingWithSubagents: {
+              estimatedCostUsd: 0.012345,
+              pricingStatus: 'partial',
+              tokenTotals: {
+                inputTokens: 1000,
+                cachedInputTokens: 0,
+                cacheCreationInputTokens: 0,
+                cacheCreation5mInputTokens: 0,
+                cacheCreation1hInputTokens: 0,
+                outputTokens: 100,
+                reasoningOutputTokens: 0,
+                totalTokens: 1100,
+              },
+              unpricedModels: ['openai:unknown'],
+              sessionCount: 1,
+              pricedSessionCount: 1,
+            },
+          },
+        },
+        {
+          artifact: uncostedArtifactThread,
+          externalization: null,
+          rewards: { artifactId: 'a2', targets: [] },
+          cost: null,
         },
       ],
     },
@@ -290,5 +345,8 @@ describe('RewardView', () => {
     expect(apiModule.api.getCohort).toHaveBeenCalledWith('launch');
     expect(screen.getByText('not compare ready')).toBeDefined();
     expect(screen.getByText('https://example.com/post')).toBeDefined();
+    expect(screen.getByText('$0.012 partial')).toBeDefined();
+    expect(screen.queryByText('Cost $0.012 partial | 1.1K tokens | 1 contributor')).toBeNull();
+    expect(screen.getByText('Uncosted launch')).toBeDefined();
   });
 });

@@ -8,6 +8,7 @@ import {
   type RewardProjectOverview,
   type WorkThread,
 } from '../api.js';
+import { formatArtifactCostBadge } from '../costDisplay.js';
 import { RewardTargetList } from '../rewardDisplay.js';
 import { formatRelativeTime, projectLabel } from '../sessionDisplay.js';
 import { WorkThreadView } from './WorkThreadView.js';
@@ -573,32 +574,41 @@ function TypeDetail({
           </div>
         </section>
         {!members && !error && <div className="empty">Loading rewards...</div>}
-        {members?.map((member) => (
-          <div key={member.artifact.id} className="project-card" style={{ cursor: 'default' }}>
-            <div className="project-card-top">
-              <strong>{member.artifact.provisionalTitle}</strong>
-              <span className="project-status">
-                {projects.get(member.artifact.projectProfileId) ?? member.artifact.projectProfileId}
-              </span>
+        {members?.map((member) => {
+          const cost = formatArtifactCostBadge(member.cost);
+          return (
+            <div key={member.artifact.id} className="project-card" style={{ cursor: 'default' }}>
+              <div className="project-card-top">
+                <strong>{member.artifact.provisionalTitle}</strong>
+                <div className="project-card-badges">
+                  <span className="project-status">
+                    {projects.get(member.artifact.projectProfileId) ??
+                      member.artifact.projectProfileId}
+                  </span>
+                  {cost && <span className="artifact-cost-badge">{cost}</span>}
+                </div>
+              </div>
+              <div className="project-card-description ellipsis">
+                {payloadPreview(member.artifact.payload)}
+              </div>
+              <div className="muted small">
+                finalized{' '}
+                {formatRelativeTime(
+                  member.artifact.artifactFinalizedAt ?? member.artifact.updatedAt,
+                )}{' '}
+                · externalization {member.externalization?.status ?? 'unprocessed'}
+              </div>
+              <RewardTargetList targets={member.rewards.targets} />
+              <button
+                type="button"
+                className="back-btn thread-open"
+                onClick={() => onOpenThread(member.artifact.id)}
+              >
+                Open workthread
+              </button>
             </div>
-            <div className="project-card-description ellipsis">
-              {payloadPreview(member.artifact.payload)}
-            </div>
-            <div className="muted small">
-              finalized{' '}
-              {formatRelativeTime(member.artifact.artifactFinalizedAt ?? member.artifact.updatedAt)}{' '}
-              · externalization {member.externalization?.status ?? 'unprocessed'}
-            </div>
-            <RewardTargetList targets={member.rewards.targets} />
-            <button
-              type="button"
-              className="back-btn thread-open"
-              onClick={() => onOpenThread(member.artifact.id)}
-            >
-              Open workthread
-            </button>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </>
   );

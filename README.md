@@ -63,7 +63,8 @@ That last row is the loop closing: `compare` is what the agent reads _before_ th
 - **thread** — related sessions that together produced one real output; mutable while you curate.
 - **artifact** — the frozen record of one shipped thing; stable once finalized, lineage stays append-only.
 - **connector** — a plain platform label you choose (`github`, `x`, `npm`, …) marking where an artifact went live. A string, not software Superdense installs.
-- **cohort** — peer artifacts of the same kind, surfaced side by side with their outcomes.
+- **cohort** — peer artifacts of the same kind, surfaced side by side with their contributor
+  run costs and outcomes.
 
 ## What's under the hood
 
@@ -101,6 +102,8 @@ superdense compactor run salience <session-id>   # what happened?
 superdense compactor run trace <session-id>      # what sequence did the agent follow?
 superdense insight list                          # list available insight recipes
 superdense insight prompt <name>                 # print a paste-ready insight prompt
+superdense cohort show <type>                    # export artifacts with run cost + outcomes
+superdense cohort chain <artifact-id>            # compare one deliverable across versions
 superdense skill install                         # install the superdense skill into Claude + Codex
 superdense help                                  # full command list
 ```
