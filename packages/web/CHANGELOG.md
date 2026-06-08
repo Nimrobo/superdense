@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.0](https://github.com/Nimrobo/superdense/compare/@nimrobo/superdense-v0.4.0...superdense-web-v0.5.0) (2026-06-08)
+
+
+### Features
+
+* add session costing via adapter enrichers ([#62](https://github.com/Nimrobo/superdense/issues/62)) ([3731ab4](https://github.com/Nimrobo/superdense/commit/3731ab455ffabea7ebae7f6406681deb2e18cbdd))
+* surface contributor run costs in cohort members ([#67](https://github.com/Nimrobo/superdense/issues/67)) ([d960a9e](https://github.com/Nimrobo/superdense/commit/d960a9eb24ee4fde6ed4a2403b5e83d4d341cc5b))
+
 ## [0.4.0](https://github.com/Nimrobo/superdense/compare/@nimrobo/superdense-v0.3.0...superdense-web-v0.4.0) (2026-06-06)
 
 
