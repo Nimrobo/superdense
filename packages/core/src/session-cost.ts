@@ -84,6 +84,16 @@ function buildChildCost(
   };
 }
 
+export function aggregateSessionCosts(
+  aggregates: Array<SessionCostAggregate | null>,
+): SessionCostAggregate | null {
+  const present = aggregates.filter((aggregate): aggregate is SessionCostAggregate => {
+    return aggregate !== null && hasAggregateCostData(aggregate);
+  });
+  if (present.length === 0) return null;
+  return aggregateCosts([], present);
+}
+
 function aggregateCosts(
   selfCosts: Array<SessionCostValue | null>,
   childAggregates: SessionCostAggregate[],
@@ -139,6 +149,14 @@ function aggregateCosts(
     sessionCount,
     pricedSessionCount,
   };
+}
+
+function hasAggregateCostData(aggregate: SessionCostAggregate): boolean {
+  return (
+    aggregate.tokenTotals.totalTokens > 0 ||
+    typeof aggregate.estimatedCostUsd === 'number' ||
+    aggregate.unpricedModels.length > 0
+  );
 }
 
 function isSessionCostValue(value: unknown): value is SessionCostValue {

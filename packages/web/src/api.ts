@@ -395,6 +395,15 @@ export interface ArtifactRewards {
 
 export type CohortAxis = 'type' | 'connector';
 
+export interface ArtifactCost {
+  contributorSessionIds: string[];
+  contributors: Array<{
+    sessionId: string;
+    totalCostingWithSubagents: SessionCostAggregate | null;
+  }>;
+  totalCostingWithSubagents: SessionCostAggregate | null;
+}
+
 export interface CohortSummary {
   type: string;
   connector: string | null;
@@ -407,6 +416,7 @@ export interface CohortMember {
   artifact: Artifact;
   externalization: ArtifactExternalization | null;
   rewards: ArtifactRewards;
+  cost: ArtifactCost | null;
 }
 
 export interface Cohort {
