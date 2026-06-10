@@ -24,6 +24,7 @@ import { sessionCostEnricher } from './session-cost.js';
 import { sessionKindEnricher } from './session-kind.js';
 import { subagentSummaryEnricher } from './subagent-summary.js';
 import { toolCountsEnricher } from './tool-counts.js';
+import { turnLatencyEnricher } from './turn-latency.js';
 import type { Enricher } from './types.js';
 import { workflowSummaryEnricher } from './workflow-summary.js';
 
@@ -37,6 +38,7 @@ const BUILTINS: Enricher[] = [
   activeDurationEnricher,
   planModeEnricher,
   sessionCostEnricher,
+  turnLatencyEnricher,
   workflowSummaryEnricher,
   subagentSummaryEnricher,
   fileFootprintEnricher,

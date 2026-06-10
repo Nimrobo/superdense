@@ -42,6 +42,14 @@ const mockWindow: apiModule.WindowBundle = {
     projects: 3,
     activeDays: 5,
     avgPerActiveDay: 2.4,
+    turnLatency: {
+      count: 3,
+      minMs: 1000,
+      maxMs: 9000,
+      avgMs: 5000,
+      medianMs: 5000,
+      p90Ms: 9000,
+    },
     adapterMix: [
       { agent: 'claude-code', count: 8 },
       { agent: 'codex', count: 4 },
@@ -127,6 +135,27 @@ describe('DashboardView', () => {
     await waitFor(() => {
       expect(vi.mocked(apiModule.api.statsWindow)).toHaveBeenCalledWith(14);
     });
+  });
+
+  it('renders agent response time when turn latency is available', async () => {
+    render(<DashboardView {...defaultProps} />);
+    await waitFor(() => screen.getByText('Agent response time'));
+    expect(screen.getByText('Median')).toBeDefined();
+    expect(screen.getByText('Average')).toBeDefined();
+    expect(screen.getByText('P90')).toBeDefined();
+    expect(screen.getByText('Turns measured')).toBeDefined();
+    expect(screen.getAllByText('5.0s')).toHaveLength(2);
+    expect(screen.getByText('9.0s')).toBeDefined();
+  });
+
+  it('hides agent response time when no turns are measured', async () => {
+    vi.mocked(apiModule.api.statsWindow).mockResolvedValue({
+      ...mockWindow,
+      window: { ...mockWindow.window, turnLatency: null },
+    });
+    render(<DashboardView {...defaultProps} />);
+    await waitFor(() => screen.getByText('Selected window'));
+    expect(screen.queryByText('Agent response time')).toBeNull();
   });
 
   it('renders the empty state when there are zero sessions', async () => {

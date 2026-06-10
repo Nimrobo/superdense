@@ -206,6 +206,14 @@ export interface WindowMetrics {
   projects: number;
   activeDays: number;
   avgPerActiveDay: number;
+  turnLatency: {
+    count: number;
+    minMs: number;
+    maxMs: number;
+    avgMs: number;
+    medianMs: number;
+    p90Ms: number;
+  } | null;
   adapterMix: Array<{ agent: string; count: number }>;
   topClis: Array<{ cli: string; count: number }>;
   activeProjects: Array<{ pwd: string; count: number; activeDays: number; lastActiveAt: number }>;

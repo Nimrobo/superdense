@@ -48,6 +48,14 @@ beforeEach(() => {
       projects: 2,
       activeDays: 3,
       avgPerActiveDay: 1.33,
+      turnLatency: {
+        count: 3,
+        minMs: 1000,
+        maxMs: 9000,
+        avgMs: 5000,
+        medianMs: 5000,
+        p90Ms: 9000,
+      },
       adapterMix: [],
       topClis: [],
       activeProjects: [],
@@ -144,8 +152,9 @@ describe('dashboard stats routes', () => {
 
   it('returns selected-window metrics and falls back to 7 days', async () => {
     const app = await buildApp();
-    await app.inject({ method: 'GET', url: '/api/stats/window?days=99' });
+    const res = await app.inject({ method: 'GET', url: '/api/stats/window?days=99' });
     expect(core.getWindowMetrics).toHaveBeenCalledWith(7);
+    expect(res.json().window.turnLatency.count).toBe(3);
   });
 
   it('returns insights bundle', async () => {

@@ -1,4 +1,6 @@
 import { SYSTEM_RUN_ID, getDb } from '../db.js';
+import { summarizeTurnDurations } from '../enrichers/turn-latency.js';
+import type { TurnLatencyValue } from '../enrichers/turn-latency.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -25,6 +27,7 @@ export interface WindowMetrics {
   projects: number;
   activeDays: number;
   avgPerActiveDay: number;
+  turnLatency: WindowTurnLatency | null;
   adapterMix: Array<{ agent: string; count: number }>;
   topClis: Array<{ cli: string; count: number }>;
   activeProjects: Array<{ pwd: string; count: number; activeDays: number; lastActiveAt: number }>;
@@ -39,6 +42,15 @@ export interface WindowMetrics {
 export interface WindowBundle {
   days: number;
   window: WindowMetrics;
+}
+
+export interface WindowTurnLatency {
+  count: number;
+  minMs: number;
+  maxMs: number;
+  avgMs: number;
+  medianMs: number;
+  p90Ms: number;
 }
 
 function ymd(ms: number): string {
@@ -323,11 +335,54 @@ function computeWindowMetrics(
     lastActiveAt: r.last_active_at,
   }));
 
+  const turnLatencyRows = db
+    .prepare(
+      `
+      SELECT se.value AS value
+        FROM sessions s
+        INNER JOIN session_enrich se
+                ON se.session_id = s.id
+               AND se.name = 'turn_latency'
+               AND se.query_run_id = ?
+       WHERE s.is_subagent = 0
+         AND s.modified_at IS NOT NULL AND s.modified_at >= ? AND s.modified_at < ?
+    `,
+    )
+    .all(SYSTEM_RUN_ID, startMs, endMs) as Array<{ value: string }>;
+  const turnDurations: number[] = [];
+  for (const row of turnLatencyRows) {
+    let parsed: TurnLatencyValue | undefined;
+    try {
+      parsed = JSON.parse(row.value) as TurnLatencyValue;
+    } catch {
+      continue;
+    }
+    if (!Array.isArray(parsed?.turns)) continue;
+    for (const turn of parsed.turns) {
+      if (typeof turn?.durationMs === 'number' && Number.isFinite(turn.durationMs)) {
+        turnDurations.push(turn.durationMs);
+      }
+    }
+  }
+  const turnStats = summarizeTurnDurations(turnDurations);
+  const turnLatency =
+    turnStats.count > 0
+      ? {
+          count: turnStats.count,
+          minMs: turnStats.minMs!,
+          maxMs: turnStats.maxMs!,
+          avgMs: turnStats.avgMs!,
+          medianMs: turnStats.medianMs!,
+          p90Ms: turnStats.p90Ms!,
+        }
+      : null;
+
   return {
     sessions,
     projects,
     activeDays,
     avgPerActiveDay: activeDays > 0 ? sessions / activeDays : 0,
+    turnLatency,
     adapterMix,
     topClis,
     activeProjects,

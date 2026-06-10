@@ -93,6 +93,7 @@ export type {
   ContributionDay,
   WindowMetrics,
   WindowBundle,
+  WindowTurnLatency,
 } from './stats/motivation.js';
 export {
   getHourDowHeatmap,

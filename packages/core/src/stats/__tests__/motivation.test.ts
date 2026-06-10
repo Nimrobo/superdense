@@ -188,6 +188,107 @@ describe('getWindowMetrics', () => {
     expect(w.window.topClis[0]!.cli).toBe('git');
   });
 
+  it('aggregates turn latency from root sessions in the selected window', () => {
+    const now = utcNoon(2026, 5, 21);
+    upsertSession({ ...BASE, id: 's1', modifiedAt: now - 1 * DAY });
+    upsertSession({ ...BASE, id: 's2', modifiedAt: now - 2 * DAY });
+    upsertSession({ ...BASE, id: 'outside', modifiedAt: now - 10 * DAY });
+    upsertSession({
+      ...BASE,
+      id: 'child',
+      modifiedAt: now - 1 * DAY,
+      isSubagent: true,
+      parentSessionId: 's1',
+    });
+    upsertEnrichment(
+      's1',
+      SYSTEM_RUN_ID,
+      'turn_latency',
+      1,
+      {
+        v: 1,
+        count: 2,
+        minMs: 1000,
+        maxMs: 5000,
+        avgMs: 3000,
+        medianMs: 1000,
+        p90Ms: 5000,
+        turns: [
+          { startTs: 1, endTs: 1001, durationMs: 1000 },
+          { startTs: 2, endTs: 5002, durationMs: 5000 },
+        ],
+      },
+      now,
+    );
+    upsertEnrichment(
+      's2',
+      SYSTEM_RUN_ID,
+      'turn_latency',
+      1,
+      {
+        v: 1,
+        count: 1,
+        minMs: 9000,
+        maxMs: 9000,
+        avgMs: 9000,
+        medianMs: 9000,
+        p90Ms: 9000,
+        turns: [{ startTs: 3, endTs: 9003, durationMs: 9000 }],
+      },
+      now,
+    );
+    upsertEnrichment(
+      'outside',
+      SYSTEM_RUN_ID,
+      'turn_latency',
+      1,
+      {
+        v: 1,
+        count: 1,
+        minMs: 99_000,
+        maxMs: 99_000,
+        avgMs: 99_000,
+        medianMs: 99_000,
+        p90Ms: 99_000,
+        turns: [{ startTs: 4, endTs: 99004, durationMs: 99_000 }],
+      },
+      now,
+    );
+    upsertEnrichment(
+      'child',
+      SYSTEM_RUN_ID,
+      'turn_latency',
+      1,
+      {
+        v: 1,
+        count: 1,
+        minMs: 77_000,
+        maxMs: 77_000,
+        avgMs: 77_000,
+        medianMs: 77_000,
+        p90Ms: 77_000,
+        turns: [{ startTs: 5, endTs: 77005, durationMs: 77_000 }],
+      },
+      now,
+    );
+
+    expect(getWindowMetrics(7, now).window.turnLatency).toEqual({
+      count: 3,
+      minMs: 1000,
+      maxMs: 9000,
+      avgMs: 5000,
+      medianMs: 5000,
+      p90Ms: 9000,
+    });
+  });
+
+  it('returns null turn latency when there are no measured turns', () => {
+    const now = utcNoon(2026, 5, 21);
+    upsertSession({ ...BASE, id: 's1', modifiedAt: now - 1 * DAY });
+
+    expect(getWindowMetrics(7, now).window.turnLatency).toBeNull();
+  });
+
   it('returns active and repeated-return projects', () => {
     const now = utcNoon(2026, 5, 21);
     upsertSession({ ...BASE, id: 's1', pwd: '/a', modifiedAt: now - 1 * DAY });
@@ -274,6 +375,7 @@ describe('getWindowMetrics', () => {
     expect(window.sessions).toBe(1);
     expect(window.projects).toBe(1);
     expect(window.activeDays).toBe(1);
+    expect(window.turnLatency).toBeNull();
     expect(window.adapterMix).toEqual([{ agent: 'root-agent', count: 1 }]);
     expect(window.topClis).toEqual([{ cli: 'git', count: 1 }]);
     expect(window.activeProjects).toEqual([

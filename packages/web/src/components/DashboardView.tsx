@@ -48,6 +48,15 @@ function formatDuration(ms: number): string {
   return rem ? `${h}h ${rem}m` : `${h}h`;
 }
 
+function formatLatency(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  const seconds = ms / 1000;
+  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remSeconds = Math.round(seconds % 60);
+  return remSeconds ? `${minutes}m ${remSeconds}s` : `${minutes}m`;
+}
+
 function ymdToLabel(ymd: string): string {
   const [y, m, d] = ymd.split('-').map((n) => Number(n));
   if (!y || !m || !d) return ymd;
@@ -509,6 +518,21 @@ function WindowMetricsCard({
             <Tile label="Active days" value={data.window.activeDays} />
             <Tile label="Sessions / active day" value={data.window.avgPerActiveDay.toFixed(1)} />
           </div>
+          {data.window.turnLatency && (
+            <div className="inline-list-block">
+              <div className="card-subtitle">Agent response time</div>
+              <div className="window-grid">
+                <Tile label="Median" value={formatLatency(data.window.turnLatency.medianMs)} />
+                <Tile label="Average" value={formatLatency(data.window.turnLatency.avgMs)} />
+                <Tile label="P90" value={formatLatency(data.window.turnLatency.p90Ms)} />
+                <Tile label="Turns measured" value={data.window.turnLatency.count} />
+              </div>
+              <div className="muted small">
+                Min {formatLatency(data.window.turnLatency.minMs)} · Max{' '}
+                {formatLatency(data.window.turnLatency.maxMs)}
+              </div>
+            </div>
+          )}
           {data.window.topClis.length > 0 && (
             <div className="inline-list-block">
               <div className="card-subtitle">Top CLI commands</div>
