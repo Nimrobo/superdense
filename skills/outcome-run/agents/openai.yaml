@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Outcome Run'
+  short_description: 'Run one outcome-loop action'
+  default_prompt: 'Use $outcome-run to run one action from an outcome folder, starting with Superdense reward maintenance and ending with work.md and learnings.md.'

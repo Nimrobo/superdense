@@ -1663,6 +1663,86 @@ describe('superdense cli agent commands', () => {
     });
   });
 
+  it('installs an outcome skill with shared reference material', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'superdense-outcome-skill-'));
+    tempRoots.push(root);
+    process.env.CLAUDE_SKILLS_DIR = join(root, 'claude');
+    process.env.CODEX_SKILLS_DIR = join(root, 'codex');
+    const out = io();
+
+    await runCli(['skill', 'install', 'outcome-run'], out.io);
+
+    const claudeSkill = join(root, 'claude', 'outcome-run');
+    const codexSkill = join(root, 'codex', 'outcome-run');
+    expect(readFileSync(join(claudeSkill, 'SKILL.md'), 'utf8')).toContain('# Outcome Run');
+    expect(readFileSync(join(codexSkill, 'SKILL.md'), 'utf8')).toContain('# Outcome Run');
+    expect(readFileSync(join(claudeSkill, 'references', 'outcome-loop.md'), 'utf8')).toContain(
+      'Do not create `metrics.md`',
+    );
+    expect(readFileSync(join(codexSkill, 'references', 'outcome-loop.md'), 'utf8')).toContain(
+      'Superdense owns durable outcome evidence',
+    );
+    expect(existsSync(join(claudeSkill, 'agents', 'openai.yaml'))).toBe(true);
+    expect(existsSync(join(codexSkill, 'agents', 'openai.yaml'))).toBe(true);
+    expect(json(readFileSync(join(claudeSkill, '.superdense-install.json'), 'utf8'))).toMatchObject(
+      {
+        version: '0.1.0',
+        scope: 'global',
+      },
+    );
+    expect(json(out.stdout[0]!)).toEqual({
+      installed: [
+        {
+          name: 'outcome-run',
+          claude: claudeSkill,
+          codex: codexSkill,
+        },
+      ],
+    });
+  });
+
+  it('materializes the shared outcome-loop reference into each installed outcome skill', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'superdense-shared-ref-'));
+    tempRoots.push(root);
+    process.env.CLAUDE_SKILLS_DIR = join(root, 'claude');
+    process.env.CODEX_SKILLS_DIR = join(root, 'codex');
+    const out = io();
+
+    await runCli(['skill', 'install', 'outcome-setup', 'outcome-run', 'outcome-update'], out.io);
+
+    const canonical = readFileSync(
+      new URL('../../../skills/_shared/outcome-loop.md', import.meta.url),
+      'utf8',
+    );
+    expect(canonical).toContain('### runs/<run-id>/work.md');
+    expect(canonical).toContain('### runs/<run-id>/learnings.md');
+    expect(canonical).not.toContain(
+      'from the Work Template and Learnings Template in this reference',
+    );
+    for (const name of ['outcome-setup', 'outcome-run', 'outcome-update']) {
+      for (const surface of ['claude', 'codex']) {
+        expect(
+          readFileSync(join(root, surface, name, 'references', 'outcome-loop.md'), 'utf8'),
+        ).toBe(canonical);
+      }
+    }
+  });
+
+  it('does not install the _shared reference directory as a skill', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'superdense-shared-dir-'));
+    tempRoots.push(root);
+    process.env.CLAUDE_SKILLS_DIR = join(root, 'claude');
+    process.env.CODEX_SKILLS_DIR = join(root, 'codex');
+    const out = io();
+
+    await runCli(['skill', 'install'], out.io);
+
+    const body = json(out.stdout[0]!) as { installed: Array<{ name: string }> };
+    expect(body.installed.map((item) => item.name)).not.toContain('_shared');
+    expect(existsSync(join(root, 'claude', '_shared'))).toBe(false);
+    expect(existsSync(join(root, 'codex', '_shared'))).toBe(false);
+  });
+
   it('installs all bundled skills when no skill name is provided', async () => {
     const root = mkdtempSync(join(tmpdir(), 'superdense-skills-'));
     tempRoots.push(root);
@@ -1685,6 +1765,21 @@ describe('superdense cli agent commands', () => {
           claude: join(root, 'claude', 'chain'),
           codex: join(root, 'codex', 'chain'),
         }),
+        expect.objectContaining({
+          name: 'outcome-setup',
+          claude: join(root, 'claude', 'outcome-setup'),
+          codex: join(root, 'codex', 'outcome-setup'),
+        }),
+        expect.objectContaining({
+          name: 'outcome-run',
+          claude: join(root, 'claude', 'outcome-run'),
+          codex: join(root, 'codex', 'outcome-run'),
+        }),
+        expect.objectContaining({
+          name: 'outcome-update',
+          claude: join(root, 'claude', 'outcome-update'),
+          codex: join(root, 'codex', 'outcome-update'),
+        }),
       ]),
     );
     expect(existsSync(join(root, 'claude', 'superdense', 'agents', 'openai.yaml'))).toBe(true);
@@ -1695,6 +1790,11 @@ describe('superdense cli agent commands', () => {
     expect(existsSync(join(root, 'codex', 'superdense', 'reward', 'reconcile.md'))).toBe(true);
     expect(existsSync(join(root, 'claude', 'chain', 'chain-sessions.sh'))).toBe(true);
     expect(existsSync(join(root, 'codex', 'chain', 'chain-sessions.sh'))).toBe(true);
+    expect(existsSync(join(root, 'claude', 'outcome-setup', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, 'codex', 'outcome-run', 'references', 'outcome-loop.md'))).toBe(
+      true,
+    );
+    expect(existsSync(join(root, 'claude', 'outcome-update', 'agents', 'openai.yaml'))).toBe(true);
     expect(
       existsSync(join(root, 'claude', 'superdense-externalization-reconcile', 'SKILL.md')),
     ).toBe(false);
@@ -1793,6 +1893,9 @@ describe('superdense cli agent commands', () => {
     );
     expect(existsSync(join(root, 'global-claude', 'chain', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(root, 'global-codex', 'chain', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, 'global-claude', 'outcome-setup', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, 'global-codex', 'outcome-run', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, 'global-claude', 'outcome-update', 'SKILL.md'))).toBe(true);
     expect(
       existsSync(join(root, 'global-claude', 'superdense-externalization-reconcile', 'SKILL.md')),
     ).toBe(false);
