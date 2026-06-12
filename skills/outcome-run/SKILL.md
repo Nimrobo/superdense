@@ -18,9 +18,12 @@ Read `references/outcome-loop.md` before starting.
    - Prefer a lower-cost or lower-reasoning subagent only when it is still capable of correct curation, finalization, reconciliation, and collection.
    - If subagents are unavailable, run the same preflight locally.
 3. Give the reward preflight this job:
-   - run `superdense reward status`,
-   - advance one bounded actionable batch when status selects `profile`, `curate`, `finalize`, `reconcile`, or `collect`,
-   - use the stage references under `superdense/reward/`,
+   - resolve the outcome's Superdense project id from `goal.md` target surfaces, the folder project key, or a global `superdense reward status` discovery fallback,
+   - run `superdense reward status --project <project-id>` before project-sensitive maintenance,
+   - advance each actionable stage in pipeline order for that project: `profile`, `curate`, `finalize`, `reconcile`, then `collect`,
+   - run only one bounded batch per actionable stage, re-running scoped status between stages,
+   - stop and report blockers when a stage cannot advance cleanly,
+   - use the stage references under the installed skills root, `superdense/reward/`,
    - do not perform irreversible external actions,
    - surface relevant `compare` cohorts or chains for the current outcome,
    - return an evidence packet with actions taken, IDs, prior reward evidence, and blockers.
@@ -31,7 +34,7 @@ Read `references/outcome-loop.md` before starting.
 6. Execute the intervention in the correct surface:
    - for content outcomes, the run folder may contain drafts or final copy,
    - for product outcomes, edit the target repo and record branch, PR, deploy, event names, and session IDs in `work.md`.
-7. Do not create `metrics.md`. If a metric needs to be captured, record it through Superdense reward commands. If blocked, record the blocker in `work.md`.
+7. Do not create `metrics.md`. If a metric needs to be captured, record it through Superdense reward commands. If blocked, record the blocker in `work.md` under `## Blockers`.
 8. Do not append outcome interpretation back into old run folders. Current runs learn from prior outcomes and their own execution.
 
 ## Reward Preflight Prompt
@@ -41,7 +44,11 @@ Use this when spawning a subagent:
 ```text
 You are the reward-maintenance agent for an outcome-loop run.
 
-Read the outcome folder's goal.md and run.md. Run `superdense reward status` and advance only one bounded actionable Superdense reward batch if needed. Use the relevant `superdense/reward/*.md` reference. You may mutate local Superdense reward state, but you must not perform irreversible external actions or publish anything externally. Prefer indexed metadata and Superdense commands over raw session logs.
+Outcome folder: <outcome-folder>
+
+Read `<outcome-folder>/goal.md` and `<outcome-folder>/run.md`. Resolve the outcome's Superdense project id from the target surfaces, the folder project key, or a global `superdense reward status` discovery fallback. Run `superdense reward status --project <project-id>` before project-sensitive maintenance.
+
+Advance each actionable stage for that project in pipeline order: `profile`, `curate`, `finalize`, `reconcile`, then `collect`. Run one bounded batch per actionable stage, re-running scoped status between stages, and stop on blockers. Use the relevant `superdense/reward/*.md` reference under the installed skills root. You may mutate local Superdense reward state, but you must not perform irreversible external actions or publish anything externally. Prefer indexed metadata and Superdense commands over raw session logs.
 
 Then surface comparable cohorts or version chains relevant to this outcome. Return a compact evidence packet: status, actions taken, artifact/session/target IDs, prior reward evidence, blockers, and what the main agent should consider before choosing the next intervention.
 ```

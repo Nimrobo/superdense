@@ -12,7 +12,7 @@ Superdense owns durable outcome evidence:
 - reward snapshots
 - cohort and version-chain comparison
 
-Do not create `metrics.md`. If metrics are collected but cannot yet be recorded in Superdense, keep the note temporary in `work.md` under a blocker section and resolve it by recording the reward snapshot.
+Do not create `metrics.md`. If metrics are collected but cannot yet be recorded in Superdense, keep the note temporary in `work.md` under `## Blockers` and resolve it by recording the reward snapshot.
 
 ## Folder Contract
 
@@ -77,6 +77,10 @@ Evaluation window:
 
 At the start of each run, launch a bounded reward-maintenance subagent when supported. It may mutate local Superdense reward state in bounded batches, but must not perform irreversible external actions.
 
+Resolve this outcome's Superdense project id from `goal.md` target surfaces, the folder project key, or a global `superdense reward status` discovery fallback. For project-sensitive maintenance, run `superdense reward status --project <project-id>`.
+
+Advance each actionable stage in pipeline order for this project: `profile`, `curate`, `finalize`, `reconcile`, then `collect`. Run one bounded batch per actionable stage, re-running scoped status between stages, and stop on blockers.
+
 The preflight returns:
 
 - reward status summary
@@ -101,6 +105,10 @@ Decision rule:
 
 -
 
+## Intervention Selection
+
+Choose exactly one intervention per run unless the human explicitly asks for exploration only. Prefer the lever with the strongest combination of prior reward evidence, expected north-star impact, instrumentation readiness, and low guardrail risk. If evidence is weak, choose the intervention that most improves diagnosis of the highest-uncertainty lever.
+
 ## Analytics And Instrumentation
 
 Required sources:
@@ -117,16 +125,16 @@ Setup checklist:
 
 ## Run Record Template
 
-Create `runs/<run-id>/work.md` and `runs/<run-id>/learnings.md`.
-```
+For each run, create `runs/<run-id>/work.md` and `runs/<run-id>/learnings.md` using these skeletons.
 
-## Work Template
+### runs/<run-id>/work.md
 
-```md
 # Work
 
 Run id:
+Status:
 Started:
+Completed:
 Outcome folder:
 
 ## Prior Evidence
@@ -148,9 +156,79 @@ Branch:
 PR:
 Deploy:
 Post or external URL:
+Analytics events:
 Superdense sessions:
 Superdense artifacts:
 Externalization targets:
+
+## Blockers
+
+-
+
+## Follow-Ups
+
+-
+
+### runs/<run-id>/learnings.md
+
+# Learnings
+
+## From Prior Outcomes
+
+-
+
+## From This Execution
+
+-
+
+## Next Run Input
+
+-
+
+## Update Marker
+
+Last reviewed run:
+Last reviewed at:
+```
+
+## Work Template
+
+```md
+# Work
+
+Run id:
+Status:
+Started:
+Completed:
+Outcome folder:
+
+## Prior Evidence
+
+Superdense status:
+Relevant artifacts:
+Relevant reward evidence:
+
+## Intervention
+
+Hypothesis:
+Lever:
+Action:
+Target repo/account/surface:
+
+## Work References
+
+Branch:
+PR:
+Deploy:
+Post or external URL:
+Analytics events:
+Superdense sessions:
+Superdense artifacts:
+Externalization targets:
+
+## Blockers
+
+-
 
 ## Follow-Ups
 

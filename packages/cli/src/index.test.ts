@@ -1375,6 +1375,24 @@ describe('superdense cli agent commands', () => {
     });
   });
 
+  it('keeps bundled outcome-loop references identical', () => {
+    const setup = readFileSync(
+      new URL('../../../skills/outcome-setup/references/outcome-loop.md', import.meta.url),
+      'utf8',
+    );
+    const run = readFileSync(
+      new URL('../../../skills/outcome-run/references/outcome-loop.md', import.meta.url),
+      'utf8',
+    );
+    const update = readFileSync(
+      new URL('../../../skills/outcome-update/references/outcome-loop.md', import.meta.url),
+      'utf8',
+    );
+
+    expect(setup).toBe(run);
+    expect(update).toBe(run);
+  });
+
   it('installs all bundled skills when no skill name is provided', async () => {
     const root = mkdtempSync(join(tmpdir(), 'superdense-skills-'));
     tempRoots.push(root);

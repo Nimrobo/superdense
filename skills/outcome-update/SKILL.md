@@ -13,7 +13,7 @@ Read `references/outcome-loop.md` before editing.
 ## Workflow
 
 1. Locate the outcome folder and read `goal.md`, `run.md`, and `runs/`.
-2. Identify runs since the last update marker in `run.md`. If no marker exists, review all completed run folders and add a marker after updating.
+2. Identify runs since `## Update Marker` in `run.md`. If no marker exists, review all completed run folders and add `## Update Marker` after updating.
 3. Inspect Superdense evidence related to those runs:
    - session IDs listed in `work.md`,
    - artifact IDs,
@@ -30,7 +30,7 @@ Read `references/outcome-loop.md` before editing.
 5. Edit `run.md` only. Do not edit `goal.md`, old run folders, or target repos. Do not create a new run.
 6. Keep `goal.md` protected. If evidence suggests the north star or guardrails are wrong, add a clearly marked "Recommended goal review" section to `run.md` instead of changing `goal.md`.
 7. Preserve useful existing playbook content. Make focused improvements that the next `outcome-run` can execute without guessing.
-8. Update the marker in `run.md` to the latest reviewed run id or timestamp.
+8. Update `## Update Marker` in `run.md` to the latest reviewed run id or timestamp.
 
 ## Rules
 
