@@ -92,7 +92,13 @@ const CLI_PACKAGE_NAME = '@nimrobo/superdense';
 const NPM_REGISTRY_PACKAGE_URL = `https://registry.npmjs.org/${CLI_PACKAGE_NAME.replace('/', '%2f')}`;
 const DEFAULT_REWARD_DOCS_BASE_URL = 'https://www.nimroboai.com/docs/reward';
 const SKIP_UPDATE_CHECK_ENV = 'SUPERDENSE_SKIP_UPDATE_CHECK';
-const REQUIRED_STUDIO_SKILLS = ['superdense', 'chain'];
+const REQUIRED_STUDIO_SKILLS = [
+  'superdense',
+  'chain',
+  'outcome-setup',
+  'outcome-run',
+  'outcome-update',
+];
 const REWARD_DOC_SECTIONS = ['usage', 'install', 'troubleshoot'] as const;
 
 type RewardDocSection = (typeof REWARD_DOC_SECTIONS)[number];

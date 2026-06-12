@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Outcome Setup'
+  short_description: 'Set up an outcome loop folder'
+  default_prompt: 'Use $outcome-setup to create or repair one outcome folder with goal.md, run.md, analytics/instrumentation checklist, levers, and no metrics.md.'
