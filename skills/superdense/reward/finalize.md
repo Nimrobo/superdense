@@ -13,7 +13,7 @@ Process one bounded Layer 3B ready queue. Curation has already grouped sessions 
 2. For each item, inspect the thread and only the session evidence needed to understand what it produced:
 
    ```bash
-   superdense thread show <thread-id>
+   superdense thread show <thread-id> --full
    superdense curation context <root-session-id>
    ```
 
@@ -35,7 +35,7 @@ Process one bounded Layer 3B ready queue. Curation has already grouped sessions 
 5. Confirm created records and stop after the bounded queue:
 
    ```bash
-   superdense artifact show <thread-id>
+   superdense artifact show <thread-id> --full
    superdense artifact inbox --limit 10
    ```
 

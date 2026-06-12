@@ -14,7 +14,7 @@ Process the Layer 4 inbox: decide whether finalized artifacts stayed internal or
 2. For each artifact, inspect its frozen payload and lineage:
 
    ```bash
-   superdense artifact show <artifact-id>
+   superdense artifact show <artifact-id> --full
    superdense curation context <root-session-id>
    ```
 
