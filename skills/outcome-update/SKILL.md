@@ -31,6 +31,7 @@ Read `references/outcome-loop.md` before editing.
 6. Keep `goal.md` protected. If evidence suggests the north star or guardrails are wrong, add a clearly marked "Recommended goal review" section to `run.md` instead of changing `goal.md`.
 7. Preserve useful existing playbook content. Make focused improvements that the next `outcome-run` can execute without guessing.
 8. Update `## Update Marker` in `run.md` to the latest reviewed run id or timestamp.
+9. Commit the playbook change, for example `git add run.md && git commit -m "outcome: update playbook (runs through <marker>)"`. If any reviewed `runs/<run-id>/` files are still uncommitted, include them in the same commit.
 
 ## Rules
 
@@ -39,6 +40,7 @@ Read `references/outcome-loop.md` before editing.
 - Do not run a new action.
 - Do not perform external publishing or irreversible external actions.
 - Prefer Superdense metadata and compactors before raw session logs.
+- Do not amend or rewrite prior commits. Each update is an append-only commit, matching the append-only lineage principle.
 
 ## Completion
 

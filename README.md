@@ -58,6 +58,16 @@ That last row is the loop closing: `compare` is what the agent reads _before_ th
 
 `reconcile` and `collect` reach into the real world, so they're where you (or the agent) supply the numbers — link an artifact to its live URL, then fetch its metrics with whatever you already use (a platform CLI, the provider's API, or the public page). Superdense records what you bring back; it never installs a connector or phones a cloud. Full stage references and the `superdense reward docs artifacts` / `superdense reward docs connectors …` helpers live in [`skills/superdense/reward/README.md`](./skills/superdense/reward/README.md).
 
+**Driving the loop: the outcome folder.** The reward-layer pipeline stores durable evidence, while the outcome folder is the control plane for one real-world outcome. It holds protected intent in `goal.md` (north star, guardrails, target surfaces), the mutable playbook in `run.md` (levers, actions, diagnostics, instrumentation, Superdense preflight), and one execution record per `runs/<run-id>/` (`work.md` + `learnings.md`). It does not have `metrics.md`; durable measurement belongs in Superdense reward snapshots. See [`skills/_shared/outcome-loop.md`](./skills/_shared/outcome-loop.md) for the full folder contract.
+
+| Skill            | When to use it                                                                                            |
+| ---------------- | --------------------------------------------------------------------------------------------------------- |
+| `outcome-setup`  | Create or repair the folder, git-init and commit the scaffold, and optionally instrument the target repo. |
+| `outcome-run`    | Execute exactly one action on one lever, starting from a bounded Superdense reward preflight.             |
+| `outcome-update` | Refine `run.md` from prior runs and reward evidence; never edits `goal.md`, and commits the playbook.     |
+
+The three skills ship with `superdense studio` and `superdense skill install` as required Studio skills. Invoke them as `/outcome-setup`, `/outcome-run`, and `/outcome-update` in Claude Code, or as `$outcome-setup`, `$outcome-run`, and `$outcome-update` in Codex.
+
 **Vocabulary** (all of it folds over your existing session index — no second database):
 
 - **thread** — related sessions that together produced one real output; mutable while you curate.
