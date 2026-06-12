@@ -1171,8 +1171,7 @@ function installSkills(
   const targetNames = names.length
     ? names
     : readdirSync(skillsRoot).filter(
-        (entry) =>
-          entry !== SHARED_SKILLS_DIR && statSync(join(skillsRoot, entry)).isDirectory(),
+        (entry) => entry !== SHARED_SKILLS_DIR && statSync(join(skillsRoot, entry)).isDirectory(),
       );
 
   const target = skillInstallTarget(opts.scope, opts.cwd);
