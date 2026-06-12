@@ -31,7 +31,7 @@ Collect how externalized artifacts are performing. For each linked external iden
 4. Confirm the recorded series:
 
    ```bash
-   superdense reward show <artifact-id>
+   superdense reward show <artifact-id> --full
    ```
 
 ## Rules
