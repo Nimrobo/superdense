@@ -27,7 +27,7 @@ Review one bounded batch of indexed root sessions. This is mutable Layer 3A cura
    ```bash
    superdense curation context <root-session-id>
    superdense thread list --project <project-id>
-   superdense thread show <thread-id>
+   superdense thread show <thread-id> --full
    ```
 
    If indexed context is insufficient, follow the shared escalation policy in `reward/README.md`.

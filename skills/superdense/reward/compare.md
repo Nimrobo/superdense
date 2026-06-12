@@ -16,8 +16,8 @@ Layer 5 closes the loop. Before producing a new deliverable, look at what you ha
 2. Surface the cohort relevant to the current task:
 
    ```bash
-   superdense cohort show <type>               # all peers of this type
-   superdense cohort show <type> --connector x # only those linked on a platform
+   superdense cohort show <type> --full               # all peers of this type
+   superdense cohort show <type> --connector x --full # only those linked on a platform
    ```
 
    Each member carries the full bundle: `artifact` with frozen `payload`, effective lineage `sessions`, append-only `lineageEvents`, and `headSessionId`; `cost` with per-contributor session costs and the total including sub-agent work; `externalization` connector targets; and `rewards` per linked target with `locator`, latest snapshot, and full `snapshots` series.
@@ -26,7 +26,7 @@ Layer 5 closes the loop. Before producing a new deliverable, look at what you ha
 
    ```bash
    superdense cohort chains
-   superdense cohort chain <artifact-id>
+   superdense cohort chain <artifact-id> --full
    ```
 
    The chain is ordered oldest first and includes each version's cost and rewards.

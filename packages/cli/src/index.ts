@@ -80,10 +80,17 @@ import {
   recordRewardSnapshot,
   validateQueryDefinition,
   type AdHocQueryResult,
+  type ArtifactExternalization,
+  type ArtifactRewards,
+  type Cohort,
+  type CohortMember,
   type Compactor,
   type QueryMatchDetail,
   type QueryDefinition,
+  type RewardSnapshot,
   type Session,
+  type VersionChain,
+  type WorkThread,
 } from '@nimrobo/superdense-core';
 import { startServer } from '@nimrobo/superdense-server';
 import open from 'open';
@@ -233,6 +240,173 @@ function workflowSummaryHasWorkflow(value: unknown): boolean {
   );
 }
 
+function wantsFull(flags: Record<string, string | boolean>): boolean {
+  return flags.full === true;
+}
+
+function truncateText(value: string, max = 240): string {
+  if (value.length <= max) return value;
+  return `${value.slice(0, Math.max(0, max - 3))}...`;
+}
+
+function compactValue(value: unknown, depth = 0): unknown {
+  if (typeof value === 'string') return truncateText(value, depth === 0 ? 360 : 180);
+  if (value == null || typeof value === 'number' || typeof value === 'boolean') return value;
+  if (Array.isArray(value)) {
+    if (depth >= 2) return { kind: 'array', length: value.length };
+    const sample = value.slice(0, 5).map((item) => compactValue(item, depth + 1));
+    return {
+      kind: 'array',
+      length: value.length,
+      sample,
+      omitted: Math.max(0, value.length - sample.length),
+    };
+  }
+  if (typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>);
+    if (depth >= 3) return { kind: 'object', keys: entries.map(([key]) => key) };
+    const picked = entries.slice(0, 12);
+    const out: Record<string, unknown> = {};
+    for (const [key, item] of picked) out[key] = compactValue(item, depth + 1);
+    const omitted = entries.length - picked.length;
+    if (omitted > 0) out._omittedKeys = omitted;
+    return out;
+  }
+  return String(value);
+}
+
+function countThreadSessions(thread: WorkThread): {
+  contributors: number;
+  evidence: number;
+  total: number;
+} {
+  const sessions = thread.sessions ?? [];
+  return {
+    contributors: sessions.filter((session) => session.role === 'contributor').length,
+    evidence: sessions.filter((session) => session.role === 'evidence').length,
+    total: sessions.length,
+  };
+}
+
+function compactThread(thread: WorkThread, opts: { includePayload?: boolean } = {}) {
+  const counts = countThreadSessions(thread);
+  const contributorSessionIds =
+    thread.sessions
+      ?.filter((session) => session.role === 'contributor')
+      .map((session) => session.sessionId) ?? [];
+  const evidenceSessionIds =
+    thread.sessions
+      ?.filter((session) => session.role === 'evidence')
+      .map((session) => session.sessionId) ?? [];
+
+  return {
+    id: thread.id,
+    projectId: thread.projectProfileId,
+    lifecycle: thread.lifecycle,
+    status: thread.status,
+    title: thread.provisionalTitle,
+    summary: thread.summary,
+    artifactType: thread.artifactType,
+    finalizedAt: thread.artifactFinalizedAt,
+    readyAt: thread.readyAt,
+    predecessorArtifactId: thread.predecessorArtifactId,
+    externalizationStatus: thread.externalizationStatus,
+    headSessionId: thread.headSessionId ?? null,
+    sessionCounts: counts,
+    contributorSessionIds,
+    evidenceSessionIds,
+    lineageEventCount: thread.lineageEvents?.length ?? 0,
+    ...(opts.includePayload && thread.payload ? { payload: compactValue(thread.payload) } : {}),
+  };
+}
+
+function compactExternalization(externalization: ArtifactExternalization) {
+  return {
+    artifactId: externalization.artifactId,
+    artifactType: externalization.artifactType,
+    title: externalization.title,
+    summary: externalization.summary,
+    finalizedAt: externalization.artifactFinalizedAt,
+    status: externalization.status,
+    conclusion: externalization.conclusion,
+    evidence: externalization.evidence ? truncateText(externalization.evidence) : null,
+    updatedAt: externalization.updatedAt,
+    targetCounts: externalization.targets.reduce<Record<string, number>>((counts, target) => {
+      counts[target.status] = (counts[target.status] ?? 0) + 1;
+      return counts;
+    }, {}),
+    targets: externalization.targets.map((target) => ({
+      id: target.id,
+      connector: target.connector,
+      status: target.status,
+      locator: target.locator,
+      evidence: target.evidence ? truncateText(target.evidence) : null,
+    })),
+  };
+}
+
+function compactRewardSnapshot(snapshot: RewardSnapshot | null) {
+  if (!snapshot) return null;
+  return {
+    id: snapshot.id,
+    targetId: snapshot.targetId,
+    capturedAt: snapshot.capturedAt,
+    metrics: snapshot.metrics,
+    primaryDim: snapshot.primaryDim,
+    source: snapshot.source,
+    evidence: snapshot.evidence ? truncateText(snapshot.evidence) : null,
+  };
+}
+
+function compactRewards(rewards: ArtifactRewards) {
+  return {
+    artifactId: rewards.artifactId,
+    targets: rewards.targets.map((target) => ({
+      targetId: target.targetId,
+      connector: target.connector,
+      locator: target.locator,
+      latest: compactRewardSnapshot(target.latest),
+      snapshotCount: target.snapshots.length,
+      metricKeys: [
+        ...new Set(target.snapshots.flatMap((snapshot) => Object.keys(snapshot.metrics))),
+      ],
+    })),
+  };
+}
+
+function compactCohortMember(member: CohortMember) {
+  return {
+    artifact: compactThread(member.artifact, { includePayload: true }),
+    externalization: member.externalization ? compactExternalization(member.externalization) : null,
+    rewards: compactRewards(member.rewards),
+    cost: member.cost
+      ? {
+          contributorSessionIds: member.cost.contributorSessionIds,
+          totalCostingWithSubagents: member.cost.totalCostingWithSubagents,
+        }
+      : null,
+  };
+}
+
+function compactCohort(cohort: Cohort) {
+  return {
+    type: cohort.type,
+    connector: cohort.connector,
+    projectId: cohort.projectId,
+    memberCount: cohort.members.length,
+    members: cohort.members.map(compactCohortMember),
+  };
+}
+
+function compactVersionChain(chain: VersionChain) {
+  return {
+    rootId: chain.rootId,
+    type: chain.type,
+    memberCount: chain.members.length,
+    members: chain.members.map(compactCohortMember),
+  };
+}
+
 function serializeQueryMatch(
   match: QueryMatchDetail,
   opts: { includePath?: boolean; enrichments?: Record<string, unknown> } = {},
@@ -309,6 +483,40 @@ function serializeQueryResult(
         enrichments: item.enrichments ?? {},
       };
     }),
+  };
+}
+
+function compactFileFootprintValue(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const footprint = value as { v?: unknown; files?: unknown };
+  if (!Array.isArray(footprint.files)) return value;
+  return {
+    v: footprint.v,
+    fileCount: footprint.files.length,
+    files: footprint.files.map((file) => {
+      if (!file || typeof file !== 'object' || Array.isArray(file)) return file;
+      const f = file as Record<string, unknown>;
+      return {
+        pathRel: f.pathRel,
+        role: f.role,
+        writes: f.writes,
+        reads: f.reads,
+        ops: f.ops,
+      };
+    }),
+  };
+}
+
+function serializeEnrichmentItem(
+  item: { name: string; version: number; computedAt: number; value: unknown },
+  flags: Record<string, string | boolean>,
+) {
+  return {
+    ...item,
+    value:
+      item.name === 'file_footprint' && !wantsFull(flags)
+        ? compactFileFootprintValue(item.value)
+        : item.value,
   };
 }
 
@@ -617,9 +825,11 @@ async function handleSession(
     let items;
     if (typeof flags.name === 'string' && flags.name.trim()) {
       const item = getEnrichment(id, SYSTEM_RUN_ID, flags.name.trim());
-      items = item ? [{ name: flags.name.trim(), ...item }] : [];
+      items = item ? [serializeEnrichmentItem({ name: flags.name.trim(), ...item }, flags)] : [];
     } else {
-      items = listSessionEnrichments(id, SYSTEM_RUN_ID);
+      items = listSessionEnrichments(id, SYSTEM_RUN_ID).map((item) =>
+        serializeEnrichmentItem(item, flags),
+      );
     }
     printJson(
       {
@@ -785,7 +995,13 @@ async function handleArtifact(
     return true;
   }
   if (action === 'inbox') {
-    printJson(listArtifactInbox({ limit: intFlag(flags, 'limit', 10, 1000) }), io);
+    const inbox = listArtifactInbox({ limit: intFlag(flags, 'limit', 10, 1000) });
+    printJson(
+      wantsFull(flags)
+        ? inbox
+        : { ...inbox, items: inbox.items.map((item) => compactThread(item)) },
+      io,
+    );
     return true;
   }
   if (action === 'finalize') {
@@ -793,12 +1009,13 @@ async function handleArtifact(
     return true;
   }
   if (action === 'list') {
+    const items = listArtifacts({
+      projectId: typeof flags.project === 'string' ? flags.project : undefined,
+      type: typeof flags.type === 'string' ? flags.type : undefined,
+    });
     printJson(
       {
-        items: listArtifacts({
-          projectId: typeof flags.project === 'string' ? flags.project : undefined,
-          type: typeof flags.type === 'string' ? flags.type : undefined,
-        }),
+        items: wantsFull(flags) ? items : items.map((item) => compactThread(item)),
       },
       io,
     );
@@ -809,7 +1026,10 @@ async function handleArtifact(
     if (!id) throw new Error('artifact show requires <thread-id>');
     const artifact = getArtifact(id);
     if (!artifact) throw new Error(`artifact not found: ${id}`);
-    printJson({ artifact }, io);
+    printJson(
+      { artifact: wantsFull(flags) ? artifact : compactThread(artifact, { includePayload: true }) },
+      io,
+    );
     return true;
   }
   throw new Error(`unknown artifact command: ${action ?? '(none)'}`);
@@ -847,11 +1067,12 @@ async function handleCuration(
 function handleThread(args: string[], flags: Record<string, string | boolean>, io: CliIo): boolean {
   const action = args[0] ?? 'list';
   if (action === 'list') {
+    const items = listWorkThreads({
+      projectId: typeof flags.project === 'string' ? flags.project : undefined,
+    });
     printJson(
       {
-        items: listWorkThreads({
-          projectId: typeof flags.project === 'string' ? flags.project : undefined,
-        }),
+        items: wantsFull(flags) ? items : items.map((item) => compactThread(item)),
       },
       io,
     );
@@ -862,7 +1083,10 @@ function handleThread(args: string[], flags: Record<string, string | boolean>, i
     if (!id) throw new Error('thread show requires <thread-id>');
     const thread = getWorkThread(id);
     if (!thread) throw new Error(`thread not found: ${id}`);
-    printJson({ thread }, io);
+    printJson(
+      { thread: wantsFull(flags) ? thread : compactThread(thread, { includePayload: true }) },
+      io,
+    );
     return true;
   }
   throw new Error(`unknown thread command: ${action}`);
@@ -875,18 +1099,25 @@ async function handleExternalization(
 ): Promise<boolean> {
   const action = args[0];
   if (action === 'inbox') {
+    const inbox = listExternalizationInbox({
+      limit: intFlag(flags, 'limit', 10, 1000),
+      cursor: typeof flags.cursor === 'string' ? flags.cursor : undefined,
+    });
     printJson(
-      listExternalizationInbox({
-        limit: intFlag(flags, 'limit', 10, 1000),
-        cursor: typeof flags.cursor === 'string' ? flags.cursor : undefined,
-      }),
+      wantsFull(flags)
+        ? inbox
+        : { ...inbox, items: inbox.items.map((item) => compactExternalization(item)) },
       io,
     );
     return true;
   }
   if (action === 'list') {
     const status = typeof flags.status === 'string' ? flags.status : undefined;
-    printJson({ items: listExternalizations({ status }) }, io);
+    const items = listExternalizations({ status });
+    printJson(
+      { items: wantsFull(flags) ? items : items.map((item) => compactExternalization(item)) },
+      io,
+    );
     return true;
   }
   if (action === 'show') {
@@ -894,7 +1125,14 @@ async function handleExternalization(
     if (!id) throw new Error('externalization show requires <artifact-id>');
     const externalization = getExternalization(id);
     if (!externalization) throw new Error(`artifact not found: ${id}`);
-    printJson({ externalization }, io);
+    printJson(
+      {
+        externalization: wantsFull(flags)
+          ? externalization
+          : compactExternalization(externalization),
+      },
+      io,
+    );
     return true;
   }
   if (action === 'assess') {
@@ -994,7 +1232,7 @@ async function handleReward(
     if (!id) throw new Error('reward show requires <artifact-id>');
     const rewards = getArtifactRewards(id);
     if (!rewards) throw new Error(`artifact not found: ${id}`);
-    printJson({ rewards }, io);
+    printJson({ rewards: wantsFull(flags) ? rewards : compactRewards(rewards) }, io);
     return true;
   }
   if (action === 'status') {
@@ -1020,7 +1258,8 @@ function handleCohort(args: string[], flags: Record<string, string | boolean>, i
     const type = args[1];
     if (!type) throw new Error('cohort show requires <type>');
     const connector = typeof flags.connector === 'string' ? flags.connector : undefined;
-    printJson({ cohort: getCohort({ type, connector, projectId }) }, io);
+    const cohort = getCohort({ type, connector, projectId });
+    printJson({ cohort: wantsFull(flags) ? cohort : compactCohort(cohort) }, io);
     return true;
   }
   if (action === 'chains') {
@@ -1032,7 +1271,7 @@ function handleCohort(args: string[], flags: Record<string, string | boolean>, i
     if (!id) throw new Error('cohort chain requires <artifact-id>');
     const chain = getVersionChain(id);
     if (!chain) throw new Error(`artifact not found: ${id}`);
-    printJson({ chain }, io);
+    printJson({ chain: wantsFull(flags) ? chain : compactVersionChain(chain) }, io);
     return true;
   }
   throw new Error(`unknown cohort command: ${args.join(' ') || '(none)'}`);
@@ -1561,7 +1800,7 @@ export async function runCli(
         '  session tree <id>   Show recursive sub-agent tree (--depth N, default 1)',
         '  session path <id>   Get raw log file path',
         '  session fields      List filters and enrichers',
-        '  session enrichments <id>  Get computed enrichments',
+        '  session enrichments <id>  Get computed enrichments [--name <n>] [--full]',
         '  filter list         List available filters',
         '  filter show <n>     Show filter params and examples',
         '  query --query <json|@file>  Run an unsaved ad hoc query',
@@ -1585,29 +1824,29 @@ export async function runCli(
         '  project attention <id>  Mark attention --needed [--reasons <json>] or --resolved',
         '  artifact mark-current  Mark the current agent session for curation',
         '  artifact mark --session <adapter:id>  Mark an explicit session for curation',
-        '  artifact inbox     List ready threads awaiting artifact creation [--limit N]',
+        '  artifact inbox     List ready threads awaiting artifact creation [--limit N] [--full]',
         '  curation inbox      Get a bounded root-session review batch [--project <id>] [--limit N]',
         '  curation context <root-session-id>  Load root and linked sub-agent review hints',
         '  curation apply --input <json|@file>  Apply an atomic batch of reversible actions',
-        '  thread list         List mutable work threads [--project <id>]',
-        '  thread show <id>    Show a work thread and session memberships',
+        '  thread list         List mutable work threads [--project <id>] [--full]',
+        '  thread show <id>    Show a compact work thread summary [--full]',
         '  artifact finalize --input <json|@file>  Create a stable artifact payload from a ready thread',
-        '  artifact list       List finalized artifacts [--project <id>] [--type <t>]',
-        '  artifact show <thread-id>  Show a stable artifact payload and effective lineage',
-        '  externalization inbox  List unprocessed and blocked finalized artifacts [--limit N] [--cursor <opaque>]',
-        '  externalization list   List artifact externalization states [--status <s>]',
-        '  externalization show <artifact-id>  Show assessment and connector targets',
+        '  artifact list       List finalized artifacts [--project <id>] [--type <t>] [--full]',
+        '  artifact show <thread-id>  Show compact stable artifact payload and lineage [--full]',
+        '  externalization inbox  List unprocessed and blocked finalized artifacts [--limit N] [--cursor <opaque>] [--full]',
+        '  externalization list   List artifact externalization states [--status <s>] [--full]',
+        '  externalization show <artifact-id>  Show compact assessment and connector targets [--full]',
         '  externalization assess --input <json|@file>  Replace one artifact assessment',
         '  reward record --input <json|@file>  Record one multidimensional reward snapshot for a linked target',
-        '  reward show <artifact-id>  Show latest reward snapshot and series per linked target',
+        '  reward show <artifact-id>  Show compact latest rewards per linked target [--full]',
         '  reward status       Show reward-layer punch-list and next action [--project <id>]',
         '  reward docs artifacts  Fetch live reward artifact guidance markdown',
         '  reward docs connectors --artifact <type>  Fetch live connector guidance for an artifact type',
         '  reward docs connectors --connector <name> [--section usage|install|troubleshoot]',
         '  cohort list         List comparable peer cohorts [--project <id>] [--by type|connector]',
-        '  cohort show <type>  Surface a cohort for comparison [--connector <c>] [--project <id>]',
+        '  cohort show <type>  Surface a compact cohort for comparison [--connector <c>] [--project <id>] [--full]',
         '  cohort chains       List version chains (a deliverable across versions) [--project <id>]',
-        '  cohort chain <artifact-id>  Surface one artifact next to its own versions',
+        '  cohort chain <artifact-id>  Surface compact artifact versions [--full]',
         '  skill install [n]   Install skills into Claude and Codex',
         '      --locally       Install skills into ./.claude and ./.codex for this cwd',
         '  index               Incremental session index',

@@ -44,6 +44,7 @@ vi.mock('@nimrobo/superdense-core', () => ({
   finalizeArtifact: vi.fn(),
   getArtifact: vi.fn(),
   getArtifactRewards: vi.fn(),
+  getCohort: vi.fn(),
   getCompactor: vi.fn(),
   getCurationContext: vi.fn(),
   getEnrichment: vi.fn(),
@@ -52,6 +53,7 @@ vi.mock('@nimrobo/superdense-core', () => ({
   getProjectProfileResolution: vi.fn(),
   getQuery: vi.fn(),
   getRewardStatus: vi.fn(),
+  getVersionChain: vi.fn(),
   getSession: vi.fn(),
   getSessionChildren: vi.fn(),
   getSessionCost: vi.fn(),
@@ -59,6 +61,7 @@ vi.mock('@nimrobo/superdense-core', () => ({
   getWorkThread: vi.fn(),
   indexAll: vi.fn(),
   listCompactors: vi.fn(),
+  listCohorts: vi.fn(),
   listArtifactInbox: vi.fn(),
   listArtifacts: vi.fn(),
   listCurationInbox: vi.fn(),
@@ -73,6 +76,7 @@ vi.mock('@nimrobo/superdense-core', () => ({
   listQueryMatches: vi.fn(),
   listSessionEnrichments: vi.fn(),
   listSessions: vi.fn(),
+  listVersionChains: vi.fn(),
   listWorkThreads: vi.fn(),
   loadUserEnrichers: vi.fn(),
   markSessionForCuration: vi.fn(),
@@ -154,7 +158,7 @@ const project = {
   updatedAt: 2,
   coveredProjects: [],
 };
-const externalization = {
+const externalization: core.ArtifactExternalization = {
   artifactId: 't1',
   artifactType: 'launch',
   title: 'Launch',
@@ -174,6 +178,89 @@ const externalization = {
       evidence: 'X connector is not installed',
       createdAt: 2,
       updatedAt: 2,
+    },
+  ],
+};
+const artifact: core.WorkThread = {
+  id: 't1',
+  projectProfileId: 'p1',
+  provisionalTitle: 'Launch',
+  summary: 'A launch artifact with enough context to publish',
+  status: 'ready',
+  createdAt: 1,
+  updatedAt: 3,
+  artifactType: 'launch',
+  payload: {
+    text: 'x'.repeat(600),
+    files: ['README.md', 'packages/cli/src/index.ts', 'packages/core/src/rewards/index.ts'],
+    details: {
+      audience: 'agents',
+      notes: ['first', 'second', 'third', 'fourth', 'fifth', 'sixth'],
+    },
+  },
+  artifactFinalizedAt: 3,
+  readyAt: 2,
+  readinessRationale: 'Ready for artifact creation',
+  predecessorArtifactId: null,
+  externalizationStatus: 'external' as const,
+  externalizationEvidence: 'Published launch',
+  externalizationUpdatedAt: 4,
+  lifecycle: 'artifact' as const,
+  headSessionId: 'codex:abc123',
+  sessions: [
+    { sessionId: 'codex:abc123', role: 'contributor' as const, rationale: 'created it' },
+    { sessionId: 'claude:def456', role: 'evidence' as const, rationale: 'review evidence' },
+  ],
+  lineageEvents: [
+    {
+      id: 'e1',
+      sessionId: 'codex:abc123',
+      eventType: 'attach' as const,
+      role: 'contributor' as const,
+      rationale: 'created it',
+      createdAt: 3,
+    },
+  ],
+};
+const rewards: core.ArtifactRewards = {
+  artifactId: 't1',
+  targets: [
+    {
+      targetId: 'target-1',
+      connector: 'x',
+      locator: '187123456789',
+      latest: {
+        id: 'reward-2',
+        targetId: 'target-1',
+        capturedAt: 5,
+        metrics: { reach: 1000, reactions: 40 },
+        primaryDim: 'reach',
+        source: 'x-cli',
+        evidence: 'e'.repeat(500),
+        createdAt: 5,
+      },
+      snapshots: [
+        {
+          id: 'reward-2',
+          targetId: 'target-1',
+          capturedAt: 5,
+          metrics: { reach: 1000, reactions: 40 },
+          primaryDim: 'reach',
+          source: 'x-cli',
+          evidence: 'e'.repeat(500),
+          createdAt: 5,
+        },
+        {
+          id: 'reward-1',
+          targetId: 'target-1',
+          capturedAt: 4,
+          metrics: { reach: 500 },
+          primaryDim: 'reach',
+          source: 'x-cli',
+          evidence: 'initial',
+          createdAt: 4,
+        },
+      ],
     },
   ],
 };
@@ -425,8 +512,10 @@ beforeEach(() => {
     createdThreadIds: [],
     resolvedSessions: [],
   });
-  vi.mocked(core.listWorkThreads).mockReturnValue([]);
-  vi.mocked(core.listArtifactInbox).mockReturnValue({ items: [], limit: 10, remaining: 0 });
+  vi.mocked(core.listWorkThreads).mockReturnValue([artifact]);
+  vi.mocked(core.listArtifactInbox).mockReturnValue({ items: [artifact], limit: 10, remaining: 1 });
+  vi.mocked(core.listArtifacts).mockReturnValue([artifact]);
+  vi.mocked(core.getArtifact).mockReturnValue(artifact);
   vi.mocked(core.getWorkThread).mockReturnValue({
     id: 't1',
     projectProfileId: 'p1',
@@ -461,6 +550,87 @@ beforeEach(() => {
     ok: true,
     artifactId: 't1',
     externalization,
+  });
+  vi.mocked(core.getArtifactRewards).mockReturnValue(rewards);
+  vi.mocked(core.recordRewardSnapshot).mockReturnValue({
+    ok: true,
+    snapshot: rewards.targets[0]!.latest!,
+  });
+  vi.mocked(core.listCohorts).mockReturnValue([
+    {
+      type: 'launch',
+      connector: null,
+      artifactCount: 1,
+      externalizedCount: 1,
+      withRewardsCount: 1,
+    },
+  ]);
+  vi.mocked(core.getCohort).mockReturnValue({
+    type: 'launch',
+    connector: null,
+    projectId: null,
+    members: [
+      {
+        artifact,
+        externalization,
+        rewards,
+        cost: {
+          contributorSessionIds: ['codex:abc123'],
+          contributors: [
+            {
+              sessionId: 'codex:abc123',
+              totalCostingWithSubagents: {
+                estimatedCostUsd: 0.012345,
+                pricingStatus: 'estimated',
+                tokenTotals: {
+                  inputTokens: 1000,
+                  cachedInputTokens: 0,
+                  cacheCreationInputTokens: 0,
+                  cacheCreation5mInputTokens: 0,
+                  cacheCreation1hInputTokens: 0,
+                  outputTokens: 100,
+                  reasoningOutputTokens: 0,
+                  totalTokens: 1100,
+                },
+                unpricedModels: [],
+                sessionCount: 1,
+                pricedSessionCount: 1,
+              },
+            },
+          ],
+          totalCostingWithSubagents: {
+            estimatedCostUsd: 0.012345,
+            pricingStatus: 'estimated',
+            tokenTotals: {
+              inputTokens: 1000,
+              cachedInputTokens: 0,
+              cacheCreationInputTokens: 0,
+              cacheCreation5mInputTokens: 0,
+              cacheCreation1hInputTokens: 0,
+              outputTokens: 100,
+              reasoningOutputTokens: 0,
+              totalTokens: 1100,
+            },
+            unpricedModels: [],
+            sessionCount: 1,
+            pricedSessionCount: 1,
+          },
+        },
+      },
+    ],
+  });
+  vi.mocked(core.listVersionChains).mockReturnValue([{ rootId: 't1', type: 'launch', length: 1 }]);
+  vi.mocked(core.getVersionChain).mockReturnValue({
+    rootId: 't1',
+    type: 'launch',
+    members: [
+      {
+        artifact,
+        externalization,
+        rewards,
+        cost: null,
+      },
+    ],
   });
   vi.mocked(core.getRewardStatus).mockReturnValue(rewardStatus);
   vi.mocked(core.setProjectAttention).mockReturnValue(project);
@@ -798,7 +968,29 @@ describe('superdense cli agent commands', () => {
     const out = io();
     vi.mocked(core.listSessionEnrichments).mockImplementation((_sessionId, queryRunId) =>
       queryRunId === 'system'
-        ? [{ name: 'has_errors', version: 1, computedAt: 2, value: true }]
+        ? [
+            { name: 'has_errors', version: 1, computedAt: 2, value: true },
+            {
+              name: 'file_footprint',
+              version: 3,
+              computedAt: 2,
+              value: {
+                v: 1,
+                files: [
+                  {
+                    pathRel: 'src/a.ts',
+                    pathAbs: '/repo/src/a.ts',
+                    role: 'deliverable',
+                    writes: 1,
+                    reads: 0,
+                    ops: { Edit: 1 },
+                    firstTs: 100,
+                    lastTs: 100,
+                  },
+                ],
+              },
+            },
+          ]
         : [
             { name: 'has_errors', version: 1, computedAt: 2, value: true },
             { name: 'has_errors', version: 1, computedAt: 3, value: false },
@@ -811,7 +1003,27 @@ describe('superdense cli agent commands', () => {
     const body = json(out.stdout[0]!);
     expect(body.session).toMatchObject({ id: 'codex:abc123', agent: 'codex' });
     expect(body.session).not.toHaveProperty('logPath');
-    expect(body.items).toEqual([{ name: 'has_errors', version: 1, computedAt: 2, value: true }]);
+    expect(body.items).toEqual([
+      { name: 'has_errors', version: 1, computedAt: 2, value: true },
+      {
+        name: 'file_footprint',
+        version: 3,
+        computedAt: 2,
+        value: {
+          v: 1,
+          fileCount: 1,
+          files: [
+            {
+              pathRel: 'src/a.ts',
+              role: 'deliverable',
+              writes: 1,
+              reads: 0,
+              ops: { Edit: 1 },
+            },
+          ],
+        },
+      },
+    ]);
   });
 
   it('returns a named enrichment when requested', async () => {
@@ -823,6 +1035,52 @@ describe('superdense cli agent commands', () => {
     expect(core.listSessionEnrichments).not.toHaveBeenCalled();
     expect(json(out.stdout[0]!)).toMatchObject({
       items: [{ name: 'tool_counts', version: 1, computedAt: 2, value: { Bash: 3 } }],
+    });
+  });
+
+  it('compacts file footprint enrichments by default and returns raw data with --full', async () => {
+    const value = {
+      v: 1,
+      files: [
+        {
+          pathRel: 'src/a.ts',
+          pathAbs: '/repo/src/a.ts',
+          role: 'deliverable',
+          writes: 2,
+          reads: 1,
+          ops: { Edit: 2, Read: 1 },
+          firstTs: 100,
+          lastTs: 200,
+        },
+      ],
+    };
+    vi.mocked(core.getEnrichment).mockReturnValue({ version: 3, computedAt: 2, value });
+    const compact = io();
+    const full = io();
+
+    await runCli(
+      ['session', 'enrichments', 'codex:abc123', '--name', 'file_footprint'],
+      compact.io,
+    );
+    await runCli(
+      ['session', 'enrichments', 'codex:abc123', '--name', 'file_footprint', '--full'],
+      full.io,
+    );
+
+    const compactItem = (json(compact.stdout[0]!).items as Array<Record<string, unknown>>)[0]!;
+    expect(compactItem).toMatchObject({
+      name: 'file_footprint',
+      value: {
+        fileCount: 1,
+        files: [{ pathRel: 'src/a.ts', writes: 2, reads: 1, ops: { Edit: 2, Read: 1 } }],
+      },
+    });
+    expect(JSON.stringify(compactItem)).not.toContain('firstTs');
+    expect(JSON.stringify(compactItem)).not.toContain('lastTs');
+    expect(JSON.stringify(compactItem)).not.toContain('pathAbs');
+
+    expect(json(full.stdout[0]!)).toMatchObject({
+      items: [{ name: 'file_footprint', value }],
     });
   });
 
@@ -1142,6 +1400,74 @@ describe('superdense cli agent commands', () => {
       status: 'not_external',
       evidence: 'internal',
       targets: [],
+    });
+  });
+
+  it('uses compact reward-layer read output by default and keeps full output behind --full', async () => {
+    const compactArtifact = io();
+    const fullArtifact = io();
+    await runCli(['artifact', 'show', 't1'], compactArtifact.io);
+    await runCli(['artifact', 'show', 't1', '--full'], fullArtifact.io);
+
+    const compactArtifactBody = json(compactArtifact.stdout[0]!);
+    const fullArtifactBody = json(fullArtifact.stdout[0]!);
+    expect(compactArtifactBody).toMatchObject({
+      artifact: {
+        id: 't1',
+        sessionCounts: { contributors: 1, evidence: 1, total: 2 },
+        contributorSessionIds: ['codex:abc123'],
+        lineageEventCount: 1,
+      },
+    });
+    expect(
+      (compactArtifactBody.artifact as { payload: { text: string } }).payload.text.length,
+    ).toBeLessThan(400);
+    expect(fullArtifactBody).toMatchObject({
+      artifact: {
+        payload: { text: 'x'.repeat(600) },
+        sessions: expect.arrayContaining([
+          expect.objectContaining({ sessionId: 'codex:abc123', role: 'contributor' }),
+        ]),
+      },
+    });
+
+    const compactRewards = io();
+    const fullRewards = io();
+    await runCli(['reward', 'show', 't1'], compactRewards.io);
+    await runCli(['reward', 'show', 't1', '--full'], fullRewards.io);
+    expect(json(compactRewards.stdout[0]!)).toMatchObject({
+      rewards: {
+        targets: [
+          {
+            targetId: 'target-1',
+            snapshotCount: 2,
+            metricKeys: expect.arrayContaining(['reach', 'reactions']),
+          },
+        ],
+      },
+    });
+    expect(compactRewards.stdout[0]).not.toContain('"snapshots"');
+    expect(json(fullRewards.stdout[0]!)).toMatchObject({
+      rewards: { targets: [{ snapshots: [{ id: 'reward-2' }, { id: 'reward-1' }] }] },
+    });
+
+    const compactCohort = io();
+    const fullCohort = io();
+    await runCli(['cohort', 'show', 'launch'], compactCohort.io);
+    await runCli(['cohort', 'show', 'launch', '--full'], fullCohort.io);
+    expect(json(compactCohort.stdout[0]!)).toMatchObject({
+      cohort: {
+        memberCount: 1,
+        members: [{ artifact: { id: 't1' }, rewards: { targets: [{ snapshotCount: 2 }] } }],
+      },
+    });
+    const compactCohortBody = json(compactCohort.stdout[0]!);
+    const compactCost = (
+      compactCohortBody.cohort as { members: Array<{ cost: Record<string, unknown> }> }
+    ).members[0]!.cost;
+    expect(compactCost).not.toHaveProperty('contributors');
+    expect(json(fullCohort.stdout[0]!)).toMatchObject({
+      cohort: { members: [{ cost: { contributors: [{ sessionId: 'codex:abc123' }] } }] },
     });
   });
 
