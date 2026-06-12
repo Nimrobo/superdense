@@ -33,7 +33,7 @@ Optional files are allowed only when the outcome needs them, for example draft a
 - North star: the stable real-world outcome that counts as progress.
 - Guardrails: measurements or constraints that prevent cheap wins from degrading quality.
 - Lever: a mechanism believed to influence the north star.
-- Action: one concrete intervention the agent or human can take on a lever.
+- Action: one concrete step the agent or human can take on a lever, whether a rep of a proven recipe or a fix to something in the path.
 - Diagnostic metric: a measurement that explains why a lever did or did not move the north star.
 
 `goal.md` protects the north star and guardrails. `run.md` evolves the lever map, action recipes, diagnostic measurements, instrumentation checklist, and Superdense workflow.
@@ -105,9 +105,9 @@ Decision rule:
 
 -
 
-## Intervention Selection
+## Action Selection
 
-Choose exactly one intervention per run unless the human explicitly asks for exploration only. Prefer the lever with the strongest combination of prior reward evidence, expected north-star impact, instrumentation readiness, and low guardrail risk. If evidence is weak, choose the intervention that most improves diagnosis of the highest-uncertainty lever.
+Choose exactly one action per run unless the human explicitly asks for exploration only. Prefer the lever with the strongest combination of prior reward evidence, expected north-star impact, instrumentation readiness, and low guardrail risk. If evidence is weak, choose the action that most improves diagnosis of the highest-uncertainty lever.
 
 ## Analytics And Instrumentation
 
@@ -125,7 +125,7 @@ Setup checklist:
 
 ## Run Record Template
 
-For each run, create `runs/<run-id>/work.md` and `runs/<run-id>/learnings.md` using these skeletons.
+For each run, create `runs/<run-id>/work.md` and `runs/<run-id>/learnings.md` using the skeletons below. `outcome-update` may edit these skeletons when future runs need better structure.
 
 ### runs/<run-id>/work.md
 
@@ -143,7 +143,7 @@ Superdense status:
 Relevant artifacts:
 Relevant reward evidence:
 
-## Intervention
+## Action
 
 Hypothesis:
 Lever:
@@ -189,68 +189,6 @@ Externalization targets:
 
 Last reviewed run:
 Last reviewed at:
-```
-
-## Work Template
-
-```md
-# Work
-
-Run id:
-Status:
-Started:
-Completed:
-Outcome folder:
-
-## Prior Evidence
-
-Superdense status:
-Relevant artifacts:
-Relevant reward evidence:
-
-## Intervention
-
-Hypothesis:
-Lever:
-Action:
-Target repo/account/surface:
-
-## Work References
-
-Branch:
-PR:
-Deploy:
-Post or external URL:
-Analytics events:
-Superdense sessions:
-Superdense artifacts:
-Externalization targets:
-
-## Blockers
-
--
-
-## Follow-Ups
-
--
-```
-
-## Learnings Template
-
-```md
-# Learnings
-
-## From Prior Outcomes
-
--
-
-## From This Execution
-
--
-
-## Next Run Input
-
--
 ```
 
 ## Example: X Reach

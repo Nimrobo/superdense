@@ -30,7 +30,7 @@ Read `references/outcome-loop.md` before writing or repairing files.
 ## File Responsibilities
 
 - `goal.md` is protected. It defines the outcome boundary, audience, north-star metric, guardrails, target surfaces, and human-owned constraints.
-- `run.md` is mutable. It defines the current lever map, actions, diagnostic measurements, analytics/instrumentation checklist, Superdense reward preflight, intervention rules, and run template.
+- `run.md` is mutable. It defines the current lever map, actions, diagnostic measurements, analytics/instrumentation checklist, Superdense reward preflight, action selection rules, and run template.
 - `runs/` starts empty unless the user is repairing an existing loop.
 
 ## Dry Run

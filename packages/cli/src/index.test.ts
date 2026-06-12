@@ -1375,22 +1375,46 @@ describe('superdense cli agent commands', () => {
     });
   });
 
-  it('keeps bundled outcome-loop references identical', () => {
-    const setup = readFileSync(
-      new URL('../../../skills/outcome-setup/references/outcome-loop.md', import.meta.url),
-      'utf8',
-    );
-    const run = readFileSync(
-      new URL('../../../skills/outcome-run/references/outcome-loop.md', import.meta.url),
-      'utf8',
-    );
-    const update = readFileSync(
-      new URL('../../../skills/outcome-update/references/outcome-loop.md', import.meta.url),
-      'utf8',
-    );
+  it('materializes the shared outcome-loop reference into each installed outcome skill', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'superdense-shared-ref-'));
+    tempRoots.push(root);
+    process.env.CLAUDE_SKILLS_DIR = join(root, 'claude');
+    process.env.CODEX_SKILLS_DIR = join(root, 'codex');
+    const out = io();
 
-    expect(setup).toBe(run);
-    expect(update).toBe(run);
+    await runCli(['skill', 'install', 'outcome-setup', 'outcome-run', 'outcome-update'], out.io);
+
+    const canonical = readFileSync(
+      new URL('../../../skills/_shared/outcome-loop.md', import.meta.url),
+      'utf8',
+    );
+    expect(canonical).toContain('### runs/<run-id>/work.md');
+    expect(canonical).toContain('### runs/<run-id>/learnings.md');
+    expect(canonical).not.toContain(
+      'from the Work Template and Learnings Template in this reference',
+    );
+    for (const name of ['outcome-setup', 'outcome-run', 'outcome-update']) {
+      for (const surface of ['claude', 'codex']) {
+        expect(
+          readFileSync(join(root, surface, name, 'references', 'outcome-loop.md'), 'utf8'),
+        ).toBe(canonical);
+      }
+    }
+  });
+
+  it('does not install the _shared reference directory as a skill', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'superdense-shared-dir-'));
+    tempRoots.push(root);
+    process.env.CLAUDE_SKILLS_DIR = join(root, 'claude');
+    process.env.CODEX_SKILLS_DIR = join(root, 'codex');
+    const out = io();
+
+    await runCli(['skill', 'install'], out.io);
+
+    const body = json(out.stdout[0]!) as { installed: Array<{ name: string }> };
+    expect(body.installed.map((item) => item.name)).not.toContain('_shared');
+    expect(existsSync(join(root, 'claude', '_shared'))).toBe(false);
+    expect(existsSync(join(root, 'codex', '_shared'))).toBe(false);
   });
 
   it('installs all bundled skills when no skill name is provided', async () => {

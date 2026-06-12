@@ -99,6 +99,14 @@ const REQUIRED_STUDIO_SKILLS = [
   'outcome-run',
   'outcome-update',
 ];
+// Reference files kept once under skills/_shared and copied into each
+// consuming skill's references/ directory at install time.
+const SHARED_SKILLS_DIR = '_shared';
+const SHARED_SKILL_REFERENCES: Record<string, string[]> = {
+  'outcome-setup': ['outcome-loop.md'],
+  'outcome-run': ['outcome-loop.md'],
+  'outcome-update': ['outcome-loop.md'],
+};
 const REWARD_DOC_SECTIONS = ['usage', 'install', 'troubleshoot'] as const;
 
 type RewardDocSection = (typeof REWARD_DOC_SECTIONS)[number];
@@ -1145,6 +1153,16 @@ function classifySkillInstall(
     : { status: 'outdated', version: marker.version };
 }
 
+function materializeSharedReferences(skillsRoot: string, name: string, dest: string): void {
+  const files = SHARED_SKILL_REFERENCES[name];
+  if (!files) return;
+  const refDir = join(dest, 'references');
+  mkdirSync(refDir, { recursive: true });
+  for (const file of files) {
+    cpSync(join(skillsRoot, SHARED_SKILLS_DIR, file), join(refDir, file));
+  }
+}
+
 function installSkills(
   names: string[],
   opts: { scope: SkillScope; cwd: string },
@@ -1152,7 +1170,10 @@ function installSkills(
   const skillsRoot = bundledSkillsRoot();
   const targetNames = names.length
     ? names
-    : readdirSync(skillsRoot).filter((entry) => statSync(join(skillsRoot, entry)).isDirectory());
+    : readdirSync(skillsRoot).filter(
+        (entry) =>
+          entry !== SHARED_SKILLS_DIR && statSync(join(skillsRoot, entry)).isDirectory(),
+      );
 
   const target = skillInstallTarget(opts.scope, opts.cwd);
   const installed: Array<{ name: string; claude: string; codex: string }> = [];
@@ -1169,6 +1190,7 @@ function installSkills(
     mkdirSync(claudeDest, { recursive: true });
     cpSync(src, claudeDest, { recursive: true });
     rmSync(join(claudeDest, 'SKILL.codex.md'), { force: true });
+    materializeSharedReferences(skillsRoot, name, claudeDest);
     writeInstallMarker(claudeDest, version, target.scope);
 
     const codexDest = join(target.codexRoot, name);
@@ -1179,6 +1201,7 @@ function installSkills(
       cpSync(codexSkillPath, join(codexDest, 'SKILL.md'));
       rmSync(codexSkillPath, { force: true });
     }
+    materializeSharedReferences(skillsRoot, name, codexDest);
     writeInstallMarker(codexDest, version, target.scope);
 
     installed.push({ name, claude: claudeDest, codex: codexDest });

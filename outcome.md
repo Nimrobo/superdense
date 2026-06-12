@@ -38,7 +38,7 @@ There is no `metrics.md`. Superdense owns durable measurement data through rewar
 - diagnostic measurements per lever
 - analytics and instrumentation checklist
 - Superdense reward preflight
-- intervention selection rules
+- action selection rules
 - run record template
 - update marker for the last reviewed run batch
 
@@ -50,7 +50,7 @@ The north star is the stable real-world result we care about.
 
 Levers are mechanisms that might move the north star.
 
-Actions are concrete interventions an agent or human can take on a lever.
+Actions are concrete steps an agent or human can take on a lever. An action is sometimes a rep of a proven recipe, such as posting another hook variant, and sometimes a fix to something in the path, such as repairing instrumentation or reducing signup friction.
 
 Diagnostics are measurements that explain why a lever did or did not move the north star. Diagnostics are defined in `run.md`, but their measured values are recorded in Superdense reward snapshots.
 
@@ -116,7 +116,7 @@ For landing conversion, the work usually lives in the website repo. The run fold
 
 `outcome-setup` creates or repairs the folder and helps bootstrap measurement. It may instrument target repos when needed after inspecting local conventions and after the human provides external access.
 
-`outcome-run` executes one intervention. It starts with a bounded Superdense reward-maintenance preflight, preferably in a subagent when supported. The preflight scopes project-sensitive reward status to the outcome's Superdense project id, then advances each actionable reward stage in pipeline order with one bounded batch per stage. It may mutate local Superdense reward state, but must not perform irreversible external actions.
+`outcome-run` executes one action. It starts with a bounded Superdense reward-maintenance preflight, preferably in a subagent when supported. The preflight scopes project-sensitive reward status to the outcome's Superdense project id, then advances each actionable reward stage in pipeline order with one bounded batch per stage. It may mutate local Superdense reward state, but must not perform irreversible external actions.
 
 `outcome-update` is observer mode. It reviews prior runs since `## Update Marker`, inspects Superdense reward evidence, and updates only `run.md` to improve future runs.
 

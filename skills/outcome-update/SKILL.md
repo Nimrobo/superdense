@@ -36,7 +36,7 @@ Read `references/outcome-loop.md` before editing.
 
 - Do not create `metrics.md`.
 - Do not duplicate Superdense reward snapshots into markdown.
-- Do not run a new intervention.
+- Do not run a new action.
 - Do not perform external publishing or irreversible external actions.
 - Prefer Superdense metadata and compactors before raw session logs.
 

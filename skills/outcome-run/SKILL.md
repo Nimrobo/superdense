@@ -1,12 +1,12 @@
 ---
 name: outcome-run
 version: 0.1.0
-description: Run one intervention in an outcome-loop folder. Use when the user wants to execute the outcome loop, start with Superdense reward maintenance, choose one intervention, create runs/<run-id>/work.md and learnings.md, or use prior outcomes to improve a real-world metric.
+description: Run one action in an outcome-loop folder. Use when the user wants to execute the outcome loop, start with Superdense reward maintenance, choose one action on a lever, create runs/<run-id>/work.md and learnings.md, or use prior outcomes to improve a real-world metric.
 ---
 
 # Outcome Run
 
-Run one intervention for one outcome folder. The run folder records work references and learning; Superdense records durable sessions, artifacts, externalization targets, and reward snapshots.
+Run one action for one outcome folder. An action is one concrete step on a lever, whether a rep of a proven recipe or a fix to something in the path. The run folder records work references and learning; Superdense records durable sessions, artifacts, externalization targets, and reward snapshots.
 
 Read `references/outcome-loop.md` before starting.
 
@@ -17,21 +17,12 @@ Read `references/outcome-loop.md` before starting.
    - Spawn a bounded subagent when the runtime supports it and the invocation permits subagents.
    - Prefer a lower-cost or lower-reasoning subagent only when it is still capable of correct curation, finalization, reconciliation, and collection.
    - If subagents are unavailable, run the same preflight locally.
-3. Give the reward preflight this job:
-   - resolve the outcome's Superdense project id from `goal.md` target surfaces, the folder project key, or a global `superdense reward status` discovery fallback,
-   - run `superdense reward status --project <project-id>` before project-sensitive maintenance,
-   - advance each actionable stage in pipeline order for that project: `profile`, `curate`, `finalize`, `reconcile`, then `collect`,
-   - run only one bounded batch per actionable stage, re-running scoped status between stages,
-   - stop and report blockers when a stage cannot advance cleanly,
-   - use the stage references under the installed skills root, `superdense/reward/`,
-   - do not perform irreversible external actions,
-   - surface relevant `compare` cohorts or chains for the current outcome,
-   - return an evidence packet with actions taken, IDs, prior reward evidence, and blockers.
-4. Use `goal.md`, `run.md`, and the evidence packet to choose exactly one intervention unless the user explicitly asks for exploration only.
-5. Create `runs/<run-id>/` using a stable date-plus-slug id. Write:
+3. Give the preflight the Reward Preflight Prompt below, filling in `<outcome-folder>`. The prompt is the full job specification.
+4. Use `goal.md`, `run.md`, and the evidence packet to choose exactly one action unless the user explicitly asks for exploration only.
+5. Create `runs/<run-id>/` using a stable date-plus-slug id. Use the `## Run Record Template` in `run.md` as the source of truth. Write:
    - `work.md`
    - `learnings.md`
-6. Execute the intervention in the correct surface:
+6. Execute the action in the correct surface:
    - for content outcomes, the run folder may contain drafts or final copy,
    - for product outcomes, edit the target repo and record branch, PR, deploy, event names, and session IDs in `work.md`.
 7. Do not create `metrics.md`. If a metric needs to be captured, record it through Superdense reward commands. If blocked, record the blocker in `work.md` under `## Blockers`.
@@ -39,7 +30,7 @@ Read `references/outcome-loop.md` before starting.
 
 ## Reward Preflight Prompt
 
-Use this when spawning a subagent:
+Use this when spawning a subagent (or follow it directly when running locally):
 
 ```text
 You are the reward-maintenance agent for an outcome-loop run.
@@ -50,7 +41,7 @@ Read `<outcome-folder>/goal.md` and `<outcome-folder>/run.md`. Resolve the outco
 
 Advance each actionable stage for that project in pipeline order: `profile`, `curate`, `finalize`, `reconcile`, then `collect`. Run one bounded batch per actionable stage, re-running scoped status between stages, and stop on blockers. Use the relevant `superdense/reward/*.md` reference under the installed skills root. You may mutate local Superdense reward state, but you must not perform irreversible external actions or publish anything externally. Prefer indexed metadata and Superdense commands over raw session logs.
 
-Then surface comparable cohorts or version chains relevant to this outcome. Return a compact evidence packet: status, actions taken, artifact/session/target IDs, prior reward evidence, blockers, and what the main agent should consider before choosing the next intervention.
+Then surface comparable cohorts or version chains relevant to this outcome. Return a compact evidence packet: status, actions taken, artifact/session/target IDs, prior reward evidence, blockers, and what the main agent should consider before choosing the next action.
 ```
 
 ## Completion
