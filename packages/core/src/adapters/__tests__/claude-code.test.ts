@@ -100,6 +100,40 @@ describe('claudeCodeAdapter.discover (cwd extraction)', () => {
     expect(session.firstPrompt).toBe('Improve the session viewer');
   });
 
+  it('skips stale Claude index entries whose transcript file was deleted', async () => {
+    const liveLogPath = await writeTranscript('-Users-x-proj', 'live-session', [
+      { type: 'system', cwd: '/Users/x/proj' },
+      { type: 'user', message: { role: 'user', content: 'Live prompt' } },
+    ]);
+    const missingLogPath = join(tmpRoot, '-Users-x-proj', 'missing-session.jsonl');
+    await writeFile(
+      join(tmpRoot, '-Users-x-proj', 'sessions-index.json'),
+      JSON.stringify({
+        version: 1,
+        entries: [
+          {
+            sessionId: 'missing-session',
+            fullPath: missingLogPath,
+            firstPrompt: 'Missing prompt',
+            projectPath: '/Users/x/proj',
+          },
+          {
+            sessionId: 'live-session',
+            fullPath: liveLogPath,
+            firstPrompt: 'Live prompt',
+            projectPath: '/Users/x/proj',
+          },
+        ],
+      }),
+      'utf8',
+    );
+
+    const sessions = await claudeCodeAdapter.discover();
+
+    expect(sessions.map((session) => session.sessionId)).toEqual(['live-session']);
+    expect(sessions[0].logPath).toBe(liveLogPath);
+  });
+
   it('uses command args as the meaningful prompt when present', async () => {
     const logPath = await writeTranscript('-Users-x-proj', 's1', [
       { type: 'system', cwd: '/Users/x/proj' },

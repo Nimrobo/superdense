@@ -252,6 +252,35 @@ describe('workflowSummaryEnricher', () => {
     });
   });
 
+  it('treats a missing transcript as no transcript signals while preserving workflow files', async () => {
+    const { projectDir, sessionId, logPath, session } = await setupSession(
+      'superdense-workflow-missing-log-',
+      [workflowToolUse('toolu_1')],
+    );
+    await writeRun(projectDir, sessionId, 'wf_only.json', {
+      runId: 'wf_only',
+      startTime: 1000,
+      totalTokens: 7,
+      totalToolCalls: 2,
+      workflowProgress: [{ type: 'workflow_agent', agentId: 'agent-1' }],
+    });
+    await rm(logPath);
+
+    const value = await runEnricher(logPath, session);
+
+    expect(value).toMatchObject({
+      hasWorkflow: true,
+      workflowRunCount: 1,
+      workflowToolCallCount: 0,
+      workflowEnabled: null,
+      ultraEffort: false,
+      totalAgents: 1,
+      totalTokens: 7,
+      totalToolCalls: 2,
+      runs: [{ runId: 'wf_only' }],
+    });
+  });
+
   it('flags hasWorkflow on ultracode-only sessions with no runs (documented behavior)', async () => {
     const { logPath, session } = await setupSession('superdense-workflow-ultra-', [
       { type: 'attachment', attachment: { type: 'ultra_effort_enter', reminderType: 'full' } },
