@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/Nimrobo/superdense/compare/@nimrobo/superdense-v0.5.0...superdense-web-v0.6.0) (2026-06-13)
+
+
+### Features
+
+* surface contributor run costs in cohort members ([#67](https://github.com/Nimrobo/superdense/issues/67)) ([d960a9e](https://github.com/Nimrobo/superdense/commit/d960a9eb24ee4fde6ed4a2403b5e83d4d341cc5b))
+
 ## [0.5.0](https://github.com/Nimrobo/superdense/compare/@nimrobo/superdense-v0.4.0...superdense-web-v0.5.0) (2026-06-08)
 
 
