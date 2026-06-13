@@ -28,6 +28,10 @@ Do not create `metrics.md`. If metrics are collected but cannot yet be recorded 
 
 Optional files are allowed only when the outcome needs them, for example draft assets for an X run. The fixed core stays small.
 
+## Version Control
+
+The outcome folder is git-tracked from setup onward. Its commit history is the loop's audit trail: `outcome-setup` initializes git when needed and commits the scaffold, while `outcome-update` commits playbook edits after reviewed runs. Commits are append-only; never amend or rewrite prior outcome history. Never commit private credentials or local secrets.
+
 ## Concepts
 
 - North star: the stable real-world outcome that counts as progress.

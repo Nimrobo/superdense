@@ -217,6 +217,12 @@ export const claudeCodeAdapter: Adapter = {
           if (!e.sessionId || !e.fullPath) continue;
           // Skip sub-agent transcripts — they live inside a subagents/ directory.
           if (e.fullPath.includes('/subagents/')) continue;
+          // The index can outlive the transcript: Claude Code deletes old
+          // *.jsonl files but leaves sessions-index.json referencing them.
+          // Skip entries whose transcript no longer exists so we don't emit
+          // ghost sessions that every downstream reader fails to open.
+          const indexedMtime = await statLogFile(e.fullPath);
+          if (indexedMtime == null) continue;
           seen.add(e.sessionId);
           let pwd = e.projectPath;
           let firstPrompt = extractMeaningfulPrompt(e.firstPrompt);
@@ -240,7 +246,7 @@ export const claudeCodeAdapter: Adapter = {
             messageCount: e.messageCount,
             gitBranch,
             createdAt: toMs(e.created),
-            modifiedAt: toMs(e.modified) ?? e.fileMtime,
+            modifiedAt: toMs(e.modified) ?? e.fileMtime ?? indexedMtime,
             isSidechain: e.isSidechain,
             raw: e,
           });

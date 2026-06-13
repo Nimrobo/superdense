@@ -23,9 +23,10 @@ Read `references/outcome-loop.md` before writing or repairing files.
    - `goal.md`
    - `run.md`
    - `runs/`
-5. Do not create `metrics.md`. Durable measurement results belong in Superdense reward snapshots. Put measurement definitions, diagnostics, event names, source systems, and instrumentation checklist in `run.md`.
-6. If analytics/instrumentation is missing and the target repo is available, implement the smallest viable instrumentation in that target repo after inspecting local conventions. Never commit private credentials. Treat public client tokens according to target repo conventions.
-7. If external account setup is required, pause with a concrete checklist for the human. Continue once the human provides access or confirms setup.
+5. Put the scaffold under git. If the outcome folder is already inside a parent git work tree, commit the new files there. Otherwise run `git init` in the outcome folder. Then stage and commit the scaffold, for example `git add goal.md run.md runs/ && git commit -m "outcome: scaffold <outcome-name>"`.
+6. Do not create `metrics.md`. Durable measurement results belong in Superdense reward snapshots. Put measurement definitions, diagnostics, event names, source systems, and instrumentation checklist in `run.md`.
+7. If analytics/instrumentation is missing and the target repo is available, implement the smallest viable instrumentation in that target repo after inspecting local conventions. Never commit private credentials. Treat public client tokens according to target repo conventions.
+8. If external account setup is required, pause with a concrete checklist for the human. Continue once the human provides access or confirms setup.
 
 ## File Responsibilities
 
@@ -33,6 +34,10 @@ Read `references/outcome-loop.md` before writing or repairing files.
 - `run.md` is mutable. It defines the current lever map, actions, diagnostic measurements, analytics/instrumentation checklist, Superdense reward preflight, action selection rules, and run template.
 - `runs/` starts empty unless the user is repairing an existing loop.
 
+## Version Control
+
+Initialize git only when the outcome folder is not already inside a git work tree. If a parent repo tracks the folder, avoid nesting a repository and commit `goal.md`, `run.md`, and `runs/` in the parent repo instead. Never commit private credentials; use `.gitignore` for local secrets, drafts, exports, or account-specific files that should stay untracked.
+
 ## Dry Run
 
-If the user asks for a dry run, show the proposed `goal.md` and `run.md` contents without writing files or changing target repos.
+If the user asks for a dry run, show the proposed `goal.md` and `run.md` contents plus the git commands that would run, without writing files, running git, or changing target repos.
