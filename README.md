@@ -9,7 +9,7 @@
 
 Define the goal in a folder, and your agents run an outcome loop toward it: remember what already worked, ship the next move, measure how it landed. Superdense is the layer that powers it: it ships the skills, feeds each run the evidence of what worked, and keeps the record of every outcome. No cloud.
 
-<!-- TODO: hero image — choose one from docs/assets (e.g. superdense-outcome-clean-headline.png) -->
+![Superdense outcome loop: sessions, artifacts, and outcomes orbiting Superdense as the layer](docs/assets/superdense-substrate-ring.png)
 
 ## Try it now
 
