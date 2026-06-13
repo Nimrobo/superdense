@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.7.0](https://github.com/Nimrobo/superdense/compare/@nimrobo/superdense-v0.6.0...@nimrobo/superdense-v0.7.0) (2026-06-13)
+
+
+### Features
+
+* add outcome loop skills ([#70](https://github.com/Nimrobo/superdense/issues/70)) ([8cbe039](https://github.com/Nimrobo/superdense/commit/8cbe0393918c6f1e921a4719637df4212b0d6f5a))
+* optimize reward-layer CLI output with compact mode and --full flag ([#69](https://github.com/Nimrobo/superdense/issues/69)) ([5ead06d](https://github.com/Nimrobo/superdense/commit/5ead06dbab8621c1b4b48b356975c320b7b30dd2))
+
+
+### Bug Fixes
+
+* ignore missing Claude transcripts ([#72](https://github.com/Nimrobo/superdense/issues/72)) ([ac9f722](https://github.com/Nimrobo/superdense/commit/ac9f722e5e68bb77da33c663beff5cc81cd7ba81))
+
+
+### Documentation
+
+* clarify outcome loop git workflow ([#71](https://github.com/Nimrobo/superdense/issues/71)) ([f2aa366](https://github.com/Nimrobo/superdense/commit/f2aa366fe0391c622f6d99e573c351372a95be05))
+* refresh outcome loop README ([#73](https://github.com/Nimrobo/superdense/issues/73)) ([513b790](https://github.com/Nimrobo/superdense/commit/513b7909111f04ce160d7016c3e162f9ac7e2ca1))
+
 ## [0.6.0](https://github.com/Nimrobo/superdense/compare/@nimrobo/superdense-v0.5.0...@nimrobo/superdense-v0.6.0) (2026-06-08)
 
 

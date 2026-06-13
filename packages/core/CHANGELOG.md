@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/Nimrobo/superdense/compare/@nimrobo/superdense-v0.6.0...superdense-core-v0.6.1) (2026-06-13)
+
+
+### Bug Fixes
+
+* ignore missing Claude transcripts ([#72](https://github.com/Nimrobo/superdense/issues/72)) ([ac9f722](https://github.com/Nimrobo/superdense/commit/ac9f722e5e68bb77da33c663beff5cc81cd7ba81))
+
 ## [0.6.0](https://github.com/Nimrobo/superdense/compare/@nimrobo/superdense-v0.5.0...superdense-core-v0.6.0) (2026-06-08)
 
 
