@@ -261,6 +261,12 @@ async function scanTranscript(logPath: string): Promise<TranscriptWorkflowSignal
         out.ultraEffort = true;
       }
     }
+  } catch (err: unknown) {
+    // A deleted/missing transcript surfaces ENOENT asynchronously through the
+    // read stream; treat it as "no signals" rather than an enricher failure
+    // (mirrors iterJsonlEvents' ENOENT handling). Re-throw anything else.
+    if ((err as { code?: string } | null)?.code !== 'ENOENT') throw err;
+    return out;
   } finally {
     try {
       rl.close();
