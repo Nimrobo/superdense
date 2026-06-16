@@ -20,13 +20,14 @@ Do not create `metrics.md`. If metrics are collected but cannot yet be recorded 
 <outcome-folder>/
   goal.md
   run.md
+  gate.md
   runs/
     <run-id>/
       work.md
       learnings.md
 ```
 
-Optional files are allowed only when the outcome needs them, for example draft assets for an X run. The fixed core stays small.
+Optional files are allowed only when the outcome needs them, for example draft assets for an X run or local check scripts for deterministic gate validation. The fixed core stays small.
 
 ## Version Control
 
@@ -39,8 +40,9 @@ The outcome folder is git-tracked from setup onward. Its commit history is the l
 - Lever: a mechanism believed to influence the north star.
 - Action: one concrete step the agent or human can take on a lever, whether a rep of a proven recipe or a fix to something in the path.
 - Diagnostic metric: a measurement that explains why a lever did or did not move the north star.
+- Gate: the reusable completion contract that says what must be true before an `outcome-run` can be called complete.
 
-`goal.md` protects the north star and guardrails. `run.md` evolves the lever map, action recipes, diagnostic measurements, instrumentation checklist, and Superdense workflow.
+`goal.md` protects the north star and guardrails. `run.md` evolves the lever map, action recipes, diagnostic measurements, instrumentation checklist, and Superdense workflow. `gate.md` defines the reusable completion checks. It is not a checklist to clear each run; each run records the actual gate result in `runs/<run-id>/work.md`.
 
 ## Goal Template
 
@@ -71,6 +73,34 @@ Evaluation window:
 
 -
 ```
+
+## Gate Template
+
+```md
+# Gate
+
+## Completion Rules
+
+The run is complete only when the required checks below pass or the run records an unresolved failure and stops. Warning checks must be recorded, but they do not block completion. If no checks are known yet, leave the standard headings in place and mark the check lists as `none configured`.
+
+## Required Checks
+
+-
+
+## Warning Checks
+
+-
+
+## Deterministic Checks
+
+Local scripts or commands may be listed here only when this outcome needs deterministic validation. Keep them in the outcome folder, make them runnable from the outcome folder root, and record each command plus its result in `runs/<run-id>/work.md`.
+
+## Failure Policy
+
+If a required check fails, try to fix the issue within the current run. If it still fails, set the run status to failed or blocked, record the reason under `## Gate Status`, and stop without presenting the run as complete.
+```
+
+A compulsory `gate.md` may be operationally empty. Missing `gate.md` is a folder-contract failure, but a `gate.md` with no configured checks is valid and should produce `Overall: pass` with `Checks run: none` in the run's `## Gate Status`.
 
 ## Run Template
 
@@ -165,6 +195,16 @@ Superdense sessions:
 Superdense artifacts:
 Externalization targets:
 
+## Gate Status
+
+Overall:
+Checks run:
+Passes:
+Warnings:
+Failures:
+Fixes attempted:
+Unresolved failures:
+
 ## Blockers
 
 -
@@ -212,6 +252,8 @@ Last reviewed at:
 
 Run work may include final tweets directly in `work.md` or linked draft files.
 
+`gate.md` may require no engagement bait, final copy present, external URL or scheduled-post reference recorded, Superdense session IDs listed, and warning checks for missing early diagnostics.
+
 ## Example: Landing Page Conversion
 
 `goal.md`:
@@ -228,3 +270,5 @@ Run work may include final tweets directly in `work.md` or linked draft files.
 - traffic-message match: source-specific variants; diagnostics include conversion by source and CTA click by source.
 
 Run work points to the target website repo branch, PR, deploy URL, analytics events, and Superdense IDs.
+
+`gate.md` may require relevant tests to pass, the run record to include branch/PR/deploy references, analytics event names to be listed, and no unresolved required gate failures before completion.
