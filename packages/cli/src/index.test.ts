@@ -1679,14 +1679,17 @@ describe('superdense cli agent commands', () => {
     expect(readFileSync(join(claudeSkill, 'references', 'outcome-loop.md'), 'utf8')).toContain(
       'Do not create `metrics.md`',
     );
+    expect(readFileSync(join(claudeSkill, 'references', 'outcome-loop.md'), 'utf8')).toContain(
+      '## Gate Template',
+    );
     expect(readFileSync(join(codexSkill, 'references', 'outcome-loop.md'), 'utf8')).toContain(
-      'Superdense owns durable outcome evidence',
+      'runs/<run-id>/work.md',
     );
     expect(existsSync(join(claudeSkill, 'agents', 'openai.yaml'))).toBe(true);
     expect(existsSync(join(codexSkill, 'agents', 'openai.yaml'))).toBe(true);
     expect(json(readFileSync(join(claudeSkill, '.superdense-install.json'), 'utf8'))).toMatchObject(
       {
-        version: '0.1.0',
+        version: '0.2.0',
         scope: 'global',
       },
     );
@@ -1716,6 +1719,12 @@ describe('superdense cli agent commands', () => {
     );
     expect(canonical).toContain('### runs/<run-id>/work.md');
     expect(canonical).toContain('### runs/<run-id>/learnings.md');
+    expect(canonical).toContain('  gate.md');
+    expect(canonical).toContain('## Gate Status');
+    expect(canonical).toContain(
+      'If a required check fails, try to fix the issue within the current run',
+    );
+    expect(canonical).toContain('A compulsory `gate.md` may be operationally empty');
     expect(canonical).not.toContain(
       'from the Work Template and Learnings Template in this reference',
     );

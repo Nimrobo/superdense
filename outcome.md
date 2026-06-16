@@ -12,6 +12,7 @@ The outcome folder is the control plane:
 <outcome-folder>/
   goal.md
   run.md
+  gate.md
   runs/
     <run-id>/
       work.md
@@ -41,6 +42,16 @@ There is no `metrics.md`. Superdense owns durable measurement data through rewar
 - action selection rules
 - run record template
 - update marker for the last reviewed run batch
+
+`gate.md` is reusable completion policy. It defines what must be true before an outcome run can be called complete:
+
+- completion rules
+- required checks
+- warning checks
+- deterministic checks when the outcome needs local scripts
+- failure policy
+
+It is not a per-run checklist. Each run writes the actual pass, warning, failure, fix-attempt, and unresolved-failure evidence into `runs/<run-id>/work.md`.
 
 `outcome-update` may improve `run.md`, but should not rewrite `goal.md`. If evidence suggests the north star itself is wrong, `outcome-update` should add a clearly marked recommendation for human review rather than changing the goal contract.
 
@@ -116,9 +127,9 @@ For landing conversion, the work usually lives in the website repo. The run fold
 
 `outcome-setup` creates or repairs the folder and helps bootstrap measurement. It may instrument target repos when needed after inspecting local conventions and after the human provides external access.
 
-`outcome-run` executes one action. It starts with a bounded Superdense reward-maintenance preflight, preferably in a subagent when supported. The preflight scopes project-sensitive reward status to the outcome's Superdense project id, then advances each actionable reward stage in pipeline order with one bounded batch per stage. It may mutate local Superdense reward state, but must not perform irreversible external actions.
+`outcome-run` executes one action. It starts with a bounded Superdense reward-maintenance preflight, preferably in a subagent when supported. The preflight scopes project-sensitive reward status to the outcome's Superdense project id, then advances each actionable reward stage in pipeline order with one bounded batch per stage. It may mutate local Superdense reward state, but must not perform irreversible external actions. Before completion, it applies `gate.md`; if required checks fail, it tries to fix them and stops with a recorded failure reason if they still fail.
 
-`outcome-update` is observer mode. It reviews prior runs since `## Update Marker`, inspects Superdense reward evidence, and updates only `run.md` to improve future runs.
+`outcome-update` is observer mode. It reviews prior runs since `## Update Marker`, inspects Superdense reward evidence, and updates `run.md` plus `gate.md` when future runs need better reusable completion rules. It does not rewrite `goal.md`.
 
 ## Claude And Codex Packaging
 

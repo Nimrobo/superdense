@@ -1,4 +1,4 @@
 interface:
   display_name: 'Outcome Update'
   short_description: 'Improve an outcome run playbook'
-  default_prompt: 'Use $outcome-update to inspect prior runs and Superdense reward evidence, then update only run.md for better future outcome runs.'
+  default_prompt: 'Use $outcome-update to inspect prior runs and Superdense reward evidence, then update run.md and gate.md for better future outcome runs without changing goal.md.'
