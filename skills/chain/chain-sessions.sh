@@ -5,6 +5,22 @@
 set -euo pipefail
 
 cwd="$PWD"
+index_timeout_seconds="${SUPERDENSE_CHAIN_INDEX_TIMEOUT_SECONDS:-8}"
+list_timeout_seconds="${SUPERDENSE_CHAIN_LIST_TIMEOUT_SECONDS:-4}"
+context_unavailable=0
+
+run_with_timeout() {
+  local seconds="$1"
+  shift
+
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$seconds" "$@"
+  elif command -v gtimeout >/dev/null 2>&1; then
+    gtimeout "$seconds" "$@"
+  else
+    perl -e 'my $seconds = shift @ARGV; alarm $seconds; exec @ARGV; exit 127' "$seconds" "$@"
+  fi
+}
 
 exclude_ids=()
 [ -n "${CODEX_THREAD_ID:-}" ] && exclude_ids+=("codex:$CODEX_THREAD_ID")
@@ -21,7 +37,7 @@ fi
 exclude_json=$(printf '%s\n' "${exclude_ids[@]}" | jq -R 'select(length > 0)' | jq -s '.')
 
 fetch_sessions() {
-  superdense session list --pwd "$1" --limit 25 2>/dev/null || echo '{"items":[],"total":0}'
+  run_with_timeout "$list_timeout_seconds" superdense session list --pwd "$1" --limit 25 2>/dev/null
 }
 
 filter_sessions() {
@@ -37,10 +53,39 @@ filter_sessions() {
     '
 }
 
-superdense index 2>/dev/null || true
-raw_sessions_json=$(fetch_sessions "$cwd")
-sessions_json=$(echo "$raw_sessions_json" | filter_sessions)
-count=$(echo "$sessions_json" | jq '.items | length')
+if ! run_with_timeout "$index_timeout_seconds" superdense index >/dev/null 2>&1; then
+  context_unavailable=1
+fi
+
+raw_sessions_json=""
+if ! raw_sessions_json=$(fetch_sessions "$cwd"); then
+  context_unavailable=1
+fi
+
+if [ -z "$raw_sessions_json" ]; then
+  context_unavailable=1
+fi
+
+if [ "$context_unavailable" -eq 1 ]; then
+  echo '<past_sessions>'
+  echo "Session context unavailable for workspace: $cwd (index/list blocked, timed out, or sandboxed)"
+  echo '</past_sessions>'
+  exit 0
+fi
+
+if ! sessions_json=$(echo "$raw_sessions_json" | filter_sessions); then
+  echo '<past_sessions>'
+  echo "Session context unavailable for workspace: $cwd (index/list blocked, timed out, or sandboxed)"
+  echo '</past_sessions>'
+  exit 0
+fi
+
+if ! count=$(echo "$sessions_json" | jq '.items | length'); then
+  echo '<past_sessions>'
+  echo "Session context unavailable for workspace: $cwd (index/list blocked, timed out, or sandboxed)"
+  echo '</past_sessions>'
+  exit 0
+fi
 
 echo '<past_sessions>'
 
