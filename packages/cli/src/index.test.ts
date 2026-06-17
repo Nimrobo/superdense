@@ -1644,12 +1644,12 @@ describe('superdense cli agent commands', () => {
     expect(existsSync(join(codexSkill, 'chain-sessions.sh'))).toBe(true);
     expect(json(readFileSync(join(claudeSkill, '.superdense-install.json'), 'utf8'))).toMatchObject(
       {
-        version: '0.1.0',
+        version: '0.1.1',
         scope: 'global',
       },
     );
     expect(json(readFileSync(join(codexSkill, '.superdense-install.json'), 'utf8'))).toMatchObject({
-      version: '0.1.0',
+      version: '0.1.1',
       scope: 'global',
     });
     expect(json(out.stdout[0]!)).toEqual({

@@ -1,6 +1,6 @@
 ---
 name: chain
-version: 0.1.0
+version: 0.1.1
 description: Load recent Superdense session IDs for the current workspace before continuing the user's task. Use when starting work that should build on recent agent sessions.
 ---
 
