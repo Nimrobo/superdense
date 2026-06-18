@@ -27,6 +27,7 @@ const artifactThread = {
   readyAt: 1,
   readinessRationale: null,
   predecessorArtifactId: null,
+  humanOnly: false,
   externalizationStatus: 'external',
   externalizationEvidence: null,
   externalizationUpdatedAt: 2,

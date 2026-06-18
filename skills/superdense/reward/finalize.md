@@ -26,6 +26,10 @@ Process one bounded Layer 3B ready queue. Curation has already grouped sessions 
    superdense artifact finalize --input '{"threadId":"<id>","type":"post","title":"...","payload":{"text":"..."}}'
    ```
 
+   A sessionless thread is valid only when curation explicitly set
+   `humanOnly: true`. It follows the same finalization command and later
+   reconciliation/reward workflow.
+
 4. If the output remains ambiguous, reopen the thread for more curation:
 
    ```bash
@@ -46,3 +50,5 @@ Process one bounded Layer 3B ready queue. Curation has already grouped sessions 
 - Artifact identity and payload stay stable after creation. Lineage remains append-only and may gain audited `lineage.attach` or `lineage.retract` events later.
 - If the produced output changes, create a successor thread and pass `predecessorArtifactId` while creating its artifact. Do not inherit externalization targets automatically.
 - Never claim deterministic artifact discovery. The ready queue is agent-confirmed.
+- Human-only artifacts have no contributing agent-session cost. Treat missing cost
+  as unavailable/not applicable, never as zero.

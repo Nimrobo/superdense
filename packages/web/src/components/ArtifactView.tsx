@@ -42,7 +42,10 @@ export function ArtifactView({ id, onBack, onOpenSession }: Props) {
         </button>
         <div className="work-heading">
           <div className="work-title">{artifact.provisionalTitle}</div>
-          <div className="work-sub">{artifact.artifactType}</div>
+          <div className="work-sub">
+            {artifact.artifactType}
+            {artifact.humanOnly ? ' · Human only' : ''}
+          </div>
         </div>
       </div>
       <ThreadDetails

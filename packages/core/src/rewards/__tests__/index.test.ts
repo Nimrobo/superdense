@@ -10,11 +10,16 @@ vi.mock('../../paths.js', () => ({
   ensureSuperdenseDirs: vi.fn(),
 }));
 
-import { _migrateForTests, _resetDbForTests, getDb, upsertSession } from '../../db.js';
+import { _repairForTests, _resetDbForTests, getDb, upsertSession } from '../../db.js';
 import { listProjectProfiles } from '../../projects/index.js';
 import { applyCurationBatch, finalizeArtifact, getArtifact } from '../../curation/index.js';
 import { assessExternalization, getExternalization } from '../../externalization/index.js';
-import { getArtifactRewards, listRewardSnapshots, recordRewardSnapshot } from '../index.js';
+import {
+  getArtifactRewards,
+  listRewardSnapshots,
+  recordRewardSnapshot,
+  recordRewardSnapshotBatch,
+} from '../index.js';
 import type { Session } from '../../types.js';
 
 function session(id: string): Session {
@@ -72,7 +77,7 @@ afterEach(() => {
 describe('reward collection (Layer 4)', () => {
   it('adds the V9 reward_snapshot table', () => {
     const db = getDb();
-    expect(db.pragma('user_version', { simple: true })).toBe(10);
+    expect(db.pragma('user_version', { simple: true })).toBe(11);
     expect(
       db
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'reward_snapshot'")
@@ -84,9 +89,9 @@ describe('reward collection (Layer 4)', () => {
     const db = getDb();
     db.exec('DROP TABLE reward_snapshot');
 
-    _migrateForTests(db);
+    _repairForTests(db);
 
-    expect(db.pragma('user_version', { simple: true })).toBe(10);
+    expect(db.pragma('user_version', { simple: true })).toBe(11);
     expect(
       db
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'reward_snapshot'")
@@ -155,6 +160,52 @@ describe('reward collection (Layer 4)', () => {
       ],
     });
     expect(rewards!.targets[0]!.snapshots).toHaveLength(3);
+  });
+
+  it('records an ordered batch atomically', () => {
+    const first = linkArtifact('t1');
+    const second = linkArtifact('t2');
+
+    const result = recordRewardSnapshotBatch({
+      snapshots: [
+        { targetId: first, capturedAt: 100, metrics: { views: 10 } },
+        { targetId: second, capturedAt: 200, metrics: { views: 20 } },
+      ],
+    });
+
+    expect(result.snapshots.map((snapshot) => snapshot.targetId)).toEqual([first, second]);
+    expect(listRewardSnapshots(first)).toHaveLength(1);
+    expect(listRewardSnapshots(second)).toHaveLength(1);
+  });
+
+  it('rolls back a mixed-validity batch and caps batch size', () => {
+    const targetId = linkArtifact('t1');
+    expect(() =>
+      recordRewardSnapshotBatch({
+        snapshots: [
+          { targetId, metrics: { views: 10 } },
+          { targetId: 'missing', metrics: { views: 20 } },
+        ],
+      }),
+    ).toThrow('externalization target not found: missing');
+    expect(listRewardSnapshots(targetId)).toEqual([]);
+
+    expect(() =>
+      recordRewardSnapshotBatch({
+        snapshots: Array.from({ length: 101 }, () => ({
+          targetId,
+          metrics: { views: 1 },
+        })),
+      }),
+    ).toThrow('at most 100');
+  });
+
+  it('reports the failing batch item during shape validation', () => {
+    expect(() =>
+      recordRewardSnapshotBatch({
+        snapshots: [{ targetId: 't', metrics: {} }],
+      }),
+    ).toThrow('snapshots[0]: metrics must be a non-empty object');
   });
 
   it('keeps externalization and reward history stable while late lineage is appended and retracted', () => {

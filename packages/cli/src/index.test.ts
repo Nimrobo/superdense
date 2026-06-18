@@ -81,6 +81,8 @@ vi.mock('@nimrobo/superdense-core', () => ({
   loadUserEnrichers: vi.fn(),
   markSessionForCuration: vi.fn(),
   recordRewardSnapshot: vi.fn(),
+  recordRewardSnapshotBatch: vi.fn(),
+  repairDatabase: vi.fn(),
   localClaudeSkillsDir: (cwd: string) => join(cwd, '.claude', 'skills'),
   localCodexSkillsDir: (cwd: string) => join(cwd, '.codex', 'skills'),
   previewQuery: vi.fn(),
@@ -202,6 +204,7 @@ const artifact: core.WorkThread = {
   readyAt: 2,
   readinessRationale: 'Ready for artifact creation',
   predecessorArtifactId: null,
+  humanOnly: false,
   externalizationStatus: 'external' as const,
   externalizationEvidence: 'Published launch',
   externalizationUpdatedAt: 4,
@@ -530,6 +533,7 @@ beforeEach(() => {
     readyAt: null,
     readinessRationale: null,
     predecessorArtifactId: null,
+    humanOnly: false,
     externalizationStatus: null,
     externalizationEvidence: null,
     externalizationUpdatedAt: null,
@@ -556,6 +560,11 @@ beforeEach(() => {
     ok: true,
     snapshot: rewards.targets[0]!.latest!,
   });
+  vi.mocked(core.recordRewardSnapshotBatch).mockReturnValue({
+    ok: true,
+    snapshots: [rewards.targets[0]!.latest!],
+  });
+  vi.mocked(core.repairDatabase).mockReturnValue({ ok: true, version: 11 });
   vi.mocked(core.listCohorts).mockReturnValue([
     {
       type: 'launch',
@@ -1401,6 +1410,85 @@ describe('superdense cli agent commands', () => {
       evidence: 'internal',
       targets: [],
     });
+  });
+
+  it('exposes canonical reward writes, batch recording, and command help', async () => {
+    await runCli(
+      [
+        'artifact',
+        'finalize',
+        '--input',
+        '{"threadId":"t1","type":"post","payload":{"text":"hello"}}',
+      ],
+      io().io,
+    );
+    expect(core.finalizeArtifact).toHaveBeenCalledWith({
+      threadId: 't1',
+      type: 'post',
+      payload: { text: 'hello' },
+    });
+
+    await runCli(
+      ['reward', 'record', '--input', '{"targetId":"target-1","metrics":{"views":10}}'],
+      io().io,
+    );
+    expect(core.recordRewardSnapshot).toHaveBeenCalledWith({
+      targetId: 'target-1',
+      metrics: { views: 10 },
+    });
+
+    await runCli(
+      [
+        'reward',
+        'record-batch',
+        '--input',
+        '{"snapshots":[{"targetId":"target-1","metrics":{"views":10}}]}',
+      ],
+      io().io,
+    );
+    expect(core.recordRewardSnapshotBatch).toHaveBeenCalledWith({
+      snapshots: [{ targetId: 'target-1', metrics: { views: 10 } }],
+    });
+
+    for (const command of [
+      ['curation', 'apply', '--help'],
+      ['artifact', 'finalize', '--help'],
+      ['externalization', 'assess', '--help'],
+      ['reward', 'record', '--help'],
+      ['reward', 'record-batch', '--help'],
+    ]) {
+      const out = io();
+      await runCli(command, out.io);
+      expect(out.stdout.join('\n')).toContain('Usage: superdense');
+    }
+  });
+
+  it('runs explicit database repair', async () => {
+    await runCli(['db', 'repair'], io().io);
+    expect(core.repairDatabase).toHaveBeenCalled();
+  });
+
+  it('keeps bundled reward guidance on canonical CLI commands', () => {
+    const rewardDir = join(process.cwd(), '..', '..', 'skills', 'superdense', 'reward');
+    const guidance = ['curate.md', 'finalize.md', 'reconcile.md', 'collect.md']
+      .map((name) => readFileSync(join(rewardDir, name), 'utf8'))
+      .join('\n');
+
+    for (const command of [
+      'superdense curation apply',
+      'superdense artifact finalize',
+      'superdense externalization assess',
+      'superdense reward record-batch',
+    ]) {
+      expect(guidance).toContain(command);
+    }
+    for (const invented of [
+      'superdense reward finalize',
+      'superdense curation open_thread',
+      'superdense curation curate',
+    ]) {
+      expect(guidance).not.toContain(invented);
+    }
   });
 
   it('uses compact reward-layer read output by default and keeps full output behind --full', async () => {

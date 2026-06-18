@@ -332,6 +332,7 @@ export interface WorkThread {
   readyAt: number | null;
   readinessRationale: string | null;
   predecessorArtifactId: string | null;
+  humanOnly: boolean;
   externalizationStatus: 'not_external' | 'external' | null;
   externalizationEvidence: string | null;
   externalizationUpdatedAt: number | null;

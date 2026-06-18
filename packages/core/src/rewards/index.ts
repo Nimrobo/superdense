@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { getDb, withDbRetry } from '../db.js';
+import { getDb, withImmediateTransaction } from '../db.js';
 
 // Layer 4 reward collection. Superdense never executes connectors: an agent
 // gathers current metrics with whatever tool it judges best and reports a
@@ -108,7 +108,18 @@ function rowToSnapshot(row: RewardSnapshotRow): RewardSnapshot {
   };
 }
 
-export function recordRewardSnapshot(input: unknown): { ok: true; snapshot: RewardSnapshot } {
+interface ValidatedRewardSnapshot {
+  id: string;
+  targetId: string;
+  capturedAt: number;
+  metrics: Record<string, number>;
+  primaryDim: string | null;
+  source: string | null;
+  evidence: string | null;
+  createdAt: number;
+}
+
+function validateRewardSnapshot(input: unknown, now: number): ValidatedRewardSnapshot {
   const body = expectObject(input, 'input');
   const targetId = expectString(body.targetId, 'targetId');
   const metrics = expectMetrics(body.metrics);
@@ -118,41 +129,85 @@ export function recordRewardSnapshot(input: unknown): { ok: true; snapshot: Rewa
   }
   const source = expectNullableString(body.source, 'source');
   const evidence = expectNullableString(body.evidence, 'evidence');
+  return {
+    id: randomUUID(),
+    targetId,
+    capturedAt: expectCapturedAt(body.capturedAt, now),
+    metrics,
+    primaryDim,
+    source,
+    evidence,
+    createdAt: now,
+  };
+}
 
+function insertValidatedSnapshots(snapshots: ValidatedRewardSnapshot[]): RewardSnapshot[] {
   const db = getDb();
-  const now = Date.now();
-  const capturedAt = expectCapturedAt(body.capturedAt, now);
-  const id = randomUUID();
-
-  const tx = db.transaction(() => {
-    const target = db
-      .prepare('SELECT id, status FROM externalization_target WHERE id = ?')
-      .get(targetId) as { id: string; status: string } | undefined;
-    if (!target) throw new Error(`externalization target not found: ${targetId}`);
-    if (target.status !== 'linked') {
-      throw new Error('reward snapshots require a linked externalization target');
+  return withImmediateTransaction(db, () => {
+    const findTarget = db.prepare('SELECT id, status FROM externalization_target WHERE id = ?');
+    for (const snapshot of snapshots) {
+      const target = findTarget.get(snapshot.targetId) as
+        | { id: string; status: string }
+        | undefined;
+      if (!target) throw new Error(`externalization target not found: ${snapshot.targetId}`);
+      if (target.status !== 'linked') {
+        throw new Error(
+          `reward snapshots require a linked externalization target: ${snapshot.targetId}`,
+        );
+      }
     }
-    db.prepare(
+    const insert = db.prepare(
       `INSERT INTO reward_snapshot (
          id, target_id, captured_at, metrics, primary_dim, source, evidence, created_at
        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(id, targetId, capturedAt, JSON.stringify(metrics), primaryDim, source, evidence, now);
+    );
+    for (const snapshot of snapshots) {
+      insert.run(
+        snapshot.id,
+        snapshot.targetId,
+        snapshot.capturedAt,
+        JSON.stringify(snapshot.metrics),
+        snapshot.primaryDim,
+        snapshot.source,
+        snapshot.evidence,
+        snapshot.createdAt,
+      );
+    }
+    return snapshots;
   });
-  withDbRetry(tx);
+}
 
+export function recordRewardSnapshot(input: unknown): { ok: true; snapshot: RewardSnapshot } {
+  const snapshot = validateRewardSnapshot(input, Date.now());
+  insertValidatedSnapshots([snapshot]);
   return {
     ok: true,
-    snapshot: {
-      id,
-      targetId,
-      capturedAt,
-      metrics,
-      primaryDim,
-      source,
-      evidence,
-      createdAt: now,
-    },
+    snapshot,
   };
+}
+
+export function recordRewardSnapshotBatch(input: unknown): {
+  ok: true;
+  snapshots: RewardSnapshot[];
+} {
+  const body = expectObject(input, 'input');
+  if (!Array.isArray(body.snapshots) || body.snapshots.length === 0) {
+    throw new Error('snapshots must be a non-empty array');
+  }
+  if (body.snapshots.length > 100) {
+    throw new Error('snapshots must contain at most 100 items');
+  }
+  const now = Date.now();
+  const snapshots = body.snapshots.map((snapshot, index) => {
+    try {
+      return validateRewardSnapshot(snapshot, now);
+    } catch (err) {
+      throw new Error(`snapshots[${index}]: ${err instanceof Error ? err.message : String(err)}`, {
+        cause: err,
+      });
+    }
+  });
+  return { ok: true, snapshots: insertValidatedSnapshots(snapshots) };
 }
 
 export function listRewardSnapshots(targetId: string): RewardSnapshot[] {

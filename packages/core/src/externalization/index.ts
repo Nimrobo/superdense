@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { getDb, withDbRetry } from '../db.js';
+import { getDb, withImmediateTransaction } from '../db.js';
 
 export type ExternalizationConclusion = 'not_external' | 'external';
 export type ExternalizationTargetStatus = 'linked' | 'needs_connector' | 'not_found' | 'ambiguous';
@@ -195,22 +195,27 @@ export function getExternalization(artifactId: string): ArtifactExternalization 
   return rowToExternalization(row, listTargetsByArtifact([row.id]).get(row.id) ?? []);
 }
 
-export function listExternalizations(opts: { status?: string } = {}): ArtifactExternalization[] {
+export function listExternalizations(
+  opts: { status?: string; projectId?: string } = {},
+): ArtifactExternalization[] {
   if (
     opts.status !== undefined &&
     !['unprocessed', 'not_external', 'linked', 'blocked'].includes(opts.status)
   ) {
     throw new Error('status must be unprocessed, not_external, linked, or blocked');
   }
+  const projectWhere = opts.projectId ? 'AND project_profile_id = ?' : '';
+  const projectParams = opts.projectId ? [canonicalProjectId(opts.projectId)] : [];
   const rows = getDb()
     .prepare(
       `SELECT id, artifact_type, provisional_title, summary, artifact_finalized_at,
               externalization_status, externalization_evidence, externalization_updated_at
          FROM work_thread
         WHERE artifact_type IS NOT NULL
+          ${projectWhere}
         ORDER BY artifact_finalized_at DESC, id ASC`,
     )
-    .all() as ArtifactRow[];
+    .all(...projectParams) as ArtifactRow[];
   const targets = listTargetsByArtifact();
   const items = rows.map((row) => rowToExternalization(row, targets.get(row.id) ?? []));
   return opts.status ? items.filter((item) => item.status === opts.status) : items;
@@ -356,7 +361,7 @@ export function assessExternalization(input: unknown): {
 
   const db = getDb();
   const now = Date.now();
-  const tx = db.transaction(() => {
+  const work = () => {
     const artifact = db
       .prepare('SELECT id FROM work_thread WHERE id = ? AND artifact_type IS NOT NULL')
       .get(artifactId) as { id: string } | undefined;
@@ -387,8 +392,8 @@ export function assessExternalization(input: unknown): {
         now,
       );
     }
-  });
-  withDbRetry(tx);
+  };
+  withImmediateTransaction(db, work);
 
   return {
     ok: true,

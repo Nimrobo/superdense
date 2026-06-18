@@ -12,6 +12,7 @@ vi.mock('../../paths.js', () => ({
 
 import {
   _migrateForTests,
+  _repairForTests,
   _resetDbForTests,
   getDb,
   getSession,
@@ -371,8 +372,13 @@ describe('artifact finalization (Layer 3B)', () => {
       getDb().prepare('PRAGMA table_info(work_thread)').all() as Array<{ name: string }>
     ).map((row) => row.name);
     expect(columns).toEqual(
-      expect.arrayContaining(['artifact_type', 'payload', 'artifact_finalized_at']),
+      expect.arrayContaining(['artifact_type', 'payload', 'artifact_finalized_at', 'human_only']),
     );
+  });
+
+  it('defaults existing and ordinary work threads to non-human-only', () => {
+    consumedThread('t1', [['codex:a', 100]]);
+    expect(getWorkThread('t1')).toMatchObject({ humanOnly: false });
   });
 
   it('reconciles V10 readiness and backfills lineage events idempotently', () => {
@@ -384,10 +390,10 @@ describe('artifact finalization (Layer 3B)', () => {
       CREATE TABLE work_thread_frontier (id TEXT);
     `);
 
-    _migrateForTests(db);
-    _migrateForTests(db);
+    _repairForTests(db);
+    _repairForTests(db);
 
-    expect(db.pragma('user_version', { simple: true })).toBe(10);
+    expect(db.pragma('user_version', { simple: true })).toBe(11);
     expect(getWorkThread('t1')).toMatchObject({
       lifecycle: 'ready',
       readinessRationale: 'Migrated from pre-V10 finalized thread',
@@ -414,8 +420,8 @@ describe('artifact finalization (Layer 3B)', () => {
                  'Backfilled from pre-V10 effective lineage', 0)`,
     ).run();
 
-    _migrateForTests(db);
-    _migrateForTests(db);
+    _repairForTests(db);
+    _repairForTests(db);
 
     expect(
       db.prepare('SELECT id FROM work_thread_lineage_event WHERE thread_id = ?').all('t1'),
@@ -496,7 +502,191 @@ describe('artifact finalization (Layer 3B)', () => {
     });
     expect(() =>
       applyCurationBatch({ actions: [{ type: 'thread.finalize', threadId: 't1' }] }),
-    ).toThrow('no contributor sessions to mark ready');
+    ).toThrow('must have a contributor session or humanOnly=true to mark ready');
+  });
+
+  it('creates a human-only artifact without synthetic sessions', () => {
+    upsertSession(session('codex:project-seed', 100));
+    applyCurationBatch({
+      actions: [
+        {
+          type: 'thread.create',
+          id: 'human',
+          projectProfileId: projectId(),
+          provisionalTitle: 'Manual post',
+          summary: 'Written and published directly by the human',
+          humanOnly: true,
+        },
+        {
+          type: 'thread.mark-ready',
+          threadId: 'human',
+          rationale: 'Final human-authored output is known',
+        },
+      ],
+    });
+
+    finalizeArtifact({ threadId: 'human', type: 'post', payload: { text: 'Manual post' } });
+
+    expect(getArtifact('human')).toMatchObject({
+      humanOnly: true,
+      artifactType: 'post',
+      sessions: [],
+    });
+  });
+
+  it('rejects a batch that sets humanOnly=true and attaches a contributor on the same thread', () => {
+    upsertSession(session('codex:a', 100));
+    expect(() =>
+      applyCurationBatch({
+        actions: [
+          {
+            type: 'thread.create',
+            id: 'human',
+            projectProfileId: projectId(),
+            provisionalTitle: 'Manual post',
+            humanOnly: true,
+          },
+          {
+            type: 'thread.attach',
+            threadId: 'human',
+            sessionId: 'codex:a',
+            role: 'contributor',
+          },
+        ],
+      }),
+    ).toThrow('batch sets humanOnly=true and attaches a contributor');
+    expect(getWorkThread('human')).toBeNull();
+  });
+
+  it('rejects thread.update humanOnly=true when contributors are already attached', () => {
+    upsertSession(session('codex:a', 100));
+    applyCurationBatch({
+      actions: [
+        {
+          type: 'thread.create',
+          id: 'human',
+          projectProfileId: projectId(),
+          provisionalTitle: 'Manual post',
+        },
+        { type: 'thread.attach', threadId: 'human', sessionId: 'codex:a', role: 'contributor' },
+      ],
+    });
+    expect(() =>
+      applyCurationBatch({
+        actions: [{ type: 'thread.update', threadId: 'human', patch: { humanOnly: true } }],
+      }),
+    ).toThrow('cannot be human-only while contributor sessions are attached');
+  });
+
+  it('rejects a batch that sets humanOnly=true via update and also attaches a contributor in the same batch', () => {
+    upsertSession(session('codex:a', 100));
+    applyCurationBatch({
+      actions: [
+        {
+          type: 'thread.create',
+          id: 'human',
+          projectProfileId: projectId(),
+          provisionalTitle: 'Manual post',
+        },
+      ],
+    });
+    expect(() =>
+      applyCurationBatch({
+        actions: [
+          { type: 'thread.update', threadId: 'human', patch: { humanOnly: true } },
+          { type: 'thread.attach', threadId: 'human', sessionId: 'codex:a', role: 'contributor' },
+        ],
+      }),
+    ).toThrow('batch sets humanOnly=true and attaches a contributor');
+  });
+
+  it('allows a batch that sets humanOnly=true and attaches an evidence session on the same thread', () => {
+    upsertSession(session('codex:evidence', 100));
+    applyCurationBatch({
+      actions: [
+        {
+          type: 'thread.create',
+          id: 'human',
+          projectProfileId: projectId(),
+          provisionalTitle: 'Manual post',
+          humanOnly: true,
+        },
+        { type: 'thread.attach', threadId: 'human', sessionId: 'codex:evidence', role: 'evidence' },
+      ],
+    });
+    expect(getWorkThread('human')).toMatchObject({ humanOnly: true });
+  });
+
+  it('allows humanOnly on one thread while attaching a contributor to a different thread in the same batch', () => {
+    upsertSession(session('codex:a', 100));
+    applyCurationBatch({
+      actions: [
+        {
+          type: 'thread.create',
+          id: 'human',
+          projectProfileId: projectId(),
+          provisionalTitle: 'Manual post',
+          humanOnly: true,
+        },
+        {
+          type: 'thread.create',
+          id: 'agent-work',
+          projectProfileId: projectId(),
+          provisionalTitle: 'Agent post',
+        },
+        {
+          type: 'thread.attach',
+          threadId: 'agent-work',
+          sessionId: 'codex:a',
+          role: 'contributor',
+        },
+      ],
+    });
+    expect(getWorkThread('human')).toMatchObject({ humanOnly: true });
+    expect(getWorkThread('agent-work')).toMatchObject({ humanOnly: false });
+  });
+
+  it('keeps humanOnly for evidence and clears it for late artifact contributors', () => {
+    for (const id of ['codex:evidence', 'codex:contributor']) {
+      upsertSession(session(id, 100));
+    }
+    applyCurationBatch({
+      actions: [
+        {
+          type: 'thread.create',
+          id: 'human',
+          projectProfileId: projectId(),
+          provisionalTitle: 'Manual post',
+          humanOnly: true,
+        },
+        {
+          type: 'thread.attach',
+          threadId: 'human',
+          sessionId: 'codex:evidence',
+          role: 'evidence',
+        },
+        {
+          type: 'thread.mark-ready',
+          threadId: 'human',
+          rationale: 'Human-authored output',
+        },
+      ],
+    });
+    expect(getWorkThread('human')).toMatchObject({ humanOnly: true });
+    finalizeArtifact({ threadId: 'human', type: 'post' });
+
+    applyCurationBatch({
+      actions: [
+        {
+          type: 'lineage.attach',
+          threadId: 'human',
+          sessionId: 'codex:contributor',
+          role: 'contributor',
+          rationale: 'Late-discovered drafting session',
+        },
+      ],
+    });
+    expect(getArtifact('human')).toMatchObject({ humanOnly: false });
   });
 
   it('rejects artifact creation before the thread is ready', () => {
@@ -524,7 +714,7 @@ describe('artifact finalization (Layer 3B)', () => {
       )
       .run('empty');
     expect(() => finalizeArtifact({ threadId: 'empty', type: 'note' })).toThrow(
-      'no contributor sessions for artifact creation',
+      'must have a contributor session or humanOnly=true for artifact creation',
     );
 
     consumedThread('missing-rationale', [['codex:a', 100]]);

@@ -24,6 +24,7 @@ const artifactThread: apiModule.WorkThread = {
   readyAt: 2,
   readinessRationale: 'output is clear',
   predecessorArtifactId: null,
+  humanOnly: false,
   externalizationStatus: null,
   externalizationEvidence: null,
   externalizationUpdatedAt: null,
