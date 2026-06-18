@@ -634,7 +634,12 @@ describe('artifact finalization (Layer 3B)', () => {
           projectProfileId: projectId(),
           provisionalTitle: 'Agent post',
         },
-        { type: 'thread.attach', threadId: 'agent-work', sessionId: 'codex:a', role: 'contributor' },
+        {
+          type: 'thread.attach',
+          threadId: 'agent-work',
+          sessionId: 'codex:a',
+          role: 'contributor',
+        },
       ],
     });
     expect(getWorkThread('human')).toMatchObject({ humanOnly: true });

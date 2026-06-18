@@ -717,7 +717,13 @@ export function applyCurationBatch(input: unknown) {
         const attachThreadId = expectString(action.threadId, 'threadId');
         const attachRole = expectRole(action.role);
         if (attachRole === 'contributor') contributorAttachedSet.add(attachThreadId);
-        appendLineageAttach(attachThreadId, expectString(action.sessionId, 'sessionId'), attachRole, action.rationale, resolvedSessions);
+        appendLineageAttach(
+          attachThreadId,
+          expectString(action.sessionId, 'sessionId'),
+          attachRole,
+          action.rationale,
+          resolvedSessions,
+        );
         continue;
       }
       if (type === 'thread.detach') {
@@ -734,7 +740,14 @@ export function applyCurationBatch(input: unknown) {
         const lineageThreadId = expectString(action.threadId, 'threadId');
         const lineageRole = expectRole(action.role);
         if (lineageRole === 'contributor') contributorAttachedSet.add(lineageThreadId);
-        appendLineageAttach(lineageThreadId, expectString(action.sessionId, 'sessionId'), lineageRole, action.rationale, resolvedSessions, { allowNonOpen: true });
+        appendLineageAttach(
+          lineageThreadId,
+          expectString(action.sessionId, 'sessionId'),
+          lineageRole,
+          action.rationale,
+          resolvedSessions,
+          { allowNonOpen: true },
+        );
         continue;
       }
       if (type === 'lineage.retract') {
