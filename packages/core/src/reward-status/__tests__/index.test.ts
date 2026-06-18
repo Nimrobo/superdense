@@ -140,7 +140,9 @@ describe('reward status', () => {
     expect(status.nextAction).toMatchObject({
       stage: 'profile',
       skill: 'superdense/reward/profile.md',
+      command: expect.stringContaining('Read superdense/reward/profile.md'),
     });
+    expect(status.nextAction?.command).toContain('Start with: superdense project context');
   });
 
   it('chooses curate after the project profile is complete', () => {
@@ -153,7 +155,9 @@ describe('reward status', () => {
     expect(actionable(status, 'curate')).toBe(1);
     expect(status.nextAction).toMatchObject({
       stage: 'curate',
-      command: `Read superdense/reward/curate.md for project ${projectId}`,
+      command:
+        `Read superdense/reward/curate.md and process the actionable sessions for project ${projectId}. ` +
+        `Start with: superdense curation inbox --project ${projectId} --limit 10`,
     });
   });
 
@@ -163,7 +167,10 @@ describe('reward status', () => {
     const status = getRewardStatus();
 
     expect(actionable(status, 'finalize')).toBe(1);
-    expect(status.nextAction).toMatchObject({ stage: 'finalize' });
+    expect(status.nextAction).toMatchObject({
+      stage: 'finalize',
+      command: expect.stringContaining('Read superdense/reward/finalize.md'),
+    });
   });
 
   it('chooses reconcile for finalized artifacts without completed externalization', () => {
@@ -172,7 +179,10 @@ describe('reward status', () => {
     const status = getRewardStatus();
 
     expect(actionable(status, 'reconcile')).toBe(1);
-    expect(status.nextAction).toMatchObject({ stage: 'reconcile' });
+    expect(status.nextAction).toMatchObject({
+      stage: 'reconcile',
+      command: expect.stringContaining('Read superdense/reward/reconcile.md'),
+    });
   });
 
   it('chooses collect for linked targets without snapshots', () => {
@@ -182,7 +192,10 @@ describe('reward status', () => {
     const status = getRewardStatus();
 
     expect(actionable(status, 'collect')).toBe(1);
-    expect(status.nextAction).toMatchObject({ stage: 'collect' });
+    expect(status.nextAction).toMatchObject({
+      stage: 'collect',
+      command: expect.stringContaining('Read superdense/reward/collect.md'),
+    });
   });
 
   it('unlocks compare when at least two cohort members have reward snapshots', () => {
@@ -200,6 +213,7 @@ describe('reward status', () => {
     expect(status.nextAction).toMatchObject({
       stage: 'compare',
       skill: 'superdense/reward/compare.md',
+      command: expect.stringContaining('Read superdense/reward/compare.md'),
     });
   });
 

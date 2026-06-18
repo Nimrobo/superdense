@@ -167,7 +167,12 @@ export type {
   ExternalizationTarget,
   ExternalizationTargetStatus,
 } from './externalization/index.js';
-export { getArtifactRewards, listRewardSnapshots, recordRewardSnapshot } from './rewards/index.js';
+export {
+  getArtifactRewards,
+  listRewardSnapshots,
+  recordRewardSnapshot,
+  recordRewardSnapshotBatch,
+} from './rewards/index.js';
 export type { ArtifactRewards, RewardSnapshot, RewardTargetSeries } from './rewards/index.js';
 export { getCohort, getVersionChain, listCohorts, listVersionChains } from './cohorts/index.js';
 export type {

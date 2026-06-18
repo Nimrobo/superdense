@@ -30,6 +30,7 @@ function MemberCard({
         <strong>{artifact.provisionalTitle}</strong>
         <div className="project-card-badges">
           <span className="project-status">{badge ?? artifact.artifactType}</span>
+          {artifact.humanOnly && <span className="project-status">Human only</span>}
           {cost && <span className="artifact-cost-badge">{cost}</span>}
         </div>
       </div>

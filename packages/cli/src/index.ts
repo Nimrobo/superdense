@@ -78,6 +78,8 @@ import {
   setProjectAttention,
   markSessionForCuration,
   recordRewardSnapshot,
+  recordRewardSnapshotBatch,
+  repairDatabase,
   validateQueryDefinition,
   type AdHocQueryResult,
   type ArtifactExternalization,
@@ -310,6 +312,7 @@ function compactThread(thread: WorkThread, opts: { includePayload?: boolean } = 
     finalizedAt: thread.artifactFinalizedAt,
     readyAt: thread.readyAt,
     predecessorArtifactId: thread.predecessorArtifactId,
+    humanOnly: thread.humanOnly,
     externalizationStatus: thread.externalizationStatus,
     headSessionId: thread.headSessionId ?? null,
     sessionCounts: counts,
@@ -426,6 +429,11 @@ function serializeCompactor(compactor: Compactor): Record<string, unknown> {
     targetBytes: compactor.targetBytes ?? null,
     description: compactor.description ?? null,
   };
+}
+
+function printCommandHelp(lines: string[], io: CliIo): boolean {
+  io.stdout.log(lines.join('\n'));
+  return true;
 }
 
 async function readQueryDefinition(input: string | boolean | undefined): Promise<QueryDefinition> {
@@ -983,6 +991,17 @@ async function handleArtifact(
   io: CliIo,
 ): Promise<boolean> {
   const action = args[0];
+  if (flags.help === true && action === 'finalize') {
+    return printCommandHelp(
+      [
+        'Usage: superdense artifact finalize --input <json|@file>',
+        '',
+        'Input: {"threadId":"<ready-thread>","type":"<lower-kebab-type>","title":"<optional>","payload":{...},"predecessorArtifactId":"<optional>"}',
+        'Example: superdense artifact finalize --input \'{"threadId":"thread-1","type":"post","title":"Launch post","payload":{"text":"Shipped"}}\'',
+      ],
+      io,
+    );
+  }
   if (action === 'mark-current') {
     printJson({ marker: markSessionForCuration(resolveCurrentSessionId()) }, io);
     return true;
@@ -995,7 +1014,10 @@ async function handleArtifact(
     return true;
   }
   if (action === 'inbox') {
-    const inbox = listArtifactInbox({ limit: intFlag(flags, 'limit', 10, 1000) });
+    const inbox = listArtifactInbox({
+      ...(typeof flags.project === 'string' ? { projectId: flags.project } : {}),
+      limit: intFlag(flags, 'limit', 10, 1000),
+    });
     printJson(
       wantsFull(flags)
         ? inbox
@@ -1041,6 +1063,17 @@ async function handleCuration(
   io: CliIo,
 ): Promise<boolean> {
   const action = args[0];
+  if (flags.help === true && action === 'apply') {
+    return printCommandHelp(
+      [
+        'Usage: superdense curation apply --input <json|@file>',
+        '',
+        'Input: {"actions":[{"type":"thread.create|thread.update|thread.attach|thread.detach|thread.mark-ready|thread.reopen|session.consume|session.skip|session.defer|..."}]}',
+        'Human-only example: superdense curation apply --input \'{"actions":[{"type":"thread.create","id":"human-post-1","projectProfileId":"<project-id>","provisionalTitle":"Manual post","summary":"Written directly by the human","humanOnly":true},{"type":"thread.mark-ready","threadId":"human-post-1","rationale":"Final posted text is known"}]}\'',
+      ],
+      io,
+    );
+  }
   if (action === 'inbox') {
     printJson(
       listCurationInbox({
@@ -1098,8 +1131,20 @@ async function handleExternalization(
   io: CliIo,
 ): Promise<boolean> {
   const action = args[0];
+  if (flags.help === true && action === 'assess') {
+    return printCommandHelp(
+      [
+        'Usage: superdense externalization assess --input <json|@file>',
+        '',
+        'Input: {"artifactId":"<id>","status":"external|not_external","evidence":"<non-empty>","targets":[{"connector":"x","status":"linked","locator":"<authoritative-id-or-url>","evidence":"<optional>"}]}',
+        'Example: superdense externalization assess --input \'{"artifactId":"human-post-1","status":"external","evidence":"Published manually","targets":[{"connector":"x","status":"linked","locator":"https://x.com/user/status/123"}]}\'',
+      ],
+      io,
+    );
+  }
   if (action === 'inbox') {
     const inbox = listExternalizationInbox({
+      ...(typeof flags.project === 'string' ? { projectId: flags.project } : {}),
       limit: intFlag(flags, 'limit', 10, 1000),
       cursor: typeof flags.cursor === 'string' ? flags.cursor : undefined,
     });
@@ -1113,7 +1158,10 @@ async function handleExternalization(
   }
   if (action === 'list') {
     const status = typeof flags.status === 'string' ? flags.status : undefined;
-    const items = listExternalizations({ status });
+    const items = listExternalizations({
+      ...(status ? { status } : {}),
+      ...(typeof flags.project === 'string' ? { projectId: flags.project } : {}),
+    });
     printJson(
       { items: wantsFull(flags) ? items : items.map((item) => compactExternalization(item)) },
       io,
@@ -1220,11 +1268,34 @@ async function handleReward(
   io: CliIo,
 ): Promise<boolean> {
   const action = args[0];
+  if (flags.help === true && (action === 'record' || action === 'record-batch')) {
+    return printCommandHelp(
+      action === 'record'
+        ? [
+            'Usage: superdense reward record --input <json|@file>',
+            '',
+            'Input: {"targetId":"<linked-target-id>","metrics":{"views":1200},"primaryDim":"views","source":"<optional>","evidence":"<optional>","capturedAt":1700000000000}',
+            'Example: superdense reward record --input \'{"targetId":"target-1","metrics":{"views":1200},"primaryDim":"views"}\'',
+          ]
+        : [
+            'Usage: superdense reward record-batch --input <json|@file>',
+            '',
+            'Input: {"snapshots":[{"targetId":"<linked-target-id>","metrics":{"views":1200},"primaryDim":"views","source":"<optional>","evidence":"<optional>","capturedAt":1700000000000}]}',
+            'The batch is atomic, preserves input order, and accepts at most 100 snapshots.',
+            'Example: superdense reward record-batch --input \'{"snapshots":[{"targetId":"target-1","metrics":{"views":1200}},{"targetId":"target-2","metrics":{"views":800}}]}\'',
+          ],
+      io,
+    );
+  }
   if (action === 'docs') {
     return handleRewardDocs(args.slice(1), flags, io);
   }
   if (action === 'record') {
     printJson(recordRewardSnapshot(await readJsonObject(flags.input, 'input')), io);
+    return true;
+  }
+  if (action === 'record-batch') {
+    printJson(recordRewardSnapshotBatch(await readJsonObject(flags.input, 'input')), io);
     return true;
   }
   if (action === 'show') {
@@ -1754,6 +1825,13 @@ export async function runCli(
     return 0;
   }
 
+  if (cmd === 'db') {
+    const action = args[0];
+    if (action !== 'repair') throw new Error(`unknown db command: ${action ?? '(none)'}`);
+    printJson(repairDatabase(), io);
+    return 0;
+  }
+
   if (cmd === 'cohort') {
     handleCohort(args, flags, io);
     return 0;
@@ -1838,11 +1916,13 @@ export async function runCli(
         '  externalization show <artifact-id>  Show compact assessment and connector targets [--full]',
         '  externalization assess --input <json|@file>  Replace one artifact assessment',
         '  reward record --input <json|@file>  Record one multidimensional reward snapshot for a linked target',
+        '  reward record-batch --input <json|@file>  Atomically record up to 100 reward snapshots',
         '  reward show <artifact-id>  Show compact latest rewards per linked target [--full]',
         '  reward status       Show reward-layer punch-list and next action [--project <id>]',
         '  reward docs artifacts  Fetch live reward artifact guidance markdown',
         '  reward docs connectors --artifact <type>  Fetch live connector guidance for an artifact type',
         '  reward docs connectors --connector <name> [--section usage|install|troubleshoot]',
+        '  db repair           Explicitly reconcile an interrupted development schema migration',
         '  cohort list         List comparable peer cohorts [--project <id>] [--by type|connector]',
         '  cohort show <type>  Surface a compact cohort for comparison [--connector <c>] [--project <id>] [--full]',
         '  cohort chains       List version chains (a deliverable across versions) [--project <id>]',

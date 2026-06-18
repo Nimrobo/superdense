@@ -14,19 +14,27 @@ Collect how externalized artifacts are performing. For each linked external iden
 
 2. For each linked target, run `superdense reward docs connectors --connector <name>` for usage guidance, then gather its current real-world metrics using whatever tool you have: a platform CLI, the provider's own API, or the open web. If a connector fetch or collection attempt fails, run `superdense reward docs connectors --connector <name> --section troubleshoot`. Superdense neither installs nor runs connectors; you collect the numbers. The target's `connector` is just a free-text platform label.
 
-3. Record one append-only snapshot per target:
+3. Gather all available target metrics first, then record one atomic batch:
 
    ```bash
-   superdense reward record --input '{
-     "targetId": "<externalization target id>",
-     "metrics": { "views": 1200, "likes": 34, "reposts": 5 },
-     "primaryDim": "views",
-     "source": "x api",
-     "evidence": "Fetched from the post analytics endpoint"
+   superdense reward record-batch --input '{
+     "snapshots": [
+       {
+         "targetId": "<externalization target id>",
+         "metrics": { "views": 1200, "likes": 34, "reposts": 5 },
+         "primaryDim": "views",
+         "source": "x api",
+         "evidence": "Fetched from the post analytics endpoint"
+       }
+     ]
    }'
    ```
 
-   `metrics` is a flat map of dimension -> finite number: the multidimensional reward. Snapshots are append-only; recording again later appends a new point to the time series.
+   The batch accepts at most 100 snapshots, preserves input order, and rolls
+   back completely if any item is invalid or targets a non-linked identity.
+   For a one-off repair, `superdense reward record --input ...` remains
+   supported. `metrics` is a flat map of dimension -> finite number: the
+   multidimensional reward. Recording again later appends a new point.
 
 4. Confirm the recorded series:
 

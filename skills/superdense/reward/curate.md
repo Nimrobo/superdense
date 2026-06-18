@@ -46,6 +46,36 @@ Review one bounded batch of indexed root sessions. This is mutable Layer 3A cura
 
 7. Stop after the bounded batch. Report actions, remaining inbox counts, and newly ready threads. Tell the user to rerun `superdense reward status` when the ready queue is non-empty.
 
+## Human-only outputs
+
+When a real output was created directly by a human and has no contributing agent
+session, create a sessionless thread with `humanOnly: true`, describe the evidence
+in its summary, and mark it ready in the same atomic curation batch:
+
+```bash
+superdense curation apply --input '{
+  "actions": [
+    {
+      "type": "thread.create",
+      "id": "human-post-1",
+      "projectProfileId": "<project-id>",
+      "provisionalTitle": "Manual post",
+      "summary": "Written and published directly by the human",
+      "humanOnly": true
+    },
+    {
+      "type": "thread.mark-ready",
+      "threadId": "human-post-1",
+      "rationale": "Final human-authored output and external identity are known"
+    }
+  ]
+}'
+```
+
+For hybrid work, attach the real drafting session as a contributor and describe
+the human editing in the summary or readiness rationale. Do not set
+`humanOnly: true` and do not create synthetic sessions.
+
 ## Actions
 
 `curation apply` accepts `{"actions":[...]}` with:

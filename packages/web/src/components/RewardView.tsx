@@ -373,7 +373,10 @@ function FoldedThreadCard({
     <div className="project-card" style={{ cursor: 'default' }}>
       <div className="project-card-top">
         <strong>{thread.provisionalTitle}</strong>
-        <span className="project-status">{lifecycleLabel(thread)}</span>
+        <div className="project-card-badges">
+          <span className="project-status">{lifecycleLabel(thread)}</span>
+          {thread.humanOnly && <span className="project-status">Human only</span>}
+        </div>
       </div>
       {thread.summary && <div className="project-card-description">{thread.summary}</div>}
       <div className="muted small">
@@ -585,6 +588,7 @@ function TypeDetail({
                     {projects.get(member.artifact.projectProfileId) ??
                       member.artifact.projectProfileId}
                   </span>
+                  {member.artifact.humanOnly && <span className="project-status">Human only</span>}
                   {cost && <span className="artifact-cost-badge">{cost}</span>}
                 </div>
               </div>

@@ -25,6 +25,7 @@ export function ThreadDetails({
           Project <strong>{projectName ?? thread.projectProfileId}</strong>
           {projectName && <> · {thread.projectProfileId}</>} · status {thread.status} · lifecycle{' '}
           {thread.lifecycle}
+          {thread.humanOnly ? ' · Human only' : ''}
         </div>
         <div className="muted small">
           Created {formatFullTime(thread.createdAt)} · Updated {formatFullTime(thread.updatedAt)}
@@ -97,7 +98,11 @@ export function ThreadDetails({
       <section className="card">
         <div className="card-title">Effective lineage</div>
         {!thread.sessions || thread.sessions.length === 0 ? (
-          <div className="muted">No linked sessions.</div>
+          <div className="muted">
+            {thread.humanOnly
+              ? 'Human-only artifact; no contributing agent sessions.'
+              : 'No linked sessions.'}
+          </div>
         ) : (
           <ul className="plain-list">
             {thread.sessions.map((session) => (

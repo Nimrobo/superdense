@@ -1,5 +1,8 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import Database from 'better-sqlite3';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 vi.mock('../paths.js', () => ({
   DB_PATH: ':memory:',
@@ -52,6 +55,7 @@ import {
   getQueryRun,
   withDbRetry,
   _migrateForTests,
+  _repairForTests,
 } from '../db.js';
 import {
   applyProjectProfilePatch,
@@ -174,7 +178,7 @@ describe('sessions', () => {
 
       _migrateForTests(db);
 
-      expect(db.pragma('user_version', { simple: true })).toBe(10);
+      expect(db.pragma('user_version', { simple: true })).toBe(11);
       expect(db.prepare('SELECT project_key FROM sessions WHERE id = ?').get('old')).toEqual({
         project_key: '/Users/x/conductor/workspaces/superdense',
       });
@@ -243,7 +247,7 @@ describe('sessions', () => {
 
       _migrateForTests(db);
 
-      expect(db.pragma('user_version', { simple: true })).toBe(10);
+      expect(db.pragma('user_version', { simple: true })).toBe(11);
 
       const tables = (
         db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{
@@ -333,7 +337,7 @@ describe('sessions', () => {
 
       _migrateForTests(db);
 
-      expect(db.pragma('user_version', { simple: true })).toBe(10);
+      expect(db.pragma('user_version', { simple: true })).toBe(11);
       const sessionCols = (
         db.prepare('PRAGMA table_info(sessions)').all() as Array<{
           name: string;
@@ -381,7 +385,7 @@ describe('sessions', () => {
 
       _migrateForTests(db);
 
-      expect(db.pragma('user_version', { simple: true })).toBe(10);
+      expect(db.pragma('user_version', { simple: true })).toBe(11);
       const tables = (
         db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{
           name: string;
@@ -403,7 +407,7 @@ describe('sessions', () => {
     }
   });
 
-  it('V5 reconciliation: adds project profiles to an already-versioned pre-release database', () => {
+  it('explicit repair adds project profiles to an already-versioned pre-release database', () => {
     const db = new Database(':memory:');
     try {
       db.exec(`
@@ -433,9 +437,9 @@ describe('sessions', () => {
         PRAGMA user_version = 5;
       `);
 
-      _migrateForTests(db);
+      _repairForTests(db);
 
-      expect(db.pragma('user_version', { simple: true })).toBe(10);
+      expect(db.pragma('user_version', { simple: true })).toBe(11);
       expect(
         db.prepare('SELECT project_key, status, last_seen_at FROM project_profile').all(),
       ).toEqual([{ project_key: '/repo', status: 'unprofiled', last_seen_at: 2000 }]);
@@ -713,7 +717,7 @@ describe('sessions', () => {
 
       _migrateForTests(db);
 
-      expect(db.pragma('user_version', { simple: true })).toBe(10);
+      expect(db.pragma('user_version', { simple: true })).toBe(11);
 
       const tables = (
         db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{
@@ -1311,6 +1315,29 @@ describe('concurrency hardening', () => {
     expect(db.pragma('busy_timeout', { simple: true })).toBe(5000);
   });
 
+  it('keeps schema-current opens read-only while another connection holds the writer slot', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'superdense-db-lock-'));
+    const path = join(dir, 'superdense.db');
+    const writer = new Database(path);
+    const reader = new Database(path);
+    try {
+      writer.pragma('journal_mode = WAL');
+      reader.pragma('journal_mode = WAL');
+      _migrateForTests(writer);
+
+      writer.exec('BEGIN IMMEDIATE');
+      writer.prepare("UPDATE query_run SET dsl = '{}' WHERE id = ?").run(SYSTEM_RUN_ID);
+
+      expect(() => _migrateForTests(reader)).not.toThrow();
+      expect(reader.prepare('SELECT COUNT(*) AS count FROM sessions').get()).toEqual({ count: 0 });
+    } finally {
+      if (writer.inTransaction) writer.exec('ROLLBACK');
+      reader.close();
+      writer.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('withDbRetry retries on SQLITE_BUSY then succeeds', () => {
     let attempts = 0;
     const result = withDbRetry(() => {
@@ -1349,7 +1376,7 @@ describe('concurrency hardening', () => {
         attempts += 1;
         throw make();
       }, 3),
-    ).toThrow('database is locked');
+    ).toThrow('database remained locked after 3 attempts');
     expect(attempts).toBe(3);
   });
 });

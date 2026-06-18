@@ -5,6 +5,7 @@ import {
   getSessionParent,
   getSessionTree,
   listSessionEnrichments,
+  withImmediateTransaction,
   withDbRetry,
   SYSTEM_RUN_ID,
 } from '../db.js';
@@ -52,6 +53,7 @@ export interface WorkThread {
   readyAt: number | null;
   readinessRationale: string | null;
   predecessorArtifactId: string | null;
+  humanOnly: boolean;
   externalizationStatus: ThreadExternalizationStatus | null;
   externalizationEvidence: string | null;
   externalizationUpdatedAt: number | null;
@@ -75,6 +77,7 @@ interface WorkThreadRow {
   ready_at: number | null;
   readiness_rationale: string | null;
   predecessor_artifact_id: string | null;
+  human_only: number;
   externalization_status: ThreadExternalizationStatus | null;
   externalization_evidence: string | null;
   externalization_updated_at: number | null;
@@ -133,6 +136,7 @@ function rowToThread(row: WorkThreadRow): WorkThread {
     readyAt: row.ready_at ?? null,
     readinessRationale: row.readiness_rationale ?? null,
     predecessorArtifactId: row.predecessor_artifact_id ?? null,
+    humanOnly: row.human_only === 1,
     externalizationStatus: row.externalization_status ?? null,
     externalizationEvidence: row.externalization_evidence ?? null,
     externalizationUpdatedAt: row.externalization_updated_at ?? null,
@@ -173,7 +177,7 @@ export function markSessionForCuration(
   const db = getDb();
   if (getSession(sessionId)) {
     const rootSessionId = resolveRootSessionId(sessionId);
-    const tx = db.transaction(() => {
+    const work = () => {
       db.prepare(
         `UPDATE sessions
             SET curation_priority_at = MAX(COALESCE(curation_priority_at, 0), ?)
@@ -185,15 +189,19 @@ export function markSessionForCuration(
           WHERE id = ?
             AND curation_status != 'pending'`,
       ).run(rootSessionId);
-    });
-    withDbRetry(tx);
+    };
+    withImmediateTransaction(db, work);
     return { sessionId, buffered: false, markedAt };
   }
-  db.prepare(
-    `INSERT INTO pending_session_marker (session_id, marked_at)
-     VALUES (?, ?)
-     ON CONFLICT(session_id) DO UPDATE SET marked_at = MAX(marked_at, excluded.marked_at)`,
-  ).run(sessionId, markedAt);
+  withDbRetry(() =>
+    db
+      .prepare(
+        `INSERT INTO pending_session_marker (session_id, marked_at)
+         VALUES (?, ?)
+         ON CONFLICT(session_id) DO UPDATE SET marked_at = MAX(marked_at, excluded.marked_at)`,
+      )
+      .run(sessionId, markedAt),
+  );
   return { sessionId, buffered: true, markedAt };
 }
 
@@ -204,7 +212,7 @@ export function markSessionForCuration(
 export function reconcileIndexedSession(sessionId: string, changed: boolean): void {
   const db = getDb();
   const rootSessionId = resolveRootSessionId(sessionId);
-  const tx = db.transaction(() => {
+  const work = () => {
     db.prepare(
       `UPDATE sessions
           SET curation_priority_at = MAX(
@@ -230,8 +238,8 @@ export function reconcileIndexedSession(sessionId: string, changed: boolean): vo
             OR curated_revision != json_array(file_mtime, modified_at, message_count)
           )`,
     ).run(sessionId, rootSessionId, changed && sessionId !== rootSessionId ? 1 : 0);
-  });
-  withDbRetry(tx);
+  };
+  withImmediateTransaction(db, work);
 }
 
 function canonicalProjectId(projectId: string): string {
@@ -483,6 +491,11 @@ function expectString(value: unknown, field: string): string {
   return value;
 }
 
+function expectBoolean(value: unknown, field: string): boolean {
+  if (typeof value !== 'boolean') throw new Error(`${field} must be a boolean`);
+  return value;
+}
+
 function expectRole(value: unknown): WorkThreadRole {
   if (value !== 'contributor' && value !== 'evidence')
     throw new Error('role must be contributor or evidence');
@@ -515,6 +528,16 @@ function requireSession(id: string, resolvedSessions?: Map<string, string>): str
   if (!getSession(rootId)) throw new Error(`session not found: ${id}`);
   resolvedSessions?.set(id, rootId);
   return rootId;
+}
+
+function countContributorSessions(threadId: string): number {
+  return (
+    getDb()
+      .prepare(
+        "SELECT COUNT(*) AS count FROM work_thread_session WHERE thread_id = ? AND role = 'contributor'",
+      )
+      .get(threadId) as { count: number }
+  ).count;
 }
 
 function nextLineageEventTime(threadId: string): number {
@@ -550,6 +573,12 @@ function appendLineageAttach(
        VALUES (?, ?, ?, ?)
        ON CONFLICT(thread_id, session_id) DO UPDATE SET role=excluded.role, rationale=excluded.rationale`,
   ).run(threadId, rootId, role, rationale ?? null);
+  if (role === 'contributor' && thread.humanOnly) {
+    db.prepare('UPDATE work_thread SET human_only = 0, updated_at = ? WHERE id = ?').run(
+      now,
+      threadId,
+    );
+  }
   if (thread.lifecycle === 'ready') {
     db.prepare(
       `UPDATE work_thread
@@ -605,14 +634,25 @@ function createThread(action: Record<string, unknown>, now: number): string {
   const provisionalTitle = expectString(action.provisionalTitle, 'provisionalTitle');
   if (action.summary != null && typeof action.summary !== 'string')
     throw new Error('summary must be a string or null');
+  const humanOnly =
+    action.humanOnly === undefined ? false : expectBoolean(action.humanOnly, 'humanOnly');
   if (action.status !== undefined) throw new Error('thread.create.status is not supported');
   getDb()
     .prepare(
       `INSERT INTO work_thread
-        (id, project_profile_id, provisional_title, summary, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        (id, project_profile_id, provisional_title, summary, status, human_only, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(id, projectProfileId, provisionalTitle, action.summary ?? null, 'open', now, now);
+    .run(
+      id,
+      projectProfileId,
+      provisionalTitle,
+      action.summary ?? null,
+      'open',
+      humanOnly ? 1 : 0,
+      now,
+      now,
+    );
   return id;
 }
 
@@ -625,12 +665,18 @@ export function applyCurationBatch(input: unknown) {
   const now = Date.now();
   const createdThreadIds: string[] = [];
   const resolvedSessions = new Map<string, string>();
-  const tx = db.transaction(() => {
+  // Track threads explicitly set humanOnly=true and threads that receive a contributor in this
+  // batch. A batch that does both on the same thread is a contradiction and must be rejected.
+  const humanOnlySet = new Set<string>();
+  const contributorAttachedSet = new Set<string>();
+  const work = () => {
     for (const [index, raw] of actions.entries()) {
       const action = expectActionObject(raw, `actions[${index}]`);
       const type = expectString(action.type, `actions[${index}].type`);
       if (type === 'thread.create') {
-        createdThreadIds.push(createThread(action, now));
+        const id = createThread(action, now);
+        createdThreadIds.push(id);
+        if (action.humanOnly === true) humanOnlySet.add(id);
         continue;
       }
       if (type === 'thread.update') {
@@ -638,7 +684,7 @@ export function applyCurationBatch(input: unknown) {
         requireMutableThread(threadId);
         const patch = expectActionObject(action.patch, 'patch');
         for (const key of Object.keys(patch)) {
-          if (!['provisionalTitle', 'summary'].includes(key))
+          if (!['provisionalTitle', 'summary', 'humanOnly'].includes(key))
             throw new Error(`unsupported thread patch field: ${key}`);
         }
         const current = getWorkThread(threadId)!;
@@ -649,19 +695,29 @@ export function applyCurationBatch(input: unknown) {
         const summary = patch.summary === undefined ? current.summary : patch.summary;
         if (summary != null && typeof summary !== 'string')
           throw new Error('summary must be a string or null');
+        const humanOnly =
+          patch.humanOnly === undefined
+            ? current.humanOnly
+            : expectBoolean(patch.humanOnly, 'humanOnly');
+        if (humanOnly) {
+          const contributorCount = countContributorSessions(threadId);
+          if (contributorCount > 0) {
+            throw new Error(
+              `thread ${threadId} cannot be human-only while contributor sessions are attached`,
+            );
+          }
+          humanOnlySet.add(threadId);
+        }
         db.prepare(
-          'UPDATE work_thread SET provisional_title = ?, summary = ?, updated_at = ? WHERE id = ?',
-        ).run(title, summary, now, threadId);
+          'UPDATE work_thread SET provisional_title = ?, summary = ?, human_only = ?, updated_at = ? WHERE id = ?',
+        ).run(title, summary, humanOnly ? 1 : 0, now, threadId);
         continue;
       }
       if (type === 'thread.attach') {
-        appendLineageAttach(
-          expectString(action.threadId, 'threadId'),
-          expectString(action.sessionId, 'sessionId'),
-          expectRole(action.role),
-          action.rationale,
-          resolvedSessions,
-        );
+        const attachThreadId = expectString(action.threadId, 'threadId');
+        const attachRole = expectRole(action.role);
+        if (attachRole === 'contributor') contributorAttachedSet.add(attachThreadId);
+        appendLineageAttach(attachThreadId, expectString(action.sessionId, 'sessionId'), attachRole, action.rationale, resolvedSessions);
         continue;
       }
       if (type === 'thread.detach') {
@@ -675,14 +731,10 @@ export function applyCurationBatch(input: unknown) {
         continue;
       }
       if (type === 'lineage.attach') {
-        appendLineageAttach(
-          expectString(action.threadId, 'threadId'),
-          expectString(action.sessionId, 'sessionId'),
-          expectRole(action.role),
-          action.rationale,
-          resolvedSessions,
-          { allowNonOpen: true },
-        );
+        const lineageThreadId = expectString(action.threadId, 'threadId');
+        const lineageRole = expectRole(action.role);
+        if (lineageRole === 'contributor') contributorAttachedSet.add(lineageThreadId);
+        appendLineageAttach(lineageThreadId, expectString(action.sessionId, 'sessionId'), lineageRole, action.rationale, resolvedSessions, { allowNonOpen: true });
         continue;
       }
       if (type === 'lineage.retract') {
@@ -712,6 +764,7 @@ export function applyCurationBatch(input: unknown) {
             )
             .all(sourceId) as Array<WorkThreadSessionRow>;
           for (const membership of memberships) {
+            if (membership.role === 'contributor') contributorAttachedSet.add(targetThreadId);
             appendLineageAttach(
               targetThreadId,
               membership.session_id,
@@ -767,15 +820,12 @@ export function applyCurationBatch(input: unknown) {
       if (type === 'thread.mark-ready' || type === 'thread.finalize') {
         const threadId = expectString(action.threadId, 'threadId');
         requireMutableThread(threadId);
-        const contributorCount = (
-          db
-            .prepare(
-              "SELECT COUNT(*) AS count FROM work_thread_session WHERE thread_id = ? AND role = 'contributor'",
-            )
-            .get(threadId) as { count: number }
-        ).count;
-        if (contributorCount === 0)
-          throw new Error(`thread ${threadId} has no contributor sessions to mark ready`);
+        const contributorCount = countContributorSessions(threadId);
+        const thread = getWorkThread(threadId)!;
+        if (contributorCount === 0 && !thread.humanOnly)
+          throw new Error(
+            `thread ${threadId} must have a contributor session or humanOnly=true to mark ready`,
+          );
         const rationale =
           type === 'thread.finalize' && action.rationale === undefined
             ? 'Marked ready via deprecated thread.finalize action'
@@ -823,6 +873,15 @@ export function applyCurationBatch(input: unknown) {
       }
       throw new Error(`unknown curation action: ${type}`);
     }
+    // A batch that sets humanOnly=true and also attaches a contributor on the same
+    // thread is a contradiction regardless of action order — reject atomically.
+    for (const threadId of humanOnlySet) {
+      if (contributorAttachedSet.has(threadId)) {
+        throw new Error(
+          `thread ${threadId}: batch sets humanOnly=true and attaches a contributor; omit humanOnly or remove the contributor attach`,
+        );
+      }
+    }
     // Keep this global: a consumed orphan indicates database corruption or a
     // mutation path that bypassed this API. Refuse further writes until repaired.
     const invalid = db
@@ -836,8 +895,8 @@ export function applyCurationBatch(input: unknown) {
       .get() as { id: string } | undefined;
     if (invalid)
       throw new Error(`consumed session must be attached to at least one thread: ${invalid.id}`);
-  });
-  withDbRetry(tx);
+  };
+  withImmediateTransaction(db, work);
   return {
     ok: true,
     createdThreadIds,
@@ -869,7 +928,7 @@ export function finalizeArtifact(input: unknown): {
   if (body.payload !== undefined) payload = expectActionObject(body.payload, 'payload');
   const db = getDb();
   const now = Date.now();
-  const tx = db.transaction(() => {
+  const work = () => {
     const row = db.prepare('SELECT * FROM work_thread WHERE id = ?').get(threadId) as
       | WorkThreadRow
       | undefined;
@@ -877,15 +936,11 @@ export function finalizeArtifact(input: unknown): {
     if (row.status !== 'ready')
       throw new Error(`thread ${threadId} must be ready before creating an artifact`);
     if (row.artifact_type != null) throw new Error(`thread ${threadId} already has an artifact`);
-    const contributorCount = (
-      db
-        .prepare(
-          "SELECT COUNT(*) AS count FROM work_thread_session WHERE thread_id = ? AND role = 'contributor'",
-        )
-        .get(threadId) as { count: number }
-    ).count;
-    if (contributorCount === 0)
-      throw new Error(`thread ${threadId} has no contributor sessions for artifact creation`);
+    const contributorCount = countContributorSessions(threadId);
+    if (contributorCount === 0 && row.human_only !== 1)
+      throw new Error(
+        `thread ${threadId} must have a contributor session or humanOnly=true for artifact creation`,
+      );
     if (!row.readiness_rationale?.trim())
       throw new Error(`thread ${threadId} has no readiness rationale`);
     if (predecessorArtifactId != null) {
@@ -903,8 +958,8 @@ export function finalizeArtifact(input: unknown): {
               updated_at = ?
         WHERE id = ?`,
     ).run(type, JSON.stringify(payload), now, predecessorArtifactId, title, now, threadId);
-  });
-  withDbRetry(tx);
+  };
+  withImmediateTransaction(db, work);
   return { ok: true, threadId, artifactType: type };
 }
 

@@ -134,6 +134,24 @@ function createArtifact(
   finalizeArtifact({ threadId: id, type, payload: { text: id }, predecessorArtifactId });
 }
 
+function createHumanArtifact(id: string, pwd = '/repo'): void {
+  // Register the project without using the session as artifact lineage.
+  upsertSession(session(`codex:project-${id}`, pwd));
+  applyCurationBatch({
+    actions: [
+      {
+        type: 'thread.create',
+        id,
+        projectProfileId: projectIdForPwd(pwd),
+        provisionalTitle: `${id} title`,
+        humanOnly: true,
+      },
+      { type: 'thread.mark-ready', threadId: id, rationale: 'human-authored output' },
+    ],
+  });
+  finalizeArtifact({ threadId: id, type: 'launch', payload: { text: id } });
+}
+
 function link(
   artifactId: string,
   targets: Array<{ connector: string; locator: string }>,
@@ -159,6 +177,13 @@ describe('cohorts (Layer 5)', () => {
     const blog = summaries.find((s) => s.type === 'blogpost');
     expect(launch).toMatchObject({ connector: null, artifactCount: 2 });
     expect(blog).toMatchObject({ connector: null, artifactCount: 1 });
+  });
+
+  it('includes human-only artifacts with null agent cost', () => {
+    createHumanArtifact('human');
+    const member = getCohort({ type: 'launch' }).members[0]!;
+    expect(member.artifact).toMatchObject({ id: 'human', humanOnly: true });
+    expect(member.cost).toBeNull();
   });
 
   it('counts externalized and with-rewards artifacts per type', () => {

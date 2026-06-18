@@ -58,9 +58,33 @@ function stage(key: RewardStatusStageKey, actionable: number): RewardStatusStage
   return { key, ...STAGE_META[key], actionable };
 }
 
-function stageCommand(key: RewardStatusStageKey, detail?: string): string {
-  const suffix = detail ? ` ${detail}` : '';
-  return `Read ${STAGE_META[key].skill}${suffix}`;
+function stageCommand(key: RewardStatusStageKey, projectId?: string): string {
+  const projectFlag = projectId ? ` --project ${projectId}` : '';
+  let startCommand: string;
+  switch (key) {
+    case 'profile':
+      startCommand = projectId
+        ? `superdense project context ${projectId}`
+        : 'superdense project list --needs-action';
+      break;
+    case 'curate':
+      startCommand = `superdense curation inbox${projectFlag} --limit 10`;
+      break;
+    case 'finalize':
+      startCommand = `superdense artifact inbox${projectFlag} --limit 10`;
+      break;
+    case 'reconcile':
+      startCommand = `superdense externalization inbox${projectFlag} --limit 10`;
+      break;
+    case 'collect':
+      startCommand = `superdense externalization list${projectFlag} --status linked`;
+      break;
+    case 'compare':
+      startCommand = `superdense cohort list${projectFlag} --by type`;
+      break;
+  }
+  const scope = projectId ? ` for project ${projectId}` : '';
+  return `Read ${STAGE_META[key].skill} and process the actionable ${STAGE_META[key].unit}${scope}. Start with: ${startCommand}`;
 }
 
 function profileCount(projectId: string | undefined): { count: number; command: string } {
@@ -71,15 +95,13 @@ function profileCount(projectId: string | undefined): { count: number; command: 
     const needsAction = project.status === 'unprofiled' || project.needsHumanAttention;
     return {
       count: needsAction ? 1 : 0,
-      command: stageCommand('profile', `for project ${project.id}`),
+      command: stageCommand('profile', project.id),
     };
   }
   const projects = listProjectProfiles({ needsAction: true });
   return {
     count: projects.length,
-    command: projects[0]
-      ? stageCommand('profile', `for project ${projects[0].id}`)
-      : stageCommand('profile'),
+    command: projects[0] ? stageCommand('profile', projects[0].id) : stageCommand('profile'),
   };
 }
 
@@ -146,11 +168,11 @@ export function getRewardStatus(opts: { projectId?: string } = {}): RewardStatus
   ];
   const commands: Partial<Record<RewardStatusStageKey, string>> = {
     profile: profile.command,
-    curate: projectId ? stageCommand('curate', `for project ${projectId}`) : stageCommand('curate'),
-    finalize: stageCommand('finalize'),
-    reconcile: stageCommand('reconcile'),
-    collect: stageCommand('collect'),
-    compare: stageCommand('compare'),
+    curate: stageCommand('curate', projectId),
+    finalize: stageCommand('finalize', projectId),
+    reconcile: stageCommand('reconcile', projectId),
+    collect: stageCommand('collect', projectId),
+    compare: stageCommand('compare', projectId),
   };
   return {
     projectId: projectId ?? null,

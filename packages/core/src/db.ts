@@ -9,12 +9,15 @@ import { resolveProjectKey } from './util/project-key.js';
 let dbInstance: Database.Database | null = null;
 
 export const SYSTEM_RUN_ID = 'system';
+export const LATEST_SCHEMA_VERSION = 11;
 
 export function getDb(): Database.Database {
   if (dbInstance) return dbInstance;
   ensureSuperdenseDirs();
   const db = new Database(DB_PATH);
-  db.pragma('journal_mode = WAL');
+  if (db.pragma('journal_mode', { simple: true }) !== 'wal') {
+    db.pragma('journal_mode = WAL');
+  }
   db.pragma('foreign_keys = ON');
   // Conductor runs many agents in parallel against one DB. WAL lets readers and
   // writers coexist, but concurrent writers still serialize; without a busy
@@ -50,8 +53,9 @@ export function withDbRetry<T>(fn: () => T, attempts = 5): T {
       return fn();
     } catch (err) {
       const code = (err as { code?: unknown }).code;
-      if (typeof code === 'string' && code.startsWith('SQLITE_BUSY') && attempt < attempts - 1) {
+      if (typeof code === 'string' && code.startsWith('SQLITE_BUSY')) {
         lastErr = err;
+        if (attempt >= attempts - 1) break;
         // better-sqlite3 is synchronous; sleep synchronously before retrying.
         const backoffMs = 20 * (attempt + 1) + Math.floor(Math.random() * 20);
         Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, backoffMs);
@@ -60,7 +64,18 @@ export function withDbRetry<T>(fn: () => T, attempts = 5): T {
       throw err;
     }
   }
-  throw lastErr;
+  const err = new Error(
+    `database remained locked after ${attempts} attempts; retry the command after other Superdense operations finish`,
+    { cause: lastErr },
+  ) as Error & { code?: string };
+  err.code = 'SQLITE_BUSY';
+  throw err;
+}
+
+/** Run one write transaction after acquiring SQLite's single writer slot up front. */
+export function withImmediateTransaction<T>(db: Database.Database, work: () => T, attempts = 5): T {
+  const tx = db.transaction(work);
+  return withDbRetry(() => tx.immediate(), attempts);
 }
 
 /** Test-only: reset the cached instance so a fresh :memory: DB can be opened. */
@@ -76,6 +91,9 @@ export function _resetDbForTests(): void {
 }
 
 function migrate(db: Database.Database): void {
+  const currentVersion = (db.pragma('user_version', { simple: true }) as number) ?? 0;
+  if (currentVersion >= LATEST_SCHEMA_VERSION) return;
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS sessions (
       id              TEXT PRIMARY KEY,
@@ -151,7 +169,6 @@ function migrate(db: Database.Database): void {
     `);
   }
 
-  const currentVersion = (db.pragma('user_version', { simple: true }) as number) ?? 0;
   if (currentVersion < 1) {
     runDataMigrationV1(db);
     db.pragma('user_version = 1');
@@ -168,42 +185,41 @@ function migrate(db: Database.Database): void {
     runDataMigrationV4(db);
     db.pragma('user_version = 4');
   }
-  // V5 is still under development. Reconcile its schema on every open so
-  // pre-release databases already marked as V5 receive later V5 additions.
-  runDataMigrationV5(db);
   if (currentVersion < 5) {
+    runDataMigrationV5(db);
     db.pragma('user_version = 5');
   }
-  // V6 is reconciled on every open for the same reason as V5: development
-  // databases may already carry user_version=6 while the shape is evolving.
-  runDataMigrationV6(db, currentVersion < 6);
   if (currentVersion < 6) {
+    runDataMigrationV6(db, true);
     db.pragma('user_version = 6');
   }
-  // V7 folds Layer 3B artifact finalization onto work_thread (no new tables).
-  // Reconciled on every open for the same reason as V5/V6.
-  runDataMigrationV7(db);
   if (currentVersion < 7) {
+    runDataMigrationV7(db);
     db.pragma('user_version = 7');
   }
   // V8 adds Layer 4 externalization reconciliation. The assessment is folded
   // onto work_thread while connector-specific targets remain child rows.
-  runDataMigrationV8(db);
   if (currentVersion < 8) {
+    runDataMigrationV8(db);
     db.pragma('user_version = 8');
   }
   // V9 adds Layer 4 reward collection: an append-only multidimensional reward
   // snapshot time series anchored on linked externalization targets. Superdense
   // never runs connectors; agents report snapshots.
-  runDataMigrationV9(db);
   if (currentVersion < 9) {
+    runDataMigrationV9(db);
     db.pragma('user_version = 9');
   }
   // V10 adds an explicit ready queue and makes lineage append-only evidence
   // with a fast effective-membership projection.
-  runDataMigrationV10(db);
   if (currentVersion < 10) {
+    runDataMigrationV10(db);
     db.pragma('user_version = 10');
+  }
+  // V11 records explicit human-only provenance for sessionless artifacts.
+  if (currentVersion < 11) {
+    runDataMigrationV11(db);
+    db.pragma('user_version = 11');
   }
 
   ensureSystemRun(db);
@@ -288,7 +304,7 @@ function runDataMigrationV3(db: Database.Database): void {
     !columnExists(db, 'query_matches', 'query_run_id');
   if (!hasLegacyEnrich && !hasLegacyMatches) return;
 
-  const tx = db.transaction(() => {
+  const work = () => {
     ensureSystemRun(db);
 
     // Both legacy match memberships and legacy enrichments are regeneratable — drop
@@ -311,12 +327,12 @@ function runDataMigrationV3(db: Database.Database): void {
         CREATE INDEX IF NOT EXISTS idx_query_matches_run ON query_matches(query_run_id);
       `);
     }
-  });
-  tx();
+  };
+  withImmediateTransaction(db, work);
 }
 
 function runDataMigrationV4(db: Database.Database): void {
-  const tx = db.transaction(() => {
+  const work = () => {
     if (!columnExists(db, 'sessions', 'is_subagent')) {
       db.exec('ALTER TABLE sessions ADD COLUMN is_subagent INTEGER NOT NULL DEFAULT 0;');
     }
@@ -337,12 +353,12 @@ function runDataMigrationV4(db: Database.Database): void {
         CREATE INDEX IF NOT EXISTS idx_session_links_parent ON session_links(parent_id);
       `);
     }
-  });
-  tx();
+  };
+  withImmediateTransaction(db, work);
 }
 
 function runDataMigrationV5(db: Database.Database): void {
-  const tx = db.transaction(() => {
+  const work = () => {
     // session_file: per-session write/read footprint. path_rel (pwd-relativized)
     // is the clustering key and is indexed for inverse lookups (file -> sessions).
     if (!tableExists(db, 'session_file')) {
@@ -420,12 +436,12 @@ function runDataMigrationV5(db: Database.Database): void {
         WHERE project_key IS NOT NULL AND project_key != ''
         GROUP BY project_key`,
     ).run({ now });
-  });
-  tx();
+  };
+  withImmediateTransaction(db, work);
 }
 
 function runDataMigrationV6(db: Database.Database, backfillHistoricalRevisions: boolean): void {
-  const tx = db.transaction(() => {
+  const work = () => {
     if (!columnExists(db, 'sessions', 'curation_status')) {
       db.exec("ALTER TABLE sessions ADD COLUMN curation_status TEXT NOT NULL DEFAULT 'pending';");
     }
@@ -482,8 +498,8 @@ function runDataMigrationV6(db: Database.Database, backfillHistoricalRevisions: 
          WHERE curated_revision IS NULL
       `);
     }
-  });
-  tx();
+  };
+  withImmediateTransaction(db, work);
 }
 
 // Layer 3B folds artifact finalization onto work_thread: a finalized thread is
@@ -565,7 +581,7 @@ function runDataMigrationV9(db: Database.Database): void {
 }
 
 function runDataMigrationV10(db: Database.Database): void {
-  const tx = db.transaction(() => {
+  const work = () => {
     if (!columnExists(db, 'work_thread', 'ready_at')) {
       db.exec('ALTER TABLE work_thread ADD COLUMN ready_at INTEGER;');
     }
@@ -636,8 +652,17 @@ function runDataMigrationV10(db: Database.Database): void {
             AND event.session_id = membership.session_id
        );
     `);
-  });
-  tx();
+  };
+  withImmediateTransaction(db, work);
+}
+
+function runDataMigrationV11(db: Database.Database): void {
+  const work = () => {
+    if (!columnExists(db, 'work_thread', 'human_only')) {
+      db.exec('ALTER TABLE work_thread ADD COLUMN human_only INTEGER NOT NULL DEFAULT 0;');
+    }
+  };
+  withImmediateTransaction(db, work);
 }
 
 function ensureSystemRun(db: Database.Database): void {
@@ -652,58 +677,88 @@ export function _migrateForTests(db: Database.Database): void {
   migrate(db);
 }
 
+export function _repairForTests(db: Database.Database): void {
+  repairSchema(db);
+}
+
+/**
+ * Explicitly reconcile the modern schema after an interrupted development
+ * migration. Normal schema-current opens stay read-only.
+ */
+export function repairDatabase(): { ok: true; version: number } {
+  const db = getDb();
+  repairSchema(db);
+  return { ok: true, version: LATEST_SCHEMA_VERSION };
+}
+
+function repairSchema(db: Database.Database): void {
+  withImmediateTransaction(db, () => {
+    runDataMigrationV5(db);
+    runDataMigrationV6(db, true);
+    runDataMigrationV7(db);
+    runDataMigrationV8(db);
+    runDataMigrationV9(db);
+    runDataMigrationV10(db);
+    runDataMigrationV11(db);
+    ensureSystemRun(db);
+    db.pragma(`user_version = ${LATEST_SCHEMA_VERSION}`);
+  });
+}
+
 export function upsertSession(s: Session): void {
   const db = getDb();
   const projectKey = resolveProjectKey(s.pwd);
-  db.prepare(
-    `
-    INSERT INTO sessions (
-      id, agent, session_id, log_path, pwd, project_key, first_prompt, summary,
-      message_count, git_branch, created_at, modified_at, is_sidechain,
-      is_subagent, parent_session_id, file_mtime, last_indexed_at
-    ) VALUES (
-      @id, @agent, @sessionId, @logPath, @pwd, @projectKey, @firstPrompt, @summary,
-      @messageCount, @gitBranch, @createdAt, @modifiedAt, @isSidechain,
-      @isSubagent, @parentSessionId, @fileMtime, @lastIndexedAt
-    )
-    ON CONFLICT(id) DO UPDATE SET
-      agent=excluded.agent,
-      session_id=excluded.session_id,
-      log_path=excluded.log_path,
-      pwd=excluded.pwd,
-      project_key=excluded.project_key,
-      first_prompt=excluded.first_prompt,
-      summary=excluded.summary,
-      message_count=excluded.message_count,
-      git_branch=excluded.git_branch,
-      created_at=excluded.created_at,
-      modified_at=excluded.modified_at,
-      is_sidechain=excluded.is_sidechain,
-      is_subagent=excluded.is_subagent,
-      parent_session_id=excluded.parent_session_id,
-      file_mtime=excluded.file_mtime,
-      last_indexed_at=excluded.last_indexed_at
-  `,
-  ).run({
-    id: s.id,
-    agent: s.agent,
-    sessionId: s.sessionId,
-    logPath: s.logPath,
-    pwd: s.pwd,
-    projectKey,
-    firstPrompt: s.firstPrompt ?? null,
-    summary: s.summary ?? null,
-    messageCount: s.messageCount ?? null,
-    gitBranch: s.gitBranch ?? null,
-    createdAt: s.createdAt ?? null,
-    modifiedAt: s.modifiedAt ?? null,
-    isSidechain: s.isSidechain ? 1 : 0,
-    isSubagent: s.isSubagent ? 1 : 0,
-    parentSessionId: s.parentSessionId ?? null,
-    fileMtime: s.fileMtime ?? null,
-    lastIndexedAt: s.lastIndexedAt ?? null,
+  withImmediateTransaction(db, () => {
+    db.prepare(
+      `
+      INSERT INTO sessions (
+        id, agent, session_id, log_path, pwd, project_key, first_prompt, summary,
+        message_count, git_branch, created_at, modified_at, is_sidechain,
+        is_subagent, parent_session_id, file_mtime, last_indexed_at
+      ) VALUES (
+        @id, @agent, @sessionId, @logPath, @pwd, @projectKey, @firstPrompt, @summary,
+        @messageCount, @gitBranch, @createdAt, @modifiedAt, @isSidechain,
+        @isSubagent, @parentSessionId, @fileMtime, @lastIndexedAt
+      )
+      ON CONFLICT(id) DO UPDATE SET
+        agent=excluded.agent,
+        session_id=excluded.session_id,
+        log_path=excluded.log_path,
+        pwd=excluded.pwd,
+        project_key=excluded.project_key,
+        first_prompt=excluded.first_prompt,
+        summary=excluded.summary,
+        message_count=excluded.message_count,
+        git_branch=excluded.git_branch,
+        created_at=excluded.created_at,
+        modified_at=excluded.modified_at,
+        is_sidechain=excluded.is_sidechain,
+        is_subagent=excluded.is_subagent,
+        parent_session_id=excluded.parent_session_id,
+        file_mtime=excluded.file_mtime,
+        last_indexed_at=excluded.last_indexed_at
+    `,
+    ).run({
+      id: s.id,
+      agent: s.agent,
+      sessionId: s.sessionId,
+      logPath: s.logPath,
+      pwd: s.pwd,
+      projectKey,
+      firstPrompt: s.firstPrompt ?? null,
+      summary: s.summary ?? null,
+      messageCount: s.messageCount ?? null,
+      gitBranch: s.gitBranch ?? null,
+      createdAt: s.createdAt ?? null,
+      modifiedAt: s.modifiedAt ?? null,
+      isSidechain: s.isSidechain ? 1 : 0,
+      isSubagent: s.isSubagent ? 1 : 0,
+      parentSessionId: s.parentSessionId ?? null,
+      fileMtime: s.fileMtime ?? null,
+      lastIndexedAt: s.lastIndexedAt ?? null,
+    });
+    registerObservedProject(projectKey, s.modifiedAt ?? s.createdAt ?? Date.now());
   });
-  registerObservedProject(projectKey, s.modifiedAt ?? s.createdAt ?? Date.now());
 }
 
 /** Register a conservatively detected project without overwriting agent profile data. */
@@ -848,7 +903,10 @@ export function getDirtySessions(): Session[] {
 }
 
 export function markIndexed(sessionId: string, now: number): void {
-  getDb().prepare('UPDATE sessions SET last_indexed_at = ? WHERE id = ?').run(now, sessionId);
+  const db = getDb();
+  withDbRetry(() =>
+    db.prepare('UPDATE sessions SET last_indexed_at = ? WHERE id = ?').run(now, sessionId),
+  );
 }
 
 // ---- session links
@@ -862,7 +920,7 @@ export function upsertSessionLink(
 ): void {
   const db = getDb();
   const metadataJson = metadata ? JSON.stringify(metadata) : null;
-  const tx = db.transaction(() => {
+  const work = () => {
     db.prepare('DELETE FROM session_links WHERE child_id = ? AND parent_id != ?').run(
       childId,
       parentId,
@@ -874,8 +932,8 @@ export function upsertSessionLink(
          relation=excluded.relation,
          metadata=excluded.metadata`,
     ).run(parentId, childId, relation, metadataJson, createdAt);
-  });
-  tx();
+  };
+  withImmediateTransaction(db, work);
 }
 
 export interface SessionLinkRow {
@@ -1156,25 +1214,34 @@ export function countQueryMatches(savedQueryId: string): number {
 }
 
 export function upsertQueryMatch(item: QueryMatch): void {
-  getDb()
-    .prepare(
-      `
-    INSERT INTO query_matches (query_run_id, session_id, added_at, evidence)
-    VALUES (?, ?, ?, ?)
-    ON CONFLICT(query_run_id, session_id) DO UPDATE SET evidence=excluded.evidence
-  `,
-    )
-    .run(item.queryRunId, item.sessionId, item.addedAt, item.evidence ?? null);
+  const db = getDb();
+  withDbRetry(() =>
+    db
+      .prepare(
+        `
+      INSERT INTO query_matches (query_run_id, session_id, added_at, evidence)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(query_run_id, session_id) DO UPDATE SET evidence=excluded.evidence
+    `,
+      )
+      .run(item.queryRunId, item.sessionId, item.addedAt, item.evidence ?? null),
+  );
 }
 
 export function dropQueryMatch(queryRunId: string, sessionId: string): void {
-  getDb()
-    .prepare('DELETE FROM query_matches WHERE query_run_id = ? AND session_id = ?')
-    .run(queryRunId, sessionId);
+  const db = getDb();
+  withDbRetry(() =>
+    db
+      .prepare('DELETE FROM query_matches WHERE query_run_id = ? AND session_id = ?')
+      .run(queryRunId, sessionId),
+  );
 }
 
 export function markQueryRun(savedQueryId: string, now: number): void {
-  getDb().prepare('UPDATE queries SET last_run_at = ? WHERE id = ?').run(now, savedQueryId);
+  const db = getDb();
+  withDbRetry(() =>
+    db.prepare('UPDATE queries SET last_run_at = ? WHERE id = ?').run(now, savedQueryId),
+  );
 }
 
 export function isQueryMatch(savedQueryId: string, sessionId: string): boolean {
@@ -1251,12 +1318,15 @@ export interface CreateQueryRunInput {
 
 export function createQueryRun(input: CreateQueryRunInput): string {
   const id = input.id ?? randomUUID();
-  getDb()
-    .prepare(
-      `INSERT INTO query_run (id, saved_query_id, dsl, started_at, finished_at, matched_count)
-       VALUES (?, ?, ?, ?, NULL, NULL)`,
-    )
-    .run(id, input.savedQueryId, JSON.stringify(input.dsl), input.startedAt);
+  const db = getDb();
+  withDbRetry(() =>
+    db
+      .prepare(
+        `INSERT INTO query_run (id, saved_query_id, dsl, started_at, finished_at, matched_count)
+         VALUES (?, ?, ?, ?, NULL, NULL)`,
+      )
+      .run(id, input.savedQueryId, JSON.stringify(input.dsl), input.startedAt),
+  );
   return id;
 }
 
@@ -1264,9 +1334,12 @@ export function finishQueryRun(
   runId: string,
   opts: { finishedAt: number; matchedCount: number },
 ): void {
-  getDb()
-    .prepare('UPDATE query_run SET finished_at = ?, matched_count = ? WHERE id = ?')
-    .run(opts.finishedAt, opts.matchedCount, runId);
+  const db = getDb();
+  withDbRetry(() =>
+    db
+      .prepare('UPDATE query_run SET finished_at = ?, matched_count = ? WHERE id = ?')
+      .run(opts.finishedAt, opts.matchedCount, runId),
+  );
 }
 
 export function clearQueryRun(runId: string): void {
@@ -1336,7 +1409,7 @@ export function pruneQueryRuns(opts: PruneOptions = {}): { pruned: number } {
   const db = getDb();
 
   let pruned = 0;
-  const tx = db.transaction(() => {
+  const work = () => {
     // Per-saved-query
     const savedRows = db
       .prepare('SELECT DISTINCT saved_query_id FROM query_run WHERE saved_query_id IS NOT NULL')
@@ -1402,8 +1475,8 @@ export function pruneQueryRuns(opts: PruneOptions = {}): { pruned: number } {
         .run(SYSTEM_RUN_ID, ...keepStandalone);
       pruned += r.changes;
     }
-  });
-  tx();
+  };
+  withImmediateTransaction(db, work);
   return { pruned };
 }
 
@@ -1427,18 +1500,21 @@ export function upsertEnrichment(
   value: unknown,
   computedAt: number,
 ): void {
-  getDb()
-    .prepare(
-      `
-    INSERT INTO session_enrich (session_id, query_run_id, name, version, value, computed_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT(session_id, query_run_id, name) DO UPDATE SET
-      version=excluded.version,
-      value=excluded.value,
-      computed_at=excluded.computed_at
-  `,
-    )
-    .run(sessionId, queryRunId, name, version, JSON.stringify(value), computedAt);
+  const db = getDb();
+  withDbRetry(() =>
+    db
+      .prepare(
+        `
+      INSERT INTO session_enrich (session_id, query_run_id, name, version, value, computed_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(session_id, query_run_id, name) DO UPDATE SET
+        version=excluded.version,
+        value=excluded.value,
+        computed_at=excluded.computed_at
+    `,
+      )
+      .run(sessionId, queryRunId, name, version, JSON.stringify(value), computedAt),
+  );
 }
 
 export function getEnrichment(
@@ -1512,7 +1588,7 @@ export interface PlanRefInput {
 /** Replace a session's write/read footprint atomically (delete-then-insert). */
 export function replaceSessionFiles(sessionId: string, files: SessionFileInput[]): void {
   const db = getDb();
-  const tx = db.transaction(() => {
+  const work = () => {
     db.prepare('DELETE FROM session_file WHERE session_id = ?').run(sessionId);
     const insert = db.prepare(
       `INSERT OR REPLACE INTO session_file
@@ -1532,21 +1608,21 @@ export function replaceSessionFiles(sessionId: string, files: SessionFileInput[]
         f.lastTs,
       );
     }
-  });
-  tx();
+  };
+  withImmediateTransaction(db, work);
 }
 
 /** Replace a session's plan references atomically (delete-then-insert). */
 export function replacePlanRefs(sessionId: string, refs: PlanRefInput[]): void {
   const db = getDb();
-  const tx = db.transaction(() => {
+  const work = () => {
     db.prepare('DELETE FROM plan_refs WHERE session_id = ?').run(sessionId);
     const insert = db.prepare(
       'INSERT OR IGNORE INTO plan_refs (session_id, plan_slug, kind) VALUES (?, ?, ?)',
     );
     for (const r of refs) insert.run(sessionId, r.slug, r.kind);
-  });
-  tx();
+  };
+  withImmediateTransaction(db, work);
 }
 
 /** Inverse lookup: which sessions touched this pwd-relative path. */

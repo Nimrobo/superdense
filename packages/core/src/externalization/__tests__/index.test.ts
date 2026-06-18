@@ -10,7 +10,7 @@ vi.mock('../../paths.js', () => ({
   ensureSuperdenseDirs: vi.fn(),
 }));
 
-import { _migrateForTests, _resetDbForTests, getDb, upsertSession } from '../../db.js';
+import { _repairForTests, _resetDbForTests, getDb, upsertSession } from '../../db.js';
 import { listProjectProfiles } from '../../projects/index.js';
 import { applyCurationBatch, finalizeArtifact } from '../../curation/index.js';
 import {
@@ -75,7 +75,7 @@ beforeEach(() => {
 describe('externalization reconciliation (Layer 4)', () => {
   it('adds V8 folded assessment columns and the target table', () => {
     const db = getDb();
-    expect(db.pragma('user_version', { simple: true })).toBe(10);
+    expect(db.pragma('user_version', { simple: true })).toBe(11);
     const columns = (
       db.prepare('PRAGMA table_info(work_thread)').all() as Array<{ name: string }>
     ).map((row) => row.name);
@@ -99,9 +99,9 @@ describe('externalization reconciliation (Layer 4)', () => {
     const db = getDb();
     db.exec('DROP TABLE externalization_target');
 
-    _migrateForTests(db);
+    _repairForTests(db);
 
-    expect(db.pragma('user_version', { simple: true })).toBe(10);
+    expect(db.pragma('user_version', { simple: true })).toBe(11);
     expect(
       db
         .prepare(

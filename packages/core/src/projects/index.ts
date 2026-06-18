@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { dirname, extname, isAbsolute, join, relative } from 'node:path';
-import { getDb, SYSTEM_RUN_ID } from '../db.js';
+import { getDb, SYSTEM_RUN_ID, withImmediateTransaction } from '../db.js';
 import type {
   ArtifactDetector,
   ArtifactShape,
@@ -304,7 +304,7 @@ export function applyProjectProfilePatch(id: string, patch: unknown): ProjectPro
     throw new Error('coveredProjectIds must not contain duplicates');
   }
 
-  const tx = db.transaction(() => {
+  const work = () => {
     for (const coveredId of nextCoveredIds) {
       const row = rowForId(coveredId);
       if (!row) throw new Error(`covered project not found: ${coveredId}`);
@@ -363,8 +363,8 @@ export function applyProjectProfilePatch(id: string, patch: unknown): ProjectPro
       profiledAt: merged.profiledAt,
       updatedAt: merged.updatedAt,
     });
-  });
-  tx();
+  };
+  withImmediateTransaction(db, work);
   return getProjectProfile(merged.id)!;
 }
 
