@@ -78,11 +78,7 @@ function createArtifact(id: string, projectProfileId = listProjectProfiles()[0]!
   finalizeArtifact({ threadId: id, type: 'post', payload: { text: id } });
 }
 
-function linkArtifact(
-  id: string,
-  targetId = `${id}-target`,
-  projectProfileId?: string,
-): string {
+function linkArtifact(id: string, targetId = `${id}-target`, projectProfileId?: string): string {
   createArtifact(id, projectProfileId);
   assessExternalization({
     artifactId: id,
