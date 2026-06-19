@@ -34,10 +34,10 @@ Agents start every task cold, so good work never compounds. Superdense fixes tha
 Make a folder for one real-world outcome (say, landing-page signups), open your coding agent there, and run `/outcome-setup`. It inspects your target surfaces, then asks only what it can't discover: your north-star metric, audience, guardrails, and analytics access. It writes three files you own: `goal.md` (the outcome and its boundaries, protected), `run.md` (the working playbook of levers, recipes, and what to measure), and `gate.md` (the reusable completion contract every run must satisfy). It also instruments the target repo if needed and walks you through installing any connectors it needs to fetch outcomes later (GitHub, X, npm, analytics, and so on). Done once per goal.
 
 **2. Run the loop — `/outcome-run`**
-Each run, your agent remembers before it acts: a bounded pass over Superdense gathers what already shipped, how it landed, and how comparable efforts performed. With that evidence plus `goal.md`, `run.md`, and `gate.md`, it picks exactly one move (a proven recipe, or a fix in the path), ships it in the right surface (a draft, or a branch and PR in your repo), records gate status in `work.md`, and records the result back into Superdense. Required gate failures trigger fix attempts; unresolved failures stop the run instead of being called complete. You review and approve what ships. Run it as often as you like.
+Each run, your agent remembers before it acts: a bounded pass over Superdense gathers what already shipped, how it landed, how comparable efforts performed, and which hypotheses were supported or refuted. With that evidence plus `goal.md`, `run.md`, and `gate.md`, it chooses explore or exploit, picks exactly one move, records the hypothesis and experiment ids it is testing or reinforcing, ships it in the right surface, records gate status in `work.md`, and records the result back into Superdense. Required gate failures trigger fix attempts; unresolved failures stop the run instead of being called complete. You review and approve what ships. Run it as often as you like.
 
 **3. Sharpen on a cadence — `/outcome-update`**
-After enough runs to see a pattern, your agent reviews the batch against the real outcomes and rewrites `run.md`, promoting the moves that worked and dropping the ones that didn't. Repeated completion misses can refine `gate.md`. `goal.md` stays fixed; only the strategy and reusable completion contract sharpen.
+After enough runs to see a pattern, your agent reviews the batch against the real outcomes and rewrites `run.md`, promoting proven levers, retiring refuted hypotheses, filling novelty gaps, and retuning the explore/exploit ratio. Repeated completion misses can refine `gate.md`. `goal.md` stays fixed; only the strategy and reusable completion contract sharpen.
 
 The loop closes here: every run starts from what already worked, so results compound toward the goal instead of resetting to zero.
 
@@ -65,6 +65,7 @@ The core engine (`packages/core`) is a handful of focused modules:
 - **Query engine** (`filters/`, `query/`, `queryeval.ts`) — filter and search the index by any of those signals.
 - **Compactors** (`compactors/`) — `salience` (what happened) and `trace` (the sequence the agent followed) views over long logs.
 - **Curation + rewards** (`curation/`, `rewards/`, `reward-status/`) — group sessions into threads, freeze artifacts, record reward snapshots, and report the loop's next actionable stage.
+- **Hypotheses + experiments** (`hypotheses/`, `experiments/`) — store falsifiable predictions, bind them to run/artifact reps, and render verdicts from reward snapshots.
 - **Externalization + cohorts** (`externalization/`, `cohorts/`) — link artifacts to real-world identities and compare peers by run cost and outcome.
 - **Insights + stats** (`insights/`, `stats/`) — reusable analysis prompts and dashboards over the indexed sessions.
 
@@ -76,6 +77,9 @@ The words the loop uses:
 - **Lever** — a mechanism that might move the north star (hero clarity, posting time).
 - **Action** — one concrete step on a lever: a rep of a proven recipe, or a fix in the path.
 - **Diagnostic** — a measurement that explains why a lever did or didn't move the north star.
+- **Hypothesis** — a structured prediction recorded before the outcome is known.
+- **Experiment** — the durable test record binding a hypothesis to one or more runs/artifacts and a reward window.
+- **Explore/exploit** — the run-level choice between testing uncertain levers and repeating supported ones.
 - **Artifact** — the frozen record of one shipped thing (a PR, a post, a release), stable once finalized.
 - **Connector** — a platform label (`github`, `x`, `npm`, …) marking where an artifact went live and how to fetch its outcomes.
 
@@ -85,6 +89,9 @@ The words the loop uses:
 superdense skill install                          # install the outcome + session skills into Claude & Codex
 superdense reward status                          # name the next actionable stage of the outcome loop
 superdense reward status --project <id>           # focus one project (ids: superdense project list --needs-action)
+superdense hypothesis record --input @h.json      # preregister a falsifiable prediction
+superdense experiment open --input @e.json        # open a multi-run test of a hypothesis
+superdense experiment verdict <id>                # fold reward snapshots into a verdict
 superdense studio                                 # local UI: sessions, filters, saved queries, compactor views
 superdense index                                  # incremental re-index of local sessions
 superdense session list --q "billing"             # search past sessions

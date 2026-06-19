@@ -393,7 +393,7 @@ describe('artifact finalization (Layer 3B)', () => {
     _repairForTests(db);
     _repairForTests(db);
 
-    expect(db.pragma('user_version', { simple: true })).toBe(11);
+    expect(db.pragma('user_version', { simple: true })).toBe(12);
     expect(getWorkThread('t1')).toMatchObject({
       lifecycle: 'ready',
       readinessRationale: 'Migrated from pre-V10 finalized thread',

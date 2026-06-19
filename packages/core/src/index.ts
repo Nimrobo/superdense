@@ -199,6 +199,36 @@ export type {
   RewardProjectOverview,
   RewardProjectThreadCounts,
 } from './reward-overview/index.js';
+export {
+  getHypothesis,
+  listHypotheses,
+  recordHypothesis,
+  resolveHypothesis,
+  validateHypothesisStatement,
+} from './hypotheses/index.js';
+export type {
+  Hypothesis,
+  HypothesisStatement,
+  HypothesisStatus,
+  HypothesisWindow,
+  PredictionDirection,
+  PredictionTarget,
+} from './hypotheses/index.js';
+export {
+  addExperimentMember,
+  getExperiment,
+  listExperiments,
+  openExperiment,
+  renderExperimentVerdict,
+} from './experiments/index.js';
+export type {
+  Experiment,
+  ExperimentMember,
+  ExperimentRewardWindow,
+  ExperimentStatus,
+  ExperimentVerdict,
+  ExperimentVerdictResult,
+} from './experiments/index.js';
 export type {
   ArtifactDetector,
   ArtifactShape,

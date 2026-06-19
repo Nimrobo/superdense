@@ -9,7 +9,7 @@ import { resolveProjectKey } from './util/project-key.js';
 let dbInstance: Database.Database | null = null;
 
 export const SYSTEM_RUN_ID = 'system';
-export const LATEST_SCHEMA_VERSION = 11;
+export const LATEST_SCHEMA_VERSION = 12;
 
 export function getDb(): Database.Database {
   if (dbInstance) return dbInstance;
@@ -220,6 +220,13 @@ function migrate(db: Database.Database): void {
   if (currentVersion < 11) {
     runDataMigrationV11(db);
     db.pragma('user_version = 11');
+  }
+  // V12 adds durable hypotheses and experiments for outcome-loop search. The
+  // outcome folder owns lever semantics; Superdense stores predictions,
+  // experiment membership, and verdict evidence linked to existing rewards.
+  if (currentVersion < 12) {
+    runDataMigrationV12(db);
+    db.pragma('user_version = 12');
   }
 
   ensureSystemRun(db);
@@ -665,6 +672,60 @@ function runDataMigrationV11(db: Database.Database): void {
   withImmediateTransaction(db, work);
 }
 
+function runDataMigrationV12(db: Database.Database): void {
+  const work = () => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS hypothesis (
+        id               TEXT PRIMARY KEY,
+        project_id       TEXT NOT NULL REFERENCES project_profile(id) ON DELETE CASCADE,
+        lever_key        TEXT NOT NULL,
+        statement        TEXT NOT NULL,
+        status           TEXT NOT NULL CHECK (
+          status IN ('open', 'supported', 'refuted', 'inconclusive')
+        ),
+        created_at       INTEGER NOT NULL,
+        resolved_at      INTEGER,
+        verdict_evidence TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_hypothesis_project_status
+        ON hypothesis(project_id, status, created_at);
+      CREATE INDEX IF NOT EXISTS idx_hypothesis_lever
+        ON hypothesis(project_id, lever_key, status);
+
+      CREATE TABLE IF NOT EXISTS experiment (
+        id                TEXT PRIMARY KEY,
+        hypothesis_id     TEXT NOT NULL REFERENCES hypothesis(id) ON DELETE CASCADE,
+        status            TEXT NOT NULL CHECK (
+          status IN ('open', 'complete', 'inconclusive')
+        ),
+        target_reps       INTEGER NOT NULL,
+        reward_window     TEXT NOT NULL,
+        predicted_summary TEXT NOT NULL,
+        observed_summary  TEXT,
+        verdict           TEXT CHECK (
+          verdict IS NULL OR verdict IN ('supported', 'refuted', 'inconclusive')
+        ),
+        created_at        INTEGER NOT NULL,
+        resolved_at       INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_experiment_hypothesis
+        ON experiment(hypothesis_id, status, created_at);
+
+      CREATE TABLE IF NOT EXISTS experiment_member (
+        experiment_id TEXT NOT NULL REFERENCES experiment(id) ON DELETE CASCADE,
+        run_id        TEXT NOT NULL,
+        artifact_id   TEXT REFERENCES work_thread(id) ON DELETE SET NULL,
+        role          TEXT NOT NULL,
+        added_at      INTEGER NOT NULL,
+        PRIMARY KEY (experiment_id, run_id, role)
+      );
+      CREATE INDEX IF NOT EXISTS idx_experiment_member_artifact
+        ON experiment_member(artifact_id);
+    `);
+  };
+  withImmediateTransaction(db, work);
+}
+
 function ensureSystemRun(db: Database.Database): void {
   const now = Date.now();
   db.prepare(
@@ -700,6 +761,7 @@ function repairSchema(db: Database.Database): void {
     runDataMigrationV9(db);
     runDataMigrationV10(db);
     runDataMigrationV11(db);
+    runDataMigrationV12(db);
     ensureSystemRun(db);
     db.pragma(`user_version = ${LATEST_SCHEMA_VERSION}`);
   });

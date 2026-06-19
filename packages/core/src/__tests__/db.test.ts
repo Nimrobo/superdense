@@ -178,7 +178,7 @@ describe('sessions', () => {
 
       _migrateForTests(db);
 
-      expect(db.pragma('user_version', { simple: true })).toBe(11);
+      expect(db.pragma('user_version', { simple: true })).toBe(12);
       expect(db.prepare('SELECT project_key FROM sessions WHERE id = ?').get('old')).toEqual({
         project_key: '/Users/x/conductor/workspaces/superdense',
       });
@@ -247,7 +247,7 @@ describe('sessions', () => {
 
       _migrateForTests(db);
 
-      expect(db.pragma('user_version', { simple: true })).toBe(11);
+      expect(db.pragma('user_version', { simple: true })).toBe(12);
 
       const tables = (
         db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{
@@ -337,7 +337,7 @@ describe('sessions', () => {
 
       _migrateForTests(db);
 
-      expect(db.pragma('user_version', { simple: true })).toBe(11);
+      expect(db.pragma('user_version', { simple: true })).toBe(12);
       const sessionCols = (
         db.prepare('PRAGMA table_info(sessions)').all() as Array<{
           name: string;
@@ -385,7 +385,7 @@ describe('sessions', () => {
 
       _migrateForTests(db);
 
-      expect(db.pragma('user_version', { simple: true })).toBe(11);
+      expect(db.pragma('user_version', { simple: true })).toBe(12);
       const tables = (
         db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{
           name: string;
@@ -439,7 +439,7 @@ describe('sessions', () => {
 
       _repairForTests(db);
 
-      expect(db.pragma('user_version', { simple: true })).toBe(11);
+      expect(db.pragma('user_version', { simple: true })).toBe(12);
       expect(
         db.prepare('SELECT project_key, status, last_seen_at FROM project_profile').all(),
       ).toEqual([{ project_key: '/repo', status: 'unprofiled', last_seen_at: 2000 }]);
@@ -717,7 +717,7 @@ describe('sessions', () => {
 
       _migrateForTests(db);
 
-      expect(db.pragma('user_version', { simple: true })).toBe(11);
+      expect(db.pragma('user_version', { simple: true })).toBe(12);
 
       const tables = (
         db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{
@@ -743,6 +743,110 @@ describe('sessions', () => {
 
       expect(db.prepare('SELECT COUNT(*) AS c FROM query_matches').get()).toEqual({ c: 0 });
       expect(db.prepare('SELECT COUNT(*) AS c FROM session_enrich').get()).toEqual({ c: 0 });
+    } finally {
+      db.close();
+    }
+  });
+
+  it('V12 migration: adds hypothesis and experiment tables to a V11 database', () => {
+    const db = new Database(':memory:');
+    try {
+      db.exec(`
+        CREATE TABLE sessions (
+          id              TEXT PRIMARY KEY,
+          agent           TEXT NOT NULL,
+          session_id      TEXT NOT NULL,
+          log_path        TEXT NOT NULL,
+          pwd             TEXT NOT NULL,
+          project_key     TEXT NOT NULL DEFAULT '',
+          first_prompt    TEXT,
+          summary         TEXT,
+          message_count   INTEGER,
+          git_branch      TEXT,
+          created_at      INTEGER,
+          modified_at     INTEGER,
+          is_sidechain    INTEGER DEFAULT 0,
+          file_mtime      INTEGER,
+          last_indexed_at INTEGER
+        );
+        CREATE TABLE queries (
+          id          TEXT PRIMARY KEY,
+          name        TEXT NOT NULL,
+          predicate   TEXT NOT NULL,
+          created_at  INTEGER,
+          last_run_at INTEGER
+        );
+        CREATE TABLE query_run (
+          id              TEXT PRIMARY KEY,
+          saved_query_id  TEXT REFERENCES queries(id) ON DELETE SET NULL,
+          dsl             TEXT NOT NULL,
+          started_at      INTEGER NOT NULL,
+          finished_at     INTEGER,
+          matched_count   INTEGER
+        );
+        CREATE TABLE project_profile (
+          id                    TEXT PRIMARY KEY,
+          project_key           TEXT UNIQUE NOT NULL,
+          status                TEXT NOT NULL,
+          covered_by            TEXT,
+          name                  TEXT,
+          description           TEXT,
+          roots                 TEXT NOT NULL DEFAULT '[]',
+          artifact_shapes       TEXT NOT NULL DEFAULT '[]',
+          evidence_summary      TEXT NOT NULL DEFAULT '[]',
+          notes                 TEXT,
+          needs_human_attention INTEGER NOT NULL DEFAULT 0,
+          attention_reasons     TEXT NOT NULL DEFAULT '[]',
+          first_seen_at         INTEGER NOT NULL,
+          last_seen_at          INTEGER NOT NULL,
+          profiled_at           INTEGER,
+          updated_at            INTEGER NOT NULL
+        );
+        CREATE TABLE work_thread (
+          id                    TEXT PRIMARY KEY,
+          project_profile_id    TEXT NOT NULL REFERENCES project_profile(id),
+          provisional_title     TEXT NOT NULL,
+          summary               TEXT,
+          status                TEXT NOT NULL DEFAULT 'open',
+          created_at            INTEGER NOT NULL,
+          updated_at            INTEGER NOT NULL,
+          artifact_type         TEXT,
+          payload               TEXT,
+          artifact_finalized_at INTEGER,
+          ready_at              INTEGER,
+          readiness_rationale   TEXT,
+          predecessor_artifact_id TEXT,
+          externalization_status TEXT,
+          externalization_evidence TEXT,
+          externalization_updated_at INTEGER,
+          human_only            INTEGER NOT NULL DEFAULT 0
+        );
+        PRAGMA user_version = 11;
+      `);
+
+      _migrateForTests(db);
+
+      expect(db.pragma('user_version', { simple: true })).toBe(12);
+      for (const table of ['hypothesis', 'experiment', 'experiment_member']) {
+        expect(
+          db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name = ?").get(table),
+        ).toEqual({ name: table });
+      }
+      const hypothesisColumns = (
+        db.prepare('PRAGMA table_info(hypothesis)').all() as Array<{ name: string }>
+      ).map((row) => row.name);
+      expect(hypothesisColumns).toEqual(
+        expect.arrayContaining([
+          'id',
+          'project_id',
+          'lever_key',
+          'statement',
+          'status',
+          'created_at',
+          'resolved_at',
+          'verdict_evidence',
+        ]),
+      );
     } finally {
       db.close();
     }

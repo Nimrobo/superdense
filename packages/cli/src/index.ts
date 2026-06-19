@@ -20,6 +20,7 @@ import semver from 'semver';
 import {
   assembleInsightPrompt,
   applyCurationBatch,
+  addExperimentMember,
   assessExternalization,
   applyProjectProfilePatch,
   CLAUDE_SKILLS_DIR,
@@ -32,6 +33,8 @@ import {
   ensureSuperdenseDirs,
   finalizeArtifact,
   getArtifact,
+  getExperiment,
+  getHypothesis,
   getCompactor,
   getCurationContext,
   getEnrichment,
@@ -40,6 +43,8 @@ import {
   getCohort,
   getVersionChain,
   getRewardStatus,
+  listExperiments,
+  listHypotheses,
   listCohorts,
   listVersionChains,
   getProjectContext,
@@ -77,9 +82,13 @@ import {
   runSavedQuery,
   setProjectAttention,
   markSessionForCuration,
+  openExperiment,
   recordRewardSnapshot,
   recordRewardSnapshotBatch,
+  recordHypothesis,
   repairDatabase,
+  renderExperimentVerdict,
+  resolveHypothesis,
   validateQueryDefinition,
   type AdHocQueryResult,
   type ArtifactExternalization,
@@ -87,6 +96,11 @@ import {
   type Cohort,
   type CohortMember,
   type Compactor,
+  type Experiment,
+  type ExperimentStatus,
+  type ExperimentVerdictResult,
+  type Hypothesis,
+  type HypothesisStatus,
   type QueryMatchDetail,
   type QueryDefinition,
   type RewardSnapshot,
@@ -374,6 +388,54 @@ function compactRewards(rewards: ArtifactRewards) {
         ...new Set(target.snapshots.flatMap((snapshot) => Object.keys(snapshot.metrics))),
       ],
     })),
+  };
+}
+
+function compactHypothesis(hypothesis: Hypothesis) {
+  return {
+    id: hypothesis.id,
+    projectId: hypothesis.projectId,
+    leverKey: hypothesis.leverKey,
+    status: hypothesis.status,
+    createdAt: hypothesis.createdAt,
+    resolvedAt: hypothesis.resolvedAt,
+    action: hypothesis.statement.action,
+    diagnostic: hypothesis.statement.diagnostic,
+    northStar: hypothesis.statement.northStar,
+    window: hypothesis.statement.window,
+    mechanism: truncateText(hypothesis.statement.mechanism, 180),
+    verdictEvidence: hypothesis.verdictEvidence ? compactValue(hypothesis.verdictEvidence) : null,
+  };
+}
+
+function compactExperiment(experiment: Experiment) {
+  return {
+    id: experiment.id,
+    hypothesisId: experiment.hypothesisId,
+    status: experiment.status,
+    targetReps: experiment.targetReps,
+    rewardWindow: experiment.rewardWindow,
+    predictedSummary: truncateText(experiment.predictedSummary, 220),
+    verdict: experiment.verdict,
+    createdAt: experiment.createdAt,
+    resolvedAt: experiment.resolvedAt,
+    memberCount: experiment.members.length,
+    memberRunIds: experiment.members.map((member) => member.runId),
+    memberArtifactIds: experiment.members.flatMap((member) =>
+      member.artifactId ? [member.artifactId] : [],
+    ),
+    observedSummary: experiment.observedSummary ? compactValue(experiment.observedSummary) : null,
+  };
+}
+
+function compactExperimentVerdict(result: ExperimentVerdictResult) {
+  return {
+    ok: result.ok,
+    verdict: result.verdict,
+    resolved: result.resolved,
+    experiment: compactExperiment(result.experiment),
+    hypothesis: compactHypothesis(result.hypothesis),
+    observedSummary: compactValue(result.observedSummary),
   };
 }
 
@@ -1314,6 +1376,129 @@ async function handleReward(
   throw new Error(`unknown reward command: ${args.join(' ') || '(none)'}`);
 }
 
+async function handleHypothesis(
+  args: string[],
+  flags: Record<string, string | boolean>,
+  io: CliIo,
+): Promise<boolean> {
+  const action = args[0] ?? 'list';
+  if (flags.help === true && (action === 'record' || action === 'resolve')) {
+    return printCommandHelp(
+      action === 'record'
+        ? [
+            'Usage: superdense hypothesis record --input <json|@file>',
+            '',
+            'Input: {"projectId":"<project-id>","leverKey":"<lever>","statement":{"action":"...","diagnostic":{"metric":"reply_rate","direction":"increase","magnitude":0.05},"northStar":{"metric":"qualified_calls","direction":"increase","magnitude":3},"window":{"durationMs":604800000,"label":"7 days"},"mechanism":"..."}}',
+          ]
+        : [
+            'Usage: superdense hypothesis resolve <id> --input <json|@file>',
+            '',
+            'Input: {"status":"supported|refuted|inconclusive|open","verdictEvidence":{"experimentId":"<id>","reason":"..."}}',
+          ],
+      io,
+    );
+  }
+  if (action === 'record') {
+    printJson(recordHypothesis(await readJsonObject(flags.input, 'input')), io);
+    return true;
+  }
+  if (action === 'list') {
+    if (typeof flags.project !== 'string' || !flags.project.trim()) {
+      throw new Error('hypothesis list requires --project <project-id>');
+    }
+    const items = listHypotheses({
+      projectId: flags.project,
+      status: typeof flags.status === 'string' ? (flags.status as HypothesisStatus) : undefined,
+      leverKey: typeof flags.lever === 'string' ? flags.lever : undefined,
+      limit: intFlag(flags, 'limit', 100, 1000),
+    });
+    printJson({ items: wantsFull(flags) ? items : items.map(compactHypothesis) }, io);
+    return true;
+  }
+  if (action === 'show') {
+    const id = args[1];
+    if (!id) throw new Error('hypothesis show requires <id>');
+    const hypothesis = getHypothesis(id);
+    if (!hypothesis) throw new Error(`hypothesis not found: ${id}`);
+    printJson({ hypothesis: wantsFull(flags) ? hypothesis : compactHypothesis(hypothesis) }, io);
+    return true;
+  }
+  if (action === 'resolve') {
+    const id = args[1];
+    if (!id) throw new Error('hypothesis resolve requires <id>');
+    printJson(resolveHypothesis(id, await readJsonObject(flags.input, 'input')), io);
+    return true;
+  }
+  throw new Error(`unknown hypothesis command: ${args.join(' ') || '(none)'}`);
+}
+
+async function handleExperiment(
+  args: string[],
+  flags: Record<string, string | boolean>,
+  io: CliIo,
+): Promise<boolean> {
+  const action = args[0] ?? 'list';
+  if (flags.help === true && (action === 'open' || action === 'add-member')) {
+    return printCommandHelp(
+      action === 'open'
+        ? [
+            'Usage: superdense experiment open --input <json|@file>',
+            '',
+            'Input: {"hypothesisId":"<id>","targetReps":2,"rewardWindow":{"startAt":1700000000000,"endAt":1700604800000,"label":"7 days"},"predictedSummary":"<optional>"}',
+          ]
+        : [
+            'Usage: superdense experiment add-member --input <json|@file>',
+            '',
+            'Input: {"experimentId":"<id>","runId":"2026-06-19-topic","artifactId":"<optional-artifact-id>","role":"rep"}',
+          ],
+      io,
+    );
+  }
+  if (action === 'open') {
+    printJson(openExperiment(await readJsonObject(flags.input, 'input')), io);
+    return true;
+  }
+  if (action === 'add-member') {
+    printJson(addExperimentMember(await readJsonObject(flags.input, 'input')), io);
+    return true;
+  }
+  if (action === 'verdict') {
+    const id = args[1];
+    if (!id) throw new Error('experiment verdict requires <id>');
+    const now = typeof flags.now === 'string' ? Number(flags.now) : undefined;
+    if (now != null && (!Number.isSafeInteger(now) || now < 0)) {
+      throw new Error('--now must be a non-negative integer epoch millisecond timestamp');
+    }
+    const result = renderExperimentVerdict(id, now == null ? {} : { now });
+    printJson(wantsFull(flags) ? result : compactExperimentVerdict(result), io);
+    return true;
+  }
+  if (action === 'list') {
+    const projectId = typeof flags.project === 'string' ? flags.project : undefined;
+    const hypothesisId = typeof flags.hypothesis === 'string' ? flags.hypothesis : undefined;
+    if (!projectId && !hypothesisId) {
+      throw new Error('experiment list requires --project <project-id> or --hypothesis <id>');
+    }
+    const items = listExperiments({
+      projectId,
+      hypothesisId,
+      status: typeof flags.status === 'string' ? (flags.status as ExperimentStatus) : undefined,
+      limit: intFlag(flags, 'limit', 100, 1000),
+    });
+    printJson({ items: wantsFull(flags) ? items : items.map(compactExperiment) }, io);
+    return true;
+  }
+  if (action === 'show') {
+    const id = args[1];
+    if (!id) throw new Error('experiment show requires <id>');
+    const experiment = getExperiment(id);
+    if (!experiment) throw new Error(`experiment not found: ${id}`);
+    printJson({ experiment: wantsFull(flags) ? experiment : compactExperiment(experiment) }, io);
+    return true;
+  }
+  throw new Error(`unknown experiment command: ${args.join(' ') || '(none)'}`);
+}
+
 function handleCohort(args: string[], flags: Record<string, string | boolean>, io: CliIo): boolean {
   const action = args[0];
   const projectId = typeof flags.project === 'string' ? flags.project : undefined;
@@ -1825,6 +2010,16 @@ export async function runCli(
     return 0;
   }
 
+  if (cmd === 'hypothesis') {
+    await handleHypothesis(args, flags, io);
+    return 0;
+  }
+
+  if (cmd === 'experiment') {
+    await handleExperiment(args, flags, io);
+    return 0;
+  }
+
   if (cmd === 'db') {
     const action = args[0];
     if (action !== 'repair') throw new Error(`unknown db command: ${action ?? '(none)'}`);
@@ -1922,6 +2117,15 @@ export async function runCli(
         '  reward docs artifacts  Fetch live reward artifact guidance markdown',
         '  reward docs connectors --artifact <type>  Fetch live connector guidance for an artifact type',
         '  reward docs connectors --connector <name> [--section usage|install|troubleshoot]',
+        '  hypothesis record --input <json|@file>  Record a structured falsifiable outcome hypothesis',
+        '  hypothesis list --project <id>  List hypotheses [--status <s>] [--lever <k>] [--full]',
+        '  hypothesis show <id>  Show a hypothesis [--full]',
+        '  hypothesis resolve <id> --input <json|@file>  Resolve a hypothesis verdict',
+        '  experiment open --input <json|@file>  Open an experiment for a hypothesis',
+        '  experiment add-member --input <json|@file>  Attach a run/artifact as an experiment rep',
+        '  experiment verdict <id>  Fold member reward snapshots into a verdict [--now <ms>] [--full]',
+        '  experiment list     List experiments (--project <id> or --hypothesis <id>) [--status <s>] [--full]',
+        '  experiment show <id>  Show an experiment [--full]',
         '  db repair           Explicitly reconcile an interrupted development schema migration',
         '  cohort list         List comparable peer cohorts [--project <id>] [--by type|connector]',
         '  cohort show <type>  Surface a compact cohort for comparison [--connector <c>] [--project <id>] [--full]',

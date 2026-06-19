@@ -31,6 +31,7 @@ vi.mock('@nimrobo/superdense-core', () => ({
   CLAUDE_SKILLS_DIR: '/unused/claude/skills',
   CODEX_SKILLS_DIR: '/unused/codex/skills',
   SYSTEM_RUN_ID: 'system',
+  addExperimentMember: vi.fn(),
   applyCurationBatch: vi.fn(),
   assessExternalization: vi.fn(),
   applyProjectProfilePatch: vi.fn(),
@@ -43,6 +44,8 @@ vi.mock('@nimrobo/superdense-core', () => ({
   ensureSuperdenseDirs: vi.fn(),
   finalizeArtifact: vi.fn(),
   getArtifact: vi.fn(),
+  getExperiment: vi.fn(),
+  getHypothesis: vi.fn(),
   getArtifactRewards: vi.fn(),
   getCohort: vi.fn(),
   getCompactor: vi.fn(),
@@ -62,12 +65,14 @@ vi.mock('@nimrobo/superdense-core', () => ({
   indexAll: vi.fn(),
   listCompactors: vi.fn(),
   listCohorts: vi.fn(),
+  listExperiments: vi.fn(),
   listArtifactInbox: vi.fn(),
   listArtifacts: vi.fn(),
   listCurationInbox: vi.fn(),
   listEnrichers: vi.fn(),
   listExternalizationInbox: vi.fn(),
   listExternalizations: vi.fn(),
+  listHypotheses: vi.fn(),
   listFilterCatalog: vi.fn(),
   listFilters: vi.fn(),
   listQueries: vi.fn(),
@@ -80,9 +85,12 @@ vi.mock('@nimrobo/superdense-core', () => ({
   listWorkThreads: vi.fn(),
   loadUserEnrichers: vi.fn(),
   markSessionForCuration: vi.fn(),
+  openExperiment: vi.fn(),
   recordRewardSnapshot: vi.fn(),
   recordRewardSnapshotBatch: vi.fn(),
+  recordHypothesis: vi.fn(),
   repairDatabase: vi.fn(),
+  renderExperimentVerdict: vi.fn(),
   localClaudeSkillsDir: (cwd: string) => join(cwd, '.claude', 'skills'),
   localCodexSkillsDir: (cwd: string) => join(cwd, '.codex', 'skills'),
   previewQuery: vi.fn(),
@@ -91,6 +99,7 @@ vi.mock('@nimrobo/superdense-core', () => ({
   runQueryEvaluation: vi.fn(),
   runSavedQuery: vi.fn(),
   setProjectAttention: vi.fn(),
+  resolveHypothesis: vi.fn(),
   validateQueryDefinition: vi.fn(),
 }));
 
@@ -266,6 +275,56 @@ const rewards: core.ArtifactRewards = {
       ],
     },
   ],
+};
+const hypothesis: core.Hypothesis = {
+  id: 'h1',
+  projectId: 'p1',
+  leverKey: 'topic-specificity',
+  statement: {
+    action: 'Publish concrete operator pain posts',
+    diagnostic: { metric: 'bookmark_rate', direction: 'increase', magnitude: 10 },
+    northStar: { metric: 'qualified_follows', direction: 'increase', magnitude: 5 },
+    window: { durationMs: 604800000, label: '7 days' },
+    mechanism: 'Specific pain should attract qualified operators.',
+  },
+  status: 'open',
+  createdAt: 10,
+  resolvedAt: null,
+  verdictEvidence: null,
+};
+const experiment: core.Experiment = {
+  id: 'e1',
+  hypothesisId: 'h1',
+  status: 'open',
+  targetReps: 2,
+  rewardWindow: { startAt: 10, endAt: 20, durationMs: null, label: 'seed window' },
+  predictedSummary: 'Posts should increase bookmarks and follows.',
+  observedSummary: null,
+  verdict: null,
+  createdAt: 10,
+  resolvedAt: null,
+  members: [
+    {
+      experimentId: 'e1',
+      runId: '2026-06-19-topic',
+      artifactId: 't1',
+      role: 'rep',
+      addedAt: 11,
+    },
+  ],
+};
+const experimentVerdict: core.ExperimentVerdictResult = {
+  ok: true,
+  verdict: 'supported',
+  resolved: true,
+  experiment: { ...experiment, status: 'complete', verdict: 'supported', resolvedAt: 30 },
+  hypothesis: { ...hypothesis, status: 'supported', resolvedAt: 30 },
+  observedSummary: {
+    memberCount: 2,
+    targetReps: 2,
+    windowMature: true,
+    metrics: { qualified_follows: { aggregate: 6 } },
+  },
 };
 const rewardStatus: core.RewardStatus = {
   projectId: 'p1',
@@ -564,7 +623,19 @@ beforeEach(() => {
     ok: true,
     snapshots: [rewards.targets[0]!.latest!],
   });
-  vi.mocked(core.repairDatabase).mockReturnValue({ ok: true, version: 11 });
+  vi.mocked(core.recordHypothesis).mockReturnValue({ ok: true, hypothesis });
+  vi.mocked(core.listHypotheses).mockReturnValue([hypothesis]);
+  vi.mocked(core.getHypothesis).mockReturnValue(hypothesis);
+  vi.mocked(core.resolveHypothesis).mockReturnValue({
+    ok: true,
+    hypothesis: { ...hypothesis, status: 'refuted', resolvedAt: 20 },
+  });
+  vi.mocked(core.openExperiment).mockReturnValue({ ok: true, experiment });
+  vi.mocked(core.addExperimentMember).mockReturnValue({ ok: true, experiment });
+  vi.mocked(core.listExperiments).mockReturnValue([experiment]);
+  vi.mocked(core.getExperiment).mockReturnValue(experiment);
+  vi.mocked(core.renderExperimentVerdict).mockReturnValue(experimentVerdict);
+  vi.mocked(core.repairDatabase).mockReturnValue({ ok: true, version: 12 });
   vi.mocked(core.listCohorts).mockReturnValue([
     {
       type: 'launch',
@@ -1468,6 +1539,106 @@ describe('superdense cli agent commands', () => {
     expect(core.repairDatabase).toHaveBeenCalled();
   });
 
+  it('exposes hypothesis and experiment commands', async () => {
+    await runCli(
+      [
+        'hypothesis',
+        'record',
+        '--input',
+        '{"projectId":"p1","leverKey":"topic","statement":{"action":"post","diagnostic":{"metric":"bookmarks","direction":"increase","magnitude":10},"northStar":{"metric":"follows","direction":"increase","magnitude":5},"window":{"durationMs":604800000},"mechanism":"specificity"}}',
+      ],
+      io().io,
+    );
+    expect(core.recordHypothesis).toHaveBeenCalledWith({
+      projectId: 'p1',
+      leverKey: 'topic',
+      statement: {
+        action: 'post',
+        diagnostic: { metric: 'bookmarks', direction: 'increase', magnitude: 10 },
+        northStar: { metric: 'follows', direction: 'increase', magnitude: 5 },
+        window: { durationMs: 604800000 },
+        mechanism: 'specificity',
+      },
+    });
+
+    await runCli(['hypothesis', 'list', '--project', 'p1', '--status', 'open'], io().io);
+    expect(core.listHypotheses).toHaveBeenCalledWith({
+      projectId: 'p1',
+      status: 'open',
+      leverKey: undefined,
+      limit: 100,
+    });
+    await expect(runCli(['hypothesis', 'list'], io().io)).rejects.toThrow(
+      'hypothesis list requires --project <project-id>',
+    );
+
+    await runCli(
+      [
+        'hypothesis',
+        'resolve',
+        'h1',
+        '--input',
+        '{"status":"refuted","verdictEvidence":{"experimentId":"e1"}}',
+      ],
+      io().io,
+    );
+    expect(core.resolveHypothesis).toHaveBeenCalledWith('h1', {
+      status: 'refuted',
+      verdictEvidence: { experimentId: 'e1' },
+    });
+
+    await runCli(
+      [
+        'experiment',
+        'open',
+        '--input',
+        '{"hypothesisId":"h1","targetReps":2,"rewardWindow":{"startAt":10,"endAt":20}}',
+      ],
+      io().io,
+    );
+    expect(core.openExperiment).toHaveBeenCalledWith({
+      hypothesisId: 'h1',
+      targetReps: 2,
+      rewardWindow: { startAt: 10, endAt: 20 },
+    });
+
+    await runCli(
+      [
+        'experiment',
+        'add-member',
+        '--input',
+        '{"experimentId":"e1","runId":"run-1","artifactId":"t1"}',
+      ],
+      io().io,
+    );
+    expect(core.addExperimentMember).toHaveBeenCalledWith({
+      experimentId: 'e1',
+      runId: 'run-1',
+      artifactId: 't1',
+    });
+
+    const verdictOut = io();
+    await runCli(['experiment', 'verdict', 'e1', '--now', '30'], verdictOut.io);
+    expect(core.renderExperimentVerdict).toHaveBeenCalledWith('e1', { now: 30 });
+    expect(json(verdictOut.stdout[0]!)).toMatchObject({
+      verdict: 'supported',
+      resolved: true,
+      experiment: { id: 'e1', status: 'complete', memberCount: 1 },
+      hypothesis: { id: 'h1', status: 'supported' },
+    });
+
+    await runCli(['experiment', 'list', '--hypothesis', 'h1', '--status', 'open'], io().io);
+    expect(core.listExperiments).toHaveBeenCalledWith({
+      projectId: undefined,
+      hypothesisId: 'h1',
+      status: 'open',
+      limit: 100,
+    });
+    await expect(runCli(['experiment', 'list'], io().io)).rejects.toThrow(
+      'experiment list requires --project <project-id> or --hypothesis <id>',
+    );
+  });
+
   it('keeps bundled reward guidance on canonical CLI commands', () => {
     const rewardDir = join(process.cwd(), '..', '..', 'skills', 'superdense', 'reward');
     const guidance = ['curate.md', 'finalize.md', 'reconcile.md', 'collect.md']
@@ -1777,7 +1948,7 @@ describe('superdense cli agent commands', () => {
     expect(existsSync(join(codexSkill, 'agents', 'openai.yaml'))).toBe(true);
     expect(json(readFileSync(join(claudeSkill, '.superdense-install.json'), 'utf8'))).toMatchObject(
       {
-        version: '0.2.0',
+        version: '0.3.0',
         scope: 'global',
       },
     );
