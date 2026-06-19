@@ -1,6 +1,6 @@
 {
-  ".": "0.7.0",
-  "packages/core": "0.6.1",
-  "packages/server": "0.6.0",
-  "packages/web": "0.6.0"
+  ".": "0.8.0",
+  "packages/core": "0.7.0",
+  "packages/server": "0.6.1",
+  "packages/web": "0.7.0"
 }

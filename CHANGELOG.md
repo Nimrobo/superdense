@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.8.0](https://github.com/Nimrobo/superdense/compare/@nimrobo/superdense-v0.7.0...@nimrobo/superdense-v0.8.0) (2026-06-19)
+
+
+### Features
+
+* add batch reward recording, human-only threads, and DB migration guard ([#77](https://github.com/Nimrobo/superdense/issues/77)) ([eaa1bc8](https://github.com/Nimrobo/superdense/commit/eaa1bc8fe9375f56f2512c6eecf07a3cdba3fdf1))
+* add gate.md reusable completion contract to outcome loops ([#75](https://github.com/Nimrobo/superdense/issues/75)) ([d839567](https://github.com/Nimrobo/superdense/commit/d839567cbd2a8b86c11aeccd0d3aeb7a4dec1bdf))
+* add outcome hypotheses and experiments ([#78](https://github.com/Nimrobo/superdense/issues/78)) ([04e2940](https://github.com/Nimrobo/superdense/commit/04e2940b3ad43b8a3cff755159fb2833bf072bb4))
+
+
+### Bug Fixes
+
+* add timeout and graceful degradation for chain skill sandbox issues ([#76](https://github.com/Nimrobo/superdense/issues/76)) ([a6e1df7](https://github.com/Nimrobo/superdense/commit/a6e1df7796e9184b9d6e1f3d66d7b091e913fb06))
+
 ## [0.7.0](https://github.com/Nimrobo/superdense/compare/@nimrobo/superdense-v0.6.0...@nimrobo/superdense-v0.7.0) (2026-06-13)
 
 
