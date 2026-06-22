@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.0](https://github.com/Nimrobo/superdense/compare/@nimrobo/superdense-v0.7.0...superdense-web-v0.8.0) (2026-06-22)
+
+
+### Features
+
+* add batch reward recording, human-only threads, and DB migration guard ([#77](https://github.com/Nimrobo/superdense/issues/77)) ([eaa1bc8](https://github.com/Nimrobo/superdense/commit/eaa1bc8fe9375f56f2512c6eecf07a3cdba3fdf1))
+* reward pipeline UI with hypothesis and experiment tracking ([#81](https://github.com/Nimrobo/superdense/issues/81)) ([31b79aa](https://github.com/Nimrobo/superdense/commit/31b79aac082c69ed174d74b84df5486817421c49))
+
 ## [0.7.0](https://github.com/Nimrobo/superdense/compare/@nimrobo/superdense-v0.6.0...superdense-web-v0.7.0) (2026-06-19)
 
 

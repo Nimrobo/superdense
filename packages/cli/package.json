@@ -1,6 +1,6 @@
 {
   "name": "@nimrobo/superdense",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Superdense — search, filter, compact, and draw insights from coding-agent sessions.",
   "type": "module",
   "bin": {
