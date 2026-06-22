@@ -1804,9 +1804,9 @@ describe('superdense cli agent commands', () => {
   });
 
   it('requires both project and target id for reward collect retire', async () => {
-    await expect(
-      runCli(['reward', 'collect', 'retire', 'target-1'], io().io),
-    ).rejects.toThrow(/project/i);
+    await expect(runCli(['reward', 'collect', 'retire', 'target-1'], io().io)).rejects.toThrow(
+      /project/i,
+    );
     await expect(
       runCli(['reward', 'collect', 'retire', '--project', 'p1'], io().io),
     ).rejects.toThrow(/target/i);
