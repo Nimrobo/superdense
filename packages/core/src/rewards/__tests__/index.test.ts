@@ -19,8 +19,23 @@ import {
   listRewardSnapshots,
   recordRewardSnapshot,
   recordRewardSnapshotBatch,
+  retireCollectTarget,
+  retireCollectTargets,
+  retireUnlocatableTargets,
 } from '../index.js';
+import { getRewardStatus } from '../../reward-status/index.js';
 import type { Session } from '../../types.js';
+
+const DAY_MS = 86400000;
+
+function projectId(): string {
+  return listProjectProfiles()[0]!.id;
+}
+
+function collectActionable(): number {
+  return getRewardStatus({ projectId: projectId() }).stages.find((s) => s.key === 'collect')!
+    .actionable;
+}
 
 function session(id: string): Session {
   return {
@@ -77,7 +92,7 @@ afterEach(() => {
 describe('reward collection (Layer 4)', () => {
   it('adds the V9 reward_snapshot table', () => {
     const db = getDb();
-    expect(db.pragma('user_version', { simple: true })).toBe(12);
+    expect(db.pragma('user_version', { simple: true })).toBe(13);
     expect(
       db
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'reward_snapshot'")
@@ -91,7 +106,7 @@ describe('reward collection (Layer 4)', () => {
 
     _repairForTests(db);
 
-    expect(db.pragma('user_version', { simple: true })).toBe(12);
+    expect(db.pragma('user_version', { simple: true })).toBe(13);
     expect(
       db
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'reward_snapshot'")
@@ -322,5 +337,203 @@ describe('reward collection (Layer 4)', () => {
     expect(() =>
       recordRewardSnapshot({ targetId, metrics: { views: 1 }, capturedAt: 1.5 }),
     ).toThrow('capturedAt must be an integer epoch millisecond timestamp');
+  });
+});
+
+describe('reward collection retirement (V13)', () => {
+  it('defaults to retiring a linked target 7 days after its first snapshot', () => {
+    const targetId = linkArtifact('t1');
+    recordRewardSnapshot({ targetId, capturedAt: Date.now() - 8 * DAY_MS, metrics: { reach: 10 } });
+
+    const { retired } = retireCollectTargets({ projectId: projectId() });
+
+    expect(retired).toEqual([
+      expect.objectContaining({ targetId, reason: 'time', snapshotCount: 1 }),
+    ]);
+    expect(getArtifactRewards('t1')!.targets[0]!.collectStatus).toBe('retired');
+  });
+
+  it('does not retire a target whose first snapshot is still inside the window', () => {
+    const targetId = linkArtifact('t1');
+    recordRewardSnapshot({ targetId, capturedAt: Date.now() - 1 * DAY_MS, metrics: { reach: 10 } });
+
+    expect(retireCollectTargets({ projectId: projectId() }).retired).toEqual([]);
+    expect(getArtifactRewards('t1')!.targets[0]!.collectStatus).toBe('active');
+  });
+
+  it('never auto-retires a target that has no snapshots yet', () => {
+    linkArtifact('t1');
+    expect(retireCollectTargets({ projectId: projectId() }).retired).toEqual([]);
+    expect(getArtifactRewards('t1')!.targets[0]!.collectStatus).toBe('active');
+  });
+
+  it('retires by snapshot count when retireAfterN is fixed at assess time', () => {
+    createArtifact('t1');
+    assessExternalization({
+      artifactId: 't1',
+      status: 'external',
+      evidence: 'Published',
+      targets: [
+        {
+          id: 't1-target',
+          connector: 'x',
+          status: 'linked',
+          locator: '187123456789',
+          retireAfterN: 2,
+        },
+      ],
+    });
+    recordRewardSnapshot({ targetId: 't1-target', capturedAt: Date.now(), metrics: { reach: 1 } });
+
+    // One snapshot is below the count threshold and the fresh snapshot is well
+    // inside the time backstop, so the target stays active.
+    expect(retireCollectTargets({ projectId: projectId() }).retired).toEqual([]);
+
+    recordRewardSnapshot({ targetId: 't1-target', capturedAt: Date.now(), metrics: { reach: 2 } });
+    expect(retireCollectTargets({ projectId: projectId() }).retired).toEqual([
+      expect.objectContaining({ targetId: 't1-target', reason: 'count', snapshotCount: 2 }),
+    ]);
+  });
+
+  it('still retires a count-bound target on the time backstop when the quota is never reached', () => {
+    createArtifact('t1');
+    assessExternalization({
+      artifactId: 't1',
+      status: 'external',
+      evidence: 'Published',
+      targets: [
+        {
+          id: 't1-target',
+          connector: 'x',
+          status: 'linked',
+          locator: '187123456789',
+          retireAfterN: 5,
+        },
+      ],
+    });
+    // Only one of the five requested snapshots was ever collected, but it is now
+    // older than the default window. Before the backstop fix this target would
+    // sit active forever (never invisible, never cleaned up); now it retires.
+    recordRewardSnapshot({
+      targetId: 't1-target',
+      capturedAt: Date.now() - 8 * DAY_MS,
+      metrics: { reach: 1 },
+    });
+
+    expect(retireCollectTargets({ projectId: projectId() }).retired).toEqual([
+      expect.objectContaining({ targetId: 't1-target', reason: 'time', snapshotCount: 1 }),
+    ]);
+  });
+
+  it('honors a short retireAfterMs override', () => {
+    createArtifact('t1');
+    assessExternalization({
+      artifactId: 't1',
+      status: 'external',
+      evidence: 'Published',
+      targets: [
+        {
+          id: 't1-target',
+          connector: 'x',
+          status: 'linked',
+          locator: '187123456789',
+          retireAfterMs: 1000,
+        },
+      ],
+    });
+    recordRewardSnapshot({
+      targetId: 't1-target',
+      capturedAt: Date.now() - 5000,
+      metrics: { reach: 1 },
+    });
+
+    expect(retireCollectTargets({ projectId: projectId() }).retired).toEqual([
+      expect.objectContaining({ targetId: 't1-target', reason: 'time' }),
+    ]);
+  });
+
+  it('retires a non-located target older than the default window', () => {
+    createArtifact('t1');
+    assessExternalization({
+      artifactId: 't1',
+      status: 'external',
+      evidence: 'Assessed but unlocatable',
+      targets: [{ id: 't1-target', connector: 'x', status: 'needs_connector' }],
+    });
+    // Backdate the target's created_at past the 7-day window.
+    getDb()
+      .prepare('UPDATE externalization_target SET created_at = ? WHERE id = ?')
+      .run(Date.now() - 8 * DAY_MS, 't1-target');
+
+    const { retired } = retireUnlocatableTargets({ projectId: projectId() });
+    expect(retired).toEqual([
+      expect.objectContaining({ targetId: 't1-target', reason: 'time', snapshotCount: 0 }),
+    ]);
+    expect(getExternalization('t1')!.targets[0]!.collectStatus).toBe('retired');
+  });
+
+  it('leaves fresh non-located targets and linked targets alone', () => {
+    createArtifact('t1');
+    assessExternalization({
+      artifactId: 't1',
+      status: 'external',
+      evidence: 'Assessed but unlocatable',
+      targets: [{ id: 't1-target', connector: 'x', status: 'needs_connector' }],
+    });
+    // An old linked target is the collect pass's job, not this one.
+    const linkedId = linkArtifact('t2');
+    getDb()
+      .prepare('UPDATE externalization_target SET created_at = ? WHERE id = ?')
+      .run(Date.now() - 30 * DAY_MS, linkedId);
+
+    expect(retireUnlocatableTargets({ projectId: projectId() }).retired).toEqual([]);
+    expect(getExternalization('t1')!.targets[0]!.collectStatus).toBe('active');
+    expect(getArtifactRewards('t2')!.targets[0]!.collectStatus).toBe('active');
+  });
+
+  it('force-retires a single target and drops it from the collectable count', () => {
+    const targetId = linkArtifact('t1');
+    expect(collectActionable()).toBe(1);
+
+    const { retired } = retireCollectTarget(targetId);
+    expect(retired).toMatchObject({ targetId, reason: 'manual' });
+    expect(getArtifactRewards('t1')!.targets[0]!.collectStatus).toBe('retired');
+    expect(collectActionable()).toBe(0);
+
+    // Idempotent: retiring again is a no-op.
+    expect(retireCollectTarget(targetId).retired).toBeNull();
+  });
+
+  it('rejects force-retiring a missing or non-linked target', () => {
+    expect(() => retireCollectTarget('nope')).toThrow('externalization target not found: nope');
+
+    createArtifact('t1');
+    assessExternalization({
+      artifactId: 't1',
+      status: 'external',
+      evidence: 'Blocked',
+      targets: [{ id: 'blocked', connector: 'x', status: 'needs_connector' }],
+    });
+    expect(() => retireCollectTarget('blocked')).toThrow('only linked targets can be retired');
+  });
+
+  it('rejects a non-positive retire override at assess time', () => {
+    createArtifact('t1');
+    expect(() =>
+      assessExternalization({
+        artifactId: 't1',
+        status: 'external',
+        evidence: 'Published',
+        targets: [
+          {
+            id: 't1-target',
+            connector: 'x',
+            status: 'linked',
+            locator: '187123456789',
+            retireAfterN: 0,
+          },
+        ],
+      }),
+    ).toThrow('targets[0].retireAfterN must be a positive integer or null');
   });
 });

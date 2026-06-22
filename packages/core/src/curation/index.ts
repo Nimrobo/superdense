@@ -290,6 +290,23 @@ function serializeInboxSession(row: Record<string, unknown>) {
   };
 }
 
+function serializeInboxThread(row: WorkThreadRow) {
+  const thread = rowToThread(row);
+  return {
+    id: thread.id,
+    threadId: thread.id,
+    projectProfileId: thread.projectProfileId,
+    provisionalTitle: thread.provisionalTitle,
+    summary: thread.summary,
+    status: thread.status,
+    lifecycle: thread.lifecycle,
+    humanOnly: thread.humanOnly,
+    contributorCount: countContributorSessions(thread.id),
+    createdAt: thread.createdAt,
+    updatedAt: thread.updatedAt,
+  };
+}
+
 export function listCurationInbox(opts: { projectId?: string; limit?: number } = {}) {
   const db = getDb();
   const limit = Math.max(0, Math.min(Math.floor(opts.limit ?? 10), 1000));
@@ -356,10 +373,46 @@ export function listCurationInbox(opts: { projectId?: string; limit?: number } =
     deferred: 0,
   };
   for (const row of counts) byStatus[row.status] = row.count;
+
+  // Settled "open" threads: a folder whose notes are all handled (no contributor
+  // session still pending/deferred) but which was never marked ready. The curate
+  // session inbox above only walks loose sessions, so without this such a thread
+  // is in no stage's worklist and sits forever. Threads that still have a waiting
+  // session are excluded — that session already appears above and pulls the agent
+  // back to the thread. An empty thread (no sessions) is settled too, so it
+  // surfaces for a ready-or-discard decision.
+  const threadProjectId = opts.projectId ? canonicalProjectId(opts.projectId) : null;
+  const settledOpenWhere = `wt.status != 'ready'
+        AND wt.artifact_type IS NULL
+        AND (? IS NULL OR wt.project_profile_id = ?)
+        AND NOT EXISTS (
+          SELECT 1
+            FROM work_thread_session wts
+            JOIN sessions s ON s.id = wts.session_id
+           WHERE wts.thread_id = wt.id
+             AND s.curation_status IN ('pending', 'deferred')
+        )`;
+  const threadRows = db
+    .prepare(
+      `SELECT wt.* FROM work_thread wt
+        WHERE ${settledOpenWhere}
+        ORDER BY wt.updated_at DESC, wt.id ASC
+        LIMIT ?`,
+    )
+    .all(threadProjectId, threadProjectId, limit) as WorkThreadRow[];
+  const settledOpenThreads = (
+    db
+      .prepare(`SELECT COUNT(*) AS count FROM work_thread wt WHERE ${settledOpenWhere}`)
+      .get(threadProjectId, threadProjectId) as { count: number }
+  ).count;
+
   return {
-    items: rows.map((row) => ({ kind: 'session' as const, ...serializeInboxSession(row) })),
+    items: [
+      ...rows.map((row) => ({ kind: 'session' as const, ...serializeInboxSession(row) })),
+      ...threadRows.map((row) => ({ kind: 'thread' as const, ...serializeInboxThread(row) })),
+    ],
     limit,
-    remaining: byStatus.pending + byStatus.deferred,
+    remaining: byStatus.pending + byStatus.deferred + settledOpenThreads,
     counts: byStatus,
   };
 }
@@ -860,6 +913,24 @@ export function applyCurationBatch(input: unknown) {
               SET status = 'open', ready_at = NULL, readiness_rationale = ?, updated_at = ?
             WHERE id = ?`,
         ).run(`Reopened: ${rationale}`, now, threadId);
+        continue;
+      }
+      if (type === 'thread.discard') {
+        // Throw away an empty open folder created by mistake. Restricted to
+        // threads with no attached sessions so we can never orphan a consumed
+        // session; a thread with sessions should be marked ready, merged, or
+        // have its sessions detached first.
+        const threadId = expectString(action.threadId, 'threadId');
+        requireMutableThread(threadId);
+        const attached = db
+          .prepare('SELECT COUNT(*) AS count FROM work_thread_session WHERE thread_id = ?')
+          .get(threadId) as { count: number };
+        if (attached.count > 0)
+          throw new Error(
+            `thread ${threadId} has attached sessions; detach them or mark it ready instead of discarding`,
+          );
+        db.prepare('DELETE FROM work_thread_lineage_event WHERE thread_id = ?').run(threadId);
+        db.prepare('DELETE FROM work_thread WHERE id = ?').run(threadId);
         continue;
       }
       if (type === 'session.consume' || type === 'session.skip' || type === 'session.defer') {

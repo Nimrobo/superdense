@@ -14,7 +14,7 @@ import { _resetDbForTests, upsertSession } from '../../db.js';
 import { applyCurationBatch, finalizeArtifact } from '../../curation/index.js';
 import { assessExternalization } from '../../externalization/index.js';
 import { applyProjectProfilePatch, listProjectProfiles } from '../../projects/index.js';
-import { recordRewardSnapshot } from '../../rewards/index.js';
+import { recordRewardSnapshot, retireCollectTarget } from '../../rewards/index.js';
 import { getRewardStatus } from '../index.js';
 import type { Session } from '../../types.js';
 
@@ -198,6 +198,19 @@ describe('reward status', () => {
     });
   });
 
+  it('keeps a linked target collectable after its first snapshot until it retires', () => {
+    createArtifact('t1');
+    const t1 = linkArtifact('t1');
+    recordRewardSnapshot({ targetId: t1, metrics: { views: 10 }, primaryDim: 'views' });
+
+    // A snapshot no longer removes the target from the collect list; it stays
+    // actionable so further points can accrue over its reward window.
+    expect(actionable(getRewardStatus(), 'collect')).toBe(1);
+
+    retireCollectTarget(t1);
+    expect(actionable(getRewardStatus(), 'collect')).toBe(0);
+  });
+
   it('unlocks compare when at least two cohort members have reward snapshots', () => {
     createArtifact('a1');
     createArtifact('a2');
@@ -205,6 +218,10 @@ describe('reward status', () => {
     const t2 = linkArtifact('a2');
     recordRewardSnapshot({ targetId: t1, metrics: { views: 10 }, primaryDim: 'views' });
     recordRewardSnapshot({ targetId: t2, metrics: { views: 20 }, primaryDim: 'views' });
+    // A linked target stays collectable until it retires, so retire both to model
+    // a matured collection window; only then does compare become the next action.
+    retireCollectTarget(t1);
+    retireCollectTarget(t2);
 
     const status = getRewardStatus();
 

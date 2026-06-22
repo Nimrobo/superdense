@@ -178,7 +178,7 @@ describe('sessions', () => {
 
       _migrateForTests(db);
 
-      expect(db.pragma('user_version', { simple: true })).toBe(12);
+      expect(db.pragma('user_version', { simple: true })).toBe(13);
       expect(db.prepare('SELECT project_key FROM sessions WHERE id = ?').get('old')).toEqual({
         project_key: '/Users/x/conductor/workspaces/superdense',
       });
@@ -247,7 +247,7 @@ describe('sessions', () => {
 
       _migrateForTests(db);
 
-      expect(db.pragma('user_version', { simple: true })).toBe(12);
+      expect(db.pragma('user_version', { simple: true })).toBe(13);
 
       const tables = (
         db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{
@@ -337,7 +337,7 @@ describe('sessions', () => {
 
       _migrateForTests(db);
 
-      expect(db.pragma('user_version', { simple: true })).toBe(12);
+      expect(db.pragma('user_version', { simple: true })).toBe(13);
       const sessionCols = (
         db.prepare('PRAGMA table_info(sessions)').all() as Array<{
           name: string;
@@ -385,7 +385,7 @@ describe('sessions', () => {
 
       _migrateForTests(db);
 
-      expect(db.pragma('user_version', { simple: true })).toBe(12);
+      expect(db.pragma('user_version', { simple: true })).toBe(13);
       const tables = (
         db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{
           name: string;
@@ -439,7 +439,7 @@ describe('sessions', () => {
 
       _repairForTests(db);
 
-      expect(db.pragma('user_version', { simple: true })).toBe(12);
+      expect(db.pragma('user_version', { simple: true })).toBe(13);
       expect(
         db.prepare('SELECT project_key, status, last_seen_at FROM project_profile').all(),
       ).toEqual([{ project_key: '/repo', status: 'unprofiled', last_seen_at: 2000 }]);
@@ -717,7 +717,7 @@ describe('sessions', () => {
 
       _migrateForTests(db);
 
-      expect(db.pragma('user_version', { simple: true })).toBe(12);
+      expect(db.pragma('user_version', { simple: true })).toBe(13);
 
       const tables = (
         db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{
@@ -826,7 +826,7 @@ describe('sessions', () => {
 
       _migrateForTests(db);
 
-      expect(db.pragma('user_version', { simple: true })).toBe(12);
+      expect(db.pragma('user_version', { simple: true })).toBe(13);
       for (const table of ['hypothesis', 'experiment', 'experiment_member']) {
         expect(
           db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name = ?").get(table),

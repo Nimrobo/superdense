@@ -5,6 +5,8 @@ export type ExternalizationConclusion = 'not_external' | 'external';
 export type ExternalizationTargetStatus = 'linked' | 'needs_connector' | 'not_found' | 'ambiguous';
 export type ExternalizationStatus = 'unprocessed' | 'not_external' | 'linked' | 'blocked';
 
+export type CollectStatus = 'active' | 'retired';
+
 export interface ExternalizationTarget {
   id: string;
   artifactId: string;
@@ -12,6 +14,10 @@ export interface ExternalizationTarget {
   status: ExternalizationTargetStatus;
   locator: string | null;
   evidence: string | null;
+  collectStatus: CollectStatus;
+  retireAfterMs: number | null;
+  retireAfterN: number | null;
+  retiredAt: number | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -47,6 +53,10 @@ interface ExternalizationTargetRow {
   status: ExternalizationTargetStatus;
   locator: string | null;
   evidence: string | null;
+  collect_status: CollectStatus;
+  retire_after_ms: number | null;
+  retire_after_n: number | null;
+  retired_at: number | null;
   created_at: number;
   updated_at: number;
 }
@@ -114,9 +124,21 @@ function rowToTarget(row: ExternalizationTargetRow): ExternalizationTarget {
     status: row.status,
     locator: row.locator,
     evidence: row.evidence,
+    collectStatus: row.collect_status,
+    retireAfterMs: row.retire_after_ms,
+    retireAfterN: row.retire_after_n,
+    retiredAt: row.retired_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function expectNullablePositiveInt(value: unknown, field: string): number | null {
+  if (value == null) return null;
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`${field} must be a positive integer or null`);
+  }
+  return value;
 }
 
 function deriveStatus(
@@ -196,7 +218,7 @@ export function getExternalization(artifactId: string): ArtifactExternalization 
 }
 
 export function listExternalizations(
-  opts: { status?: string; projectId?: string } = {},
+  opts: { status?: string; projectId?: string; includeRetired?: boolean } = {},
 ): ArtifactExternalization[] {
   if (
     opts.status !== undefined &&
@@ -217,7 +239,15 @@ export function listExternalizations(
     )
     .all(...projectParams) as ArtifactRow[];
   const targets = listTargetsByArtifact();
-  const items = rows.map((row) => rowToExternalization(row, targets.get(row.id) ?? []));
+  // Status is derived from the full target set so it stays accurate, but retired
+  // targets are hidden from the listing by default so collect only sees the
+  // active set it should snapshot. Pass includeRetired to surface them.
+  const items = rows.map((row) => {
+    const full = targets.get(row.id) ?? [];
+    const item = rowToExternalization(row, full);
+    if (opts.includeRetired) return item;
+    return { ...item, targets: full.filter((target) => target.collectStatus === 'active') };
+  });
   return opts.status ? items.filter((item) => item.status === opts.status) : items;
 }
 
@@ -273,7 +303,9 @@ export function listExternalizationInbox(
           )
           OR EXISTS (
             SELECT 1 FROM externalization_target t
-             WHERE t.artifact_id = work_thread.id AND t.status != 'linked'
+             WHERE t.artifact_id = work_thread.id
+               AND t.status != 'linked'
+               AND t.collect_status = 'active'
           )
         )
       )
@@ -350,12 +382,24 @@ export function assessExternalization(input: unknown): {
     if (targetStatus === 'linked' && (!locator || !locator.trim())) {
       throw new Error('linked targets must include a non-empty locator');
     }
+    // Optional reward-collection retirement policy, fixed at assess time. When
+    // omitted, the target falls back to the 7-day time default at retire time.
+    const retireAfterMs = expectNullablePositiveInt(
+      target.retireAfterMs,
+      `targets[${index}].retireAfterMs`,
+    );
+    const retireAfterN = expectNullablePositiveInt(
+      target.retireAfterN,
+      `targets[${index}].retireAfterN`,
+    );
     return {
       id,
       connector,
       status: targetStatus,
       locator,
       evidence: expectNullableString(target.evidence, `targets[${index}].evidence`),
+      retireAfterMs,
+      retireAfterN,
     };
   });
 
@@ -367,6 +411,22 @@ export function assessExternalization(input: unknown): {
       .get(artifactId) as { id: string } | undefined;
     if (!artifact) throw new Error(`artifact not found: ${artifactId}`);
 
+    // Retirement is a hard freeze: once any target has retired from collection,
+    // re-assessment is blocked. It would otherwise delete+reinsert every target
+    // (cascade-wiping reward_snapshot rows and resetting collect_status), so a
+    // reconcile pass would silently destroy a finished collection cycle.
+    const retired = db
+      .prepare(
+        `SELECT COUNT(*) AS count FROM externalization_target
+          WHERE artifact_id = ? AND collect_status = 'retired'`,
+      )
+      .get(artifactId) as { count: number };
+    if (retired.count > 0) {
+      throw new Error(
+        `artifact ${artifactId} has retired collection targets; re-assessment is blocked`,
+      );
+    }
+
     db.prepare(
       `UPDATE work_thread
           SET externalization_status = ?,
@@ -377,8 +437,9 @@ export function assessExternalization(input: unknown): {
     db.prepare('DELETE FROM externalization_target WHERE artifact_id = ?').run(artifactId);
     const insert = db.prepare(
       `INSERT INTO externalization_target (
-         id, artifact_id, connector, status, locator, evidence, created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+         id, artifact_id, connector, status, locator, evidence,
+         collect_status, retire_after_ms, retire_after_n, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)`,
     );
     for (const target of targets) {
       insert.run(
@@ -388,6 +449,8 @@ export function assessExternalization(input: unknown): {
         target.status,
         target.locator,
         target.evidence,
+        target.retireAfterMs,
+        target.retireAfterN,
         now,
         now,
       );

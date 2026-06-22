@@ -75,7 +75,7 @@ beforeEach(() => {
 describe('externalization reconciliation (Layer 4)', () => {
   it('adds V8 folded assessment columns and the target table', () => {
     const db = getDb();
-    expect(db.pragma('user_version', { simple: true })).toBe(12);
+    expect(db.pragma('user_version', { simple: true })).toBe(13);
     const columns = (
       db.prepare('PRAGMA table_info(work_thread)').all() as Array<{ name: string }>
     ).map((row) => row.name);
@@ -101,7 +101,7 @@ describe('externalization reconciliation (Layer 4)', () => {
 
     _repairForTests(db);
 
-    expect(db.pragma('user_version', { simple: true })).toBe(12);
+    expect(db.pragma('user_version', { simple: true })).toBe(13);
     expect(
       db
         .prepare(
@@ -280,6 +280,73 @@ describe('externalization reconciliation (Layer 4)', () => {
       targets: [{ id: 'target-1', status: 'linked', locator: '187123456789' }],
     });
     expect(listExternalizationInbox()).toMatchObject({ remaining: 0 });
+  });
+
+  it('drops retired non-located targets from the reconcile inbox and counts', () => {
+    createArtifact('t1');
+    blockArtifact('t1'); // external + needs_connector -> blocked, surfaced in the inbox
+    expect(listExternalizationInbox()).toMatchObject({
+      remaining: 1,
+      counts: { unprocessed: 0, blocked: 1 },
+    });
+
+    // Retire the non-located target, as `reward next` does after the 7-day window.
+    getDb()
+      .prepare("UPDATE externalization_target SET collect_status = 'retired' WHERE artifact_id = ?")
+      .run('t1');
+
+    expect(listExternalizationInbox()).toMatchObject({
+      remaining: 0,
+      counts: { unprocessed: 0, blocked: 0 },
+    });
+  });
+
+  it('hides retired targets from listExternalizations unless includeRetired is set', () => {
+    createArtifact('t1');
+    assessExternalization({
+      artifactId: 't1',
+      status: 'external',
+      evidence: 'Published',
+      targets: [{ id: 'target-1', connector: 'x', status: 'linked', locator: '187123456789' }],
+    });
+    getDb()
+      .prepare("UPDATE externalization_target SET collect_status = 'retired' WHERE id = ?")
+      .run('target-1');
+
+    // Status stays 'linked' (derived from the full target set) but the retired
+    // target is hidden from the listing by default.
+    const defaulted = listExternalizations({ status: 'linked' });
+    expect(defaulted).toHaveLength(1);
+    expect(defaulted[0]!.targets).toEqual([]);
+
+    const withRetired = listExternalizations({ status: 'linked', includeRetired: true });
+    expect(withRetired[0]!.targets).toEqual([
+      expect.objectContaining({ id: 'target-1', collectStatus: 'retired' }),
+    ]);
+  });
+
+  it('blocks re-assessment once a target has retired from collection', () => {
+    createArtifact('t1');
+    assessExternalization({
+      artifactId: 't1',
+      status: 'external',
+      evidence: 'Published',
+      targets: [{ id: 'target-1', connector: 'x', status: 'linked', locator: '187123456789' }],
+    });
+    getDb()
+      .prepare("UPDATE externalization_target SET collect_status = 'retired' WHERE id = ?")
+      .run('target-1');
+
+    // A delete+reinsert re-assess would cascade-wipe reward snapshots and reset
+    // the lifecycle, so it is refused outright.
+    expect(() =>
+      assessExternalization({
+        artifactId: 't1',
+        status: 'external',
+        evidence: 'Re-published',
+        targets: [{ id: 'target-1', connector: 'x', status: 'linked', locator: '187123456789' }],
+      }),
+    ).toThrow(/retired collection targets/);
   });
 
   it('rejects invalid assessments and threads without extracted artifacts', () => {

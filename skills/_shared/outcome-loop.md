@@ -151,21 +151,18 @@ A compulsory `gate.md` may be operationally empty. Missing `gate.md` is a folder
 
 ## Superdense Preflight
 
-At the start of each run, launch a bounded reward-maintenance subagent when supported. It may mutate local Superdense reward state in bounded batches, but must not perform irreversible external actions.
-
-Resolve this outcome's Superdense project id from `goal.md` target surfaces, the folder project key, or a global `superdense reward status` discovery fallback. For project-sensitive maintenance, run `superdense reward status --project <project-id>`.
-
-Advance each actionable stage in pipeline order for this project: `profile`, `curate`, `finalize`, `reconcile`, then `collect`. Run one bounded batch per actionable stage, re-running scoped status between stages, and stop on blockers.
+At the start of each run, launch the bounded reward preflight specified in `references/preflight.md` (a subagent when supported). It plans the maintenance pipeline in one `superdense reward next --project <project-id> --items 10` call (`profile -> curate -> finalize -> reconcile -> collect`; never `compare`) and advances each step in one bounded batch up to the budgeted item count. `reward next` retires matured targets itself (linked collect targets and non-located reconcile targets past 7 days) and returns the project name and roots, so the preflight needs no separate retire call. It works only on already-external active targets and the current run — it does not drain the internal backlog. See `references/preflight.md` for the external-vs-internal rule and the full job spec.
 
 The preflight returns:
 
-- reward status summary
-- completed maintenance actions
-- relevant cohorts/chains
+- reward status summary and the `reward next` plan
+- completed maintenance actions and the IDs they touched
 - prior artifacts and reward evidence
 - open, supported, refuted, and inconclusive hypotheses relevant to the project
 - due or nearly due experiments and verdict results
-- blockers and unresolved external access
+- blockers and unresolved external access (including any backlog deliberately left undrained)
+
+Comparable cohorts and version chains are surfaced by the main run agent, not the preflight.
 
 ## Lever Map
 
