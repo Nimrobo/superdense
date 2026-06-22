@@ -587,13 +587,7 @@ function RewardExperimentsSection({
   );
 }
 
-function ProjectDetail({
-  item,
-  onBack,
-}: {
-  item: RewardProjectOverview;
-  onBack: () => void;
-}) {
+function ProjectDetail({ item, onBack }: { item: RewardProjectOverview; onBack: () => void }) {
   const [hypotheses, setHypotheses] = useState<Hypothesis[]>([]);
   const [experiments, setExperiments] = useState<Experiment[]>([]);
   const [selectedHypothesisId, setSelectedHypothesisId] = useState<string | null>(null);
@@ -806,12 +800,7 @@ export function RewardView({ onOpenSession }: Props) {
   if (detail?.kind === 'project' && overview) {
     const item = overview.projects.find((project) => project.project.id === detail.id);
     if (item) {
-      return (
-        <ProjectDetail
-          item={item}
-          onBack={() => setDetail(null)}
-        />
-      );
+      return <ProjectDetail item={item} onBack={() => setDetail(null)} />;
     }
   }
 

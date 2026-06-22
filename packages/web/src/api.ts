@@ -677,9 +677,7 @@ export const api = {
       `/api/projects/${encodeURIComponent(id)}`,
     ),
   getProjectRewardOverview: (id: string) =>
-    j<{ item: RewardProjectOverview }>(
-      `/api/projects/${encodeURIComponent(id)}/reward-overview`,
-    ),
+    j<{ item: RewardProjectOverview }>(`/api/projects/${encodeURIComponent(id)}/reward-overview`),
   setProjectAttention: (id: string, needed: boolean, reasons?: string[]) =>
     j<{ project: Project }>(`/api/projects/${encodeURIComponent(id)}/attention`, {
       method: 'PATCH',

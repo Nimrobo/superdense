@@ -124,9 +124,7 @@ const experiment: apiModule.Experiment = {
   verdict: 'supported',
   createdAt: 1,
   resolvedAt: 10,
-  members: [
-    { experimentId: 'e1', runId: 'run-1', artifactId: 'a1', role: 'rep', addedAt: 2 },
-  ],
+  members: [{ experimentId: 'e1', runId: 'run-1', artifactId: 'a1', role: 'rep', addedAt: 2 }],
 };
 
 const writeText = vi.fn();

@@ -160,9 +160,21 @@ const overview: apiModule.RewardOverview = {
       status: {
         projectId: 'p1',
         stages: [
-          { key: 'profile', label: 'Profile', unit: 'projects', actionable: 0, skill: 'profile.md' },
+          {
+            key: 'profile',
+            label: 'Profile',
+            unit: 'projects',
+            actionable: 0,
+            skill: 'profile.md',
+          },
           { key: 'curate', label: 'Curate', unit: 'sessions', actionable: 3, skill: 'curate.md' },
-          { key: 'finalize', label: 'Finalize', unit: 'threads', actionable: 1, skill: 'finalize.md' },
+          {
+            key: 'finalize',
+            label: 'Finalize',
+            unit: 'threads',
+            actionable: 1,
+            skill: 'finalize.md',
+          },
           {
             key: 'reconcile',
             label: 'Reconcile',
@@ -230,9 +242,7 @@ const experiment: apiModule.Experiment = {
   verdict: 'supported',
   createdAt: 1,
   resolvedAt: 10,
-  members: [
-    { experimentId: 'e1', runId: 'run-1', artifactId: 'a1', role: 'rep', addedAt: 2 },
-  ],
+  members: [{ experimentId: 'e1', runId: 'run-1', artifactId: 'a1', role: 'rep', addedAt: 2 }],
 };
 
 const artifactDetail: {

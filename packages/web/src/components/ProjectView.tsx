@@ -195,9 +195,7 @@ function HypothesesSection({
   return (
     <section className="card project-reward-section">
       <div className="card-title">Hypotheses</div>
-      <div className="muted small">
-        Select a hypothesis row to inspect its experiments.
-      </div>
+      <div className="muted small">Select a hypothesis row to inspect its experiments.</div>
       {loading && hypotheses.length === 0 ? (
         <div className="empty compact">Loading hypotheses...</div>
       ) : hypotheses.length === 0 ? (
@@ -219,11 +217,7 @@ function HypothesesSection({
   );
 }
 
-function ExperimentCard({
-  experiment,
-}: {
-  experiment: Experiment;
-}) {
+function ExperimentCard({ experiment }: { experiment: Experiment }) {
   const reason = observedReason(experiment);
   const checks = experiment.observedSummary?.checks;
   return (
@@ -280,9 +274,7 @@ function ExperimentsSection({
   return (
     <section className="card project-reward-section">
       <div className="card-title">Experiments</div>
-      <div className="muted small">
-        Experiments for the selected hypothesis.
-      </div>
+      <div className="muted small">Experiments for the selected hypothesis.</div>
       {loading ? (
         <div className="empty compact">Loading experiments...</div>
       ) : !selectedHypothesis ? (
@@ -409,7 +401,9 @@ export function ProjectView({ id, onBack }: Props) {
             This covered project record redirects to its canonical profile.
           </div>
         )}
-        {detailError && <div className="error">Failed to load project reward data: {detailError}</div>}
+        {detailError && (
+          <div className="error">Failed to load project reward data: {detailError}</div>
+        )}
 
         <PipelineSection
           overview={rewardOverview}
