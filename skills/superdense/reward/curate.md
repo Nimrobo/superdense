@@ -18,6 +18,8 @@ Review one bounded batch of indexed root sessions. This is mutable Layer 3A cura
 
    Use the project id reported by `superdense reward status`. Explicitly marked roots come first, then deliverable roots and the remaining new, changed, deferred, and historical backlog.
 
+   Inbox items carry a `kind`. `kind: "session"` items are loose roots to triage as usual. `kind: "thread"` items are **settled open threads** — folders whose sessions are all handled but which were never marked ready, so nothing else would surface them. For each, attach any newly relevant session, then resolve it: `thread.mark-ready` when it represents one identifiable output, `thread.merge` into a sibling, or `thread.discard` when it is an empty folder created by mistake (no attached sessions). Leaving it open is not a resolution — it will keep returning.
+
 3. Review likely neighbors together. Use this exact wording:
 
    > These sessions may be related. Review them together.
@@ -88,6 +90,7 @@ the human editing in the summary or readiness rationale. Do not set
 - `thread.split`
 - `thread.mark-ready`
 - `thread.reopen`
+- `thread.discard`
 - `lineage.attach`
 - `lineage.retract`
 - `session.consume`

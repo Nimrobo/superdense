@@ -167,6 +167,81 @@ describe('curation inbox', () => {
   });
 });
 
+describe('settled open threads in the curation inbox', () => {
+  const settleThread = (threadId: string, sessionId: string) => {
+    upsertSession(session(sessionId, 100));
+    applyCurationBatch({
+      actions: [
+        {
+          type: 'thread.create',
+          id: threadId,
+          projectProfileId: projectId(),
+          provisionalTitle: 'Feature',
+        },
+        { type: 'thread.attach', threadId, sessionId, role: 'contributor' },
+        { type: 'session.consume', sessionId },
+      ],
+    });
+  };
+
+  it('surfaces an open thread whose sessions are all handled and counts it as remaining', () => {
+    settleThread('t1', 'codex:a');
+
+    const inbox = listCurationInbox({ projectId: projectId(), limit: 10 });
+    expect(inbox.items).toEqual([
+      expect.objectContaining({ kind: 'thread', id: 't1', status: 'open' }),
+    ]);
+    expect(inbox.remaining).toBe(1);
+  });
+
+  it('excludes an open thread that still has a pending session', () => {
+    settleThread('t1', 'codex:a');
+    upsertSession(session('codex:b', 90));
+    applyCurationBatch({
+      actions: [{ type: 'thread.attach', threadId: 't1', sessionId: 'codex:b', role: 'evidence' }],
+    });
+
+    const inbox = listCurationInbox({ projectId: projectId(), limit: 10 });
+    expect(inbox.items.filter((item) => item.kind === 'thread')).toEqual([]);
+    // The pending session still shows on its own; the thread is not double-flagged.
+    expect(inbox.remaining).toBe(1);
+  });
+
+  it('drops the thread out of the inbox once it is marked ready', () => {
+    settleThread('t1', 'codex:a');
+    applyCurationBatch({
+      actions: [{ type: 'thread.mark-ready', threadId: 't1', rationale: 'identifiable output' }],
+    });
+
+    expect(listCurationInbox({ projectId: projectId(), limit: 10 }).remaining).toBe(0);
+  });
+
+  it('discards an empty open thread and refuses to discard one with attached sessions', () => {
+    // settleThread seeds the project profile and a thread with a consumed
+    // contributor; that thread cannot be discarded without orphaning the session.
+    settleThread('t1', 'codex:a');
+    expect(() =>
+      applyCurationBatch({ actions: [{ type: 'thread.discard', threadId: 't1' }] }),
+    ).toThrow(/has attached sessions/);
+    expect(getWorkThread('t1')).not.toBeNull();
+
+    // An empty open thread (created by mistake) can be discarded.
+    applyCurationBatch({
+      actions: [
+        {
+          type: 'thread.create',
+          id: 'empty',
+          projectProfileId: projectId(),
+          provisionalTitle: 'Created by mistake',
+        },
+      ],
+    });
+    expect(getWorkThread('empty')).not.toBeNull();
+    applyCurationBatch({ actions: [{ type: 'thread.discard', threadId: 'empty' }] });
+    expect(getWorkThread('empty')).toBeNull();
+  });
+});
+
 describe('curation actions', () => {
   it('allows one session to belong to multiple work threads', () => {
     upsertSession(session('codex:a', 100));
@@ -393,7 +468,7 @@ describe('artifact finalization (Layer 3B)', () => {
     _repairForTests(db);
     _repairForTests(db);
 
-    expect(db.pragma('user_version', { simple: true })).toBe(12);
+    expect(db.pragma('user_version', { simple: true })).toBe(13);
     expect(getWorkThread('t1')).toMatchObject({
       lifecycle: 'ready',
       readinessRationale: 'Migrated from pre-V10 finalized thread',
@@ -769,8 +844,12 @@ describe('artifact finalization (Layer 3B)', () => {
     });
 
     upsertSession(session('codex:older', 100, { createdAt: 100 }));
+    // codex:newer is consumed into t1, so it leaves the loose-session inbox; t1
+    // is now a settled open thread (its only session is handled but it was never
+    // marked ready), so it surfaces as a thread item to be readied or discarded.
     expect(listCurationInbox({ limit: 10 }).items).toEqual([
       expect.objectContaining({ kind: 'session', id: 'codex:older' }),
+      expect.objectContaining({ kind: 'thread', id: 't1' }),
     ]);
 
     applyCurationBatch({
@@ -785,7 +864,11 @@ describe('artifact finalization (Layer 3B)', () => {
         { type: 'session.consume', sessionId: 'codex:older' },
       ],
     });
-    expect(listCurationInbox({ limit: 10 }).items).toEqual([]);
+    // Both sessions are now consumed, so no loose sessions remain; t1 stays a
+    // settled open thread awaiting a ready-or-discard decision.
+    expect(listCurationInbox({ limit: 10 }).items).toEqual([
+      expect.objectContaining({ kind: 'thread', id: 't1' }),
+    ]);
     expect(getWorkThread('t1')?.sessions).toEqual([
       {
         sessionId: 'codex:older',

@@ -56,6 +56,7 @@ vi.mock('@nimrobo/superdense-core', () => ({
   getProjectProfileResolution: vi.fn(),
   getQuery: vi.fn(),
   getRewardStatus: vi.fn(),
+  getRewardNext: vi.fn(),
   getVersionChain: vi.fn(),
   getSession: vi.fn(),
   getSessionChildren: vi.fn(),
@@ -88,6 +89,8 @@ vi.mock('@nimrobo/superdense-core', () => ({
   openExperiment: vi.fn(),
   recordRewardSnapshot: vi.fn(),
   recordRewardSnapshotBatch: vi.fn(),
+  retireCollectTarget: vi.fn(),
+  retireCollectTargets: vi.fn(),
   recordHypothesis: vi.fn(),
   repairDatabase: vi.fn(),
   renderExperimentVerdict: vi.fn(),
@@ -187,6 +190,10 @@ const externalization: core.ArtifactExternalization = {
       status: 'needs_connector' as const,
       locator: '187123456789',
       evidence: 'X connector is not installed',
+      collectStatus: 'active' as const,
+      retireAfterMs: null,
+      retireAfterN: null,
+      retiredAt: null,
       createdAt: 2,
       updatedAt: 2,
     },
@@ -241,6 +248,7 @@ const rewards: core.ArtifactRewards = {
       targetId: 'target-1',
       connector: 'x',
       locator: '187123456789',
+      collectStatus: 'active' as const,
       latest: {
         id: 'reward-2',
         targetId: 'target-1',
@@ -1739,6 +1747,83 @@ describe('superdense cli agent commands', () => {
     expect(json(out.stdout[0]!)).toEqual(rewardStatus);
   });
 
+  it('plans the next maintenance items with reward next', async () => {
+    const plan = {
+      projectId: 'p1',
+      projectName: 'Project One',
+      projectRoots: ['/repo'],
+      lastRunAt: null,
+      steps: [
+        {
+          stage: 'reconcile',
+          actionable: 2,
+          take: 2,
+          command: 'Read superdense/reward/reconcile.md',
+        },
+      ],
+    };
+    vi.mocked(core.getRewardNext).mockReturnValue(plan as never);
+    const out = io();
+
+    // --items above the old default must pass through uncapped (it was once
+    // clamped to 10 by a stray max argument).
+    await runCli(['reward', 'next', '--project', 'p1', '--items', '25'], out.io);
+
+    expect(core.getRewardNext).toHaveBeenCalledWith({ projectId: 'p1', items: 25 });
+    expect(json(out.stdout[0]!)).toEqual(plan);
+  });
+
+  it('defaults reward next to a 10-item budget', async () => {
+    vi.mocked(core.getRewardNext).mockReturnValue({
+      projectId: 'p1',
+      projectName: null,
+      projectRoots: [],
+      lastRunAt: null,
+      steps: [],
+    } as never);
+
+    await runCli(['reward', 'next', '--project', 'p1'], io().io);
+
+    expect(core.getRewardNext).toHaveBeenCalledWith({ projectId: 'p1', items: 10 });
+  });
+
+  it('requires a project for reward next', async () => {
+    const out = io();
+    await expect(runCli(['reward', 'next'], out.io)).rejects.toThrow(/project/i);
+    expect(core.getRewardNext).not.toHaveBeenCalled();
+  });
+
+  it('retires a single collect target given both target id and project', async () => {
+    vi.mocked(core.retireCollectTarget).mockReturnValue({ ok: true, retired: null } as never);
+    const out = io();
+
+    await runCli(['reward', 'collect', 'retire', 'target-1', '--project', 'p1'], out.io);
+
+    expect(core.retireCollectTarget).toHaveBeenCalledWith('target-1');
+    expect(json(out.stdout[0]!)).toEqual({ ok: true, retired: null });
+  });
+
+  it('requires both project and target id for reward collect retire', async () => {
+    await expect(
+      runCli(['reward', 'collect', 'retire', 'target-1'], io().io),
+    ).rejects.toThrow(/project/i);
+    await expect(
+      runCli(['reward', 'collect', 'retire', '--project', 'p1'], io().io),
+    ).rejects.toThrow(/target/i);
+    expect(core.retireCollectTarget).not.toHaveBeenCalled();
+  });
+
+  it('prints help for reward next and reward collect retire', async () => {
+    for (const command of [
+      ['reward', 'next', '--help'],
+      ['reward', 'collect', 'retire', '--help'],
+    ]) {
+      const out = io();
+      await runCli(command, out.io);
+      expect(out.stdout.join('\n')).toContain('Usage: superdense reward');
+    }
+  });
+
   it('fetches live reward artifact docs from the default base URL', async () => {
     vi.mocked(fetch).mockResolvedValue({
       ok: true,
@@ -1946,9 +2031,12 @@ describe('superdense cli agent commands', () => {
     );
     expect(existsSync(join(claudeSkill, 'agents', 'openai.yaml'))).toBe(true);
     expect(existsSync(join(codexSkill, 'agents', 'openai.yaml'))).toBe(true);
+    expect(readFileSync(join(claudeSkill, 'references', 'preflight.md'), 'utf8')).toContain(
+      'superdense reward next',
+    );
     expect(json(readFileSync(join(claudeSkill, '.superdense-install.json'), 'utf8'))).toMatchObject(
       {
-        version: '0.3.0',
+        version: '0.4.0',
         scope: 'global',
       },
     );

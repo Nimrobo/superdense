@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { getDb, withImmediateTransaction } from '../db.js';
+import { DEFAULT_RETIRE_AFTER_MS, getDb, withImmediateTransaction } from '../db.js';
+import { getProjectProfileResolution } from '../projects/index.js';
 
 // Layer 4 reward collection. Superdense never executes connectors: an agent
 // gathers current metrics with whatever tool it judges best and reports a
@@ -19,10 +20,13 @@ export interface RewardSnapshot {
   createdAt: number;
 }
 
+export type CollectStatus = 'active' | 'retired';
+
 export interface RewardTargetSeries {
   targetId: string;
   connector: string;
   locator: string | null;
+  collectStatus: CollectStatus;
   latest: RewardSnapshot | null;
   snapshots: RewardSnapshot[];
 }
@@ -47,6 +51,7 @@ interface LinkedTargetRow {
   id: string;
   connector: string;
   locator: string | null;
+  collect_status: CollectStatus;
 }
 
 function expectObject(value: unknown, field: string): Record<string, unknown> {
@@ -230,7 +235,7 @@ export function getArtifactRewards(artifactId: string): ArtifactRewards | null {
 
   const linkedTargets = db
     .prepare(
-      `SELECT id, connector, locator FROM externalization_target
+      `SELECT id, connector, locator, collect_status FROM externalization_target
         WHERE artifact_id = ? AND status = 'linked'
         ORDER BY created_at, id`,
     )
@@ -242,10 +247,221 @@ export function getArtifactRewards(artifactId: string): ArtifactRewards | null {
       targetId: target.id,
       connector: target.connector,
       locator: target.locator,
+      collectStatus: target.collect_status,
       latest: snapshots[0] ?? null,
       snapshots,
     };
   });
 
   return { artifactId, targets };
+}
+
+// Reward-collection lifecycle. A linked target stays collectable until it
+// retires; retirement is the only thing that removes it from the collect list,
+// so the live set stays bounded without targets lingering forever. A target's
+// effective policy is:
+//   - count quota (retire_after_n set): retire early once snapshot_count >= n
+//   - time backstop (always applies): retire once the first snapshot is
+//     retire_after_ms old, or DEFAULT_RETIRE_AFTER_MS old when no override.
+// Whichever triggers first wins. The time backstop applies even when a count
+// quota is set, so a target whose quota is never filled still retires instead of
+// sitting active forever. A target with no snapshots is never retired
+// automatically (the clock starts at the first snapshot).
+export type RetireReason = 'time' | 'count' | 'manual';
+
+export interface RetiredTarget {
+  targetId: string;
+  artifactId: string;
+  connector: string;
+  snapshotCount: number;
+  firstCapturedAt: number | null;
+  reason: RetireReason;
+}
+
+interface RetireCandidateRow {
+  id: string;
+  artifact_id: string;
+  connector: string;
+  retire_after_ms: number | null;
+  retire_after_n: number | null;
+  first_captured_at: number | null;
+  snapshot_count: number;
+}
+
+function evaluateRetirement(row: RetireCandidateRow, now: number): RetireReason | null {
+  if (row.snapshot_count <= 0 || row.first_captured_at == null) return null;
+  if (row.retire_after_n != null && row.snapshot_count >= row.retire_after_n) {
+    return 'count';
+  }
+  // Time backstop always applies (default unless retire_after_ms overrides), so
+  // a target whose count quota is never reached still retires by age.
+  const effectiveMs = row.retire_after_ms ?? DEFAULT_RETIRE_AFTER_MS;
+  if (now - row.first_captured_at >= effectiveMs) {
+    return 'time';
+  }
+  return null;
+}
+
+export function retireCollectTargets(opts: { projectId?: string } = {}): {
+  ok: true;
+  retired: RetiredTarget[];
+} {
+  const db = getDb();
+  const canonicalProjectId = opts.projectId
+    ? (getProjectProfileResolution(opts.projectId)?.project.id ??
+      (() => {
+        throw new Error(`project not found: ${opts.projectId}`);
+      })())
+    : null;
+  const now = Date.now();
+  return withImmediateTransaction(db, () => {
+    const rows = db
+      .prepare(
+        `SELECT et.id              AS id,
+                et.artifact_id      AS artifact_id,
+                et.connector        AS connector,
+                et.retire_after_ms  AS retire_after_ms,
+                et.retire_after_n   AS retire_after_n,
+                MIN(rs.captured_at) AS first_captured_at,
+                COUNT(rs.id)        AS snapshot_count
+           FROM externalization_target et
+           JOIN work_thread wt ON wt.id = et.artifact_id
+           LEFT JOIN reward_snapshot rs ON rs.target_id = et.id
+          WHERE et.status = 'linked'
+            AND et.collect_status = 'active'
+            AND (? IS NULL OR wt.project_profile_id = ?)
+          GROUP BY et.id`,
+      )
+      .all(canonicalProjectId, canonicalProjectId) as RetireCandidateRow[];
+
+    const update = db.prepare(
+      `UPDATE externalization_target
+          SET collect_status = 'retired', retired_at = ?, updated_at = ?
+        WHERE id = ? AND collect_status = 'active'`,
+    );
+    const retired: RetiredTarget[] = [];
+    for (const row of rows) {
+      const reason = evaluateRetirement(row, now);
+      if (!reason) continue;
+      update.run(now, now, row.id);
+      retired.push({
+        targetId: row.id,
+        artifactId: row.artifact_id,
+        connector: row.connector,
+        snapshotCount: row.snapshot_count,
+        firstCapturedAt: row.first_captured_at,
+        reason,
+      });
+    }
+    return { ok: true, retired };
+  });
+}
+
+// Reconcile-stage hygiene. A non-located target (the artifact was assessed as
+// external but the connector match was never resolved: needs_connector,
+// not_found, or ambiguous) is retired once it has been unlocatable for
+// DEFAULT_RETIRE_AFTER_MS, so it stops resurfacing in the reconcile inbox
+// forever. Unlike collect retirement this is age-based on created_at (there are
+// no snapshots to anchor on). Artifacts that were never assessed (no target
+// row) are deliberately left alone.
+export function retireUnlocatableTargets(opts: { projectId?: string } = {}): {
+  ok: true;
+  retired: RetiredTarget[];
+} {
+  const db = getDb();
+  const canonicalProjectId = opts.projectId
+    ? (getProjectProfileResolution(opts.projectId)?.project.id ??
+      (() => {
+        throw new Error(`project not found: ${opts.projectId}`);
+      })())
+    : null;
+  const now = Date.now();
+  return withImmediateTransaction(db, () => {
+    const rows = db
+      .prepare(
+        `SELECT et.id          AS id,
+                et.artifact_id  AS artifact_id,
+                et.connector    AS connector,
+                et.created_at   AS created_at
+           FROM externalization_target et
+           JOIN work_thread wt ON wt.id = et.artifact_id
+          WHERE et.status IN ('needs_connector', 'not_found', 'ambiguous')
+            AND et.collect_status = 'active'
+            AND (? IS NULL OR wt.project_profile_id = ?)`,
+      )
+      .all(canonicalProjectId, canonicalProjectId) as Array<{
+      id: string;
+      artifact_id: string;
+      connector: string;
+      created_at: number;
+    }>;
+
+    const update = db.prepare(
+      `UPDATE externalization_target
+          SET collect_status = 'retired', retired_at = ?, updated_at = ?
+        WHERE id = ? AND collect_status = 'active'`,
+    );
+    const retired: RetiredTarget[] = [];
+    for (const row of rows) {
+      if (now - row.created_at < DEFAULT_RETIRE_AFTER_MS) continue;
+      update.run(now, now, row.id);
+      retired.push({
+        targetId: row.id,
+        artifactId: row.artifact_id,
+        connector: row.connector,
+        snapshotCount: 0,
+        firstCapturedAt: null,
+        reason: 'time',
+      });
+    }
+    return { ok: true, retired };
+  });
+}
+
+export function retireCollectTarget(targetId: string): {
+  ok: true;
+  retired: RetiredTarget | null;
+} {
+  const db = getDb();
+  const now = Date.now();
+  return withImmediateTransaction(db, () => {
+    const row = db
+      .prepare(
+        `SELECT et.id              AS id,
+                et.artifact_id      AS artifact_id,
+                et.connector        AS connector,
+                et.status           AS status,
+                et.collect_status   AS collect_status,
+                MIN(rs.captured_at) AS first_captured_at,
+                COUNT(rs.id)        AS snapshot_count
+           FROM externalization_target et
+           LEFT JOIN reward_snapshot rs ON rs.target_id = et.id
+          WHERE et.id = ?
+          GROUP BY et.id`,
+      )
+      .get(targetId) as
+      | (RetireCandidateRow & { status: string; collect_status: CollectStatus })
+      | undefined;
+    if (!row) throw new Error(`externalization target not found: ${targetId}`);
+    if (row.status !== 'linked') {
+      throw new Error(`only linked targets can be retired: ${targetId}`);
+    }
+    if (row.collect_status === 'retired') return { ok: true, retired: null };
+    db.prepare(
+      `UPDATE externalization_target
+          SET collect_status = 'retired', retired_at = ?, updated_at = ?
+        WHERE id = ?`,
+    ).run(now, now, targetId);
+    return {
+      ok: true,
+      retired: {
+        targetId: row.id,
+        artifactId: row.artifact_id,
+        connector: row.connector,
+        snapshotCount: row.snapshot_count,
+        firstCapturedAt: row.first_captured_at,
+        reason: 'manual',
+      },
+    };
+  });
 }

@@ -43,6 +43,7 @@ import {
   getCohort,
   getVersionChain,
   getRewardStatus,
+  getRewardNext,
   listExperiments,
   listHypotheses,
   listCohorts,
@@ -85,6 +86,7 @@ import {
   openExperiment,
   recordRewardSnapshot,
   recordRewardSnapshotBatch,
+  retireCollectTarget,
   recordHypothesis,
   repairDatabase,
   renderExperimentVerdict,
@@ -127,7 +129,7 @@ const REQUIRED_STUDIO_SKILLS = [
 const SHARED_SKILLS_DIR = '_shared';
 const SHARED_SKILL_REFERENCES: Record<string, string[]> = {
   'outcome-setup': ['outcome-loop.md'],
-  'outcome-run': ['outcome-loop.md'],
+  'outcome-run': ['outcome-loop.md', 'preflight.md'],
   'outcome-update': ['outcome-loop.md'],
 };
 const REWARD_DOC_SECTIONS = ['usage', 'install', 'troubleshoot'] as const;
@@ -356,6 +358,7 @@ function compactExternalization(externalization: ArtifactExternalization) {
       id: target.id,
       connector: target.connector,
       status: target.status,
+      collectStatus: target.collectStatus,
       locator: target.locator,
       evidence: target.evidence ? truncateText(target.evidence) : null,
     })),
@@ -382,6 +385,7 @@ function compactRewards(rewards: ArtifactRewards) {
       targetId: target.targetId,
       connector: target.connector,
       locator: target.locator,
+      collectStatus: target.collectStatus,
       latest: compactRewardSnapshot(target.latest),
       snapshotCount: target.snapshots.length,
       metricKeys: [
@@ -1223,6 +1227,7 @@ async function handleExternalization(
     const items = listExternalizations({
       ...(status ? { status } : {}),
       ...(typeof flags.project === 'string' ? { projectId: flags.project } : {}),
+      ...(flags['include-retired'] === true ? { includeRetired: true } : {}),
     });
     printJson(
       { items: wantsFull(flags) ? items : items.map((item) => compactExternalization(item)) },
@@ -1373,7 +1378,62 @@ async function handleReward(
     printJson(getRewardStatus({ projectId }), io);
     return true;
   }
+  if (action === 'next') {
+    if (flags.help === true) {
+      return printCommandHelp(
+        [
+          'Usage: superdense reward next --project <project-id> [--items <n>]',
+          '',
+          'Plans the next maintenance items (profile -> curate -> finalize ->',
+          'reconcile -> collect) in one call so the preflight need not re-run',
+          'status between stages. --items budgets actionable items across the',
+          'pipeline (default 10), walked stage by stage; each step reports its',
+          'take. compare is excluded; it is the run agent’s job. Retires matured',
+          'linked and non-located targets first, then stamps the project’s',
+          'reward_next_run_at and returns the prior value plus project name/roots.',
+        ],
+        io,
+      );
+    }
+    const projectId = typeof flags.project === 'string' ? flags.project : undefined;
+    if (!projectId) throw new Error('reward next requires --project <project-id>');
+    const items = intFlag(flags, 'items', 10, 1000);
+    printJson(getRewardNext({ projectId, items }), io);
+    return true;
+  }
+  if (action === 'collect') {
+    return handleRewardCollect(args.slice(1), flags, io);
+  }
   throw new Error(`unknown reward command: ${args.join(' ') || '(none)'}`);
+}
+
+async function handleRewardCollect(
+  args: string[],
+  flags: Record<string, string | boolean>,
+  io: CliIo,
+): Promise<boolean> {
+  const action = args[0];
+  if (action === 'retire') {
+    const targetId = args[1];
+    if (flags.help === true) {
+      return printCommandHelp(
+        [
+          'Usage: superdense reward collect retire <target-id> --project <project-id>',
+          '',
+          'Retires one linked target so it drops out of the collectable set.',
+          'Both the target id and --project are required.',
+        ],
+        io,
+      );
+    }
+    const projectId = typeof flags.project === 'string' ? flags.project : undefined;
+    if (!targetId || !projectId) {
+      throw new Error('reward collect retire requires --project <project-id> and <target-id>');
+    }
+    printJson(retireCollectTarget(targetId), io);
+    return true;
+  }
+  throw new Error(`unknown reward collect command: ${args.join(' ') || '(none)'}`);
 }
 
 async function handleHypothesis(

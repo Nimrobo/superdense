@@ -38,7 +38,7 @@ export interface RewardStatus {
   nextAction: RewardStatusNextAction | null;
 }
 
-const STAGE_META: Record<
+export const STAGE_META: Record<
   RewardStatusStageKey,
   Pick<RewardStatusStage, 'label' | 'unit' | 'skill'>
 > = {
@@ -58,8 +58,13 @@ function stage(key: RewardStatusStageKey, actionable: number): RewardStatusStage
   return { key, ...STAGE_META[key], actionable };
 }
 
-function stageCommand(key: RewardStatusStageKey, projectId?: string): string {
+export function stageCommand(
+  key: RewardStatusStageKey,
+  projectId?: string,
+  limit?: number,
+): string {
   const projectFlag = projectId ? ` --project ${projectId}` : '';
+  const limitFlag = ` --limit ${limit ?? 10}`;
   let startCommand: string;
   switch (key) {
     case 'profile':
@@ -68,13 +73,13 @@ function stageCommand(key: RewardStatusStageKey, projectId?: string): string {
         : 'superdense project list --needs-action';
       break;
     case 'curate':
-      startCommand = `superdense curation inbox${projectFlag} --limit 10`;
+      startCommand = `superdense curation inbox${projectFlag}${limitFlag}`;
       break;
     case 'finalize':
-      startCommand = `superdense artifact inbox${projectFlag} --limit 10`;
+      startCommand = `superdense artifact inbox${projectFlag}${limitFlag}`;
       break;
     case 'reconcile':
-      startCommand = `superdense externalization inbox${projectFlag} --limit 10`;
+      startCommand = `superdense externalization inbox${projectFlag}${limitFlag}`;
       break;
     case 'collect':
       startCommand = `superdense externalization list${projectFlag} --status linked`;
@@ -110,7 +115,10 @@ function countCollectableTargets(projectId: string | undefined): number {
   for (const artifact of listArtifacts({ projectId })) {
     const rewards = getArtifactRewards(artifact.id);
     if (!rewards) continue;
-    count += rewards.targets.filter((target) => target.snapshots.length === 0).length;
+    // `getArtifactRewards` already returns only linked targets, so an active
+    // target is collectable regardless of how many snapshots it has — it stays
+    // in the list until it retires (by count quota or the time backstop).
+    count += rewards.targets.filter((target) => target.collectStatus === 'active').length;
   }
   return count;
 }

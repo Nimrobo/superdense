@@ -4,13 +4,14 @@ Collect how externalized artifacts are performing. For each linked external iden
 
 ## Workflow
 
-1. Find the linked targets that can be collected. Reconciliation already attached an authoritative `locator` to each:
+1. Retire matured targets first so you never re-collect a target whose reward window has closed, then find the active linked targets that can be collected. Scope by project:
 
    ```bash
-   superdense externalization list --status linked
+   superdense reward collect retire --project <id>
+   superdense externalization list --project <id> --status linked
    ```
 
-   Each artifact's `targets[]` lists `{ id, connector, locator }`. The target `id` is what you record against.
+   `reward collect retire` marks matured targets `retired` (per-target override, else the 7-day default). `externalization list` is **active-only by default** — retired targets are hidden unless you pass `--include-retired`. Each artifact's `targets[]` lists `{ id, connector, locator, collectStatus }`; collect only these `active` targets. The target `id` is what you record against. (Inside an outcome-run preflight, `reward next` has already run retirement, so you can skip the explicit `reward collect retire` call.)
 
 2. For each linked target, run `superdense reward docs connectors --connector <name>` for usage guidance, then gather its current real-world metrics using whatever tool you have: a platform CLI, the provider's own API, or the open web. If a connector fetch or collection attempt fails, run `superdense reward docs connectors --connector <name> --section troubleshoot`. Superdense neither installs nor runs connectors; you collect the numbers. The target's `connector` is just a free-text platform label.
 
@@ -44,7 +45,9 @@ Collect how externalized artifacts are performing. For each linked external iden
 
 ## Rules
 
-- Only `linked` targets are collectable. A snapshot against a non-linked target is rejected.
+- Only `active` `linked` targets are collectable. A snapshot against a non-linked target is rejected; a `retired` target has matured out of collection — skip it instead of recording.
+- An active target stays collectable until it retires — having a prior snapshot does **not** remove it. Record a fresh snapshot for every active target you can gather numbers for, even ones that already have points; that is how a multi-point series accrues over a target's reward window. Retirement (count quota or the time backstop), not the presence of a snapshot, is what ends collection.
+- A target retires once its reward window matures: 7 days after its first snapshot by default, or per the `retireAfterMs` / `retireAfterN` override fixed at externalization-assess time. Run `superdense reward collect retire --project <id>` to apply the policy, or `superdense reward collect retire <target-id>` to force one.
 - `metrics` must be a non-empty object of finite numbers. Keep richer provider detail in `evidence` or `source`, not in `metrics`.
 - `primaryDim`, when set, must be one of the keys in `metrics`. It names the headline dimension.
 - `capturedAt` as epoch millis is optional; omit it to stamp the current time.

@@ -49,7 +49,7 @@ Process the Layer 4 inbox: decide whether finalized artifacts stayed internal or
 
 ## Rules
 
-- Process each inbox item at most once per run. Blocked artifacts intentionally remain visible for a future explicit run.
+- Process each inbox item at most once per run. Blocked artifacts intentionally remain visible for a future explicit run, but a non-located target (`needs_connector`, `not_found`, or `ambiguous`) auto-retires 7 days after it was first assessed and then drops out of the inbox — so a target you cannot locate will stop resurfacing on its own. Artifacts that were never assessed are left alone.
 - Treat `nextCursor` as opaque. Never decode, edit, or invent a cursor. Process one page per invocation and continue only when explicitly asked.
 - Attach only a clear connector-authoritative match. Keep uncertain candidates in evidence and use `ambiguous`.
 - Keep artifact type and connector separate. Prefer `post` with connector `x`, `software-change` with connector `github`, and `release` with connector `npm`.

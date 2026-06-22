@@ -172,8 +172,18 @@ export {
   listRewardSnapshots,
   recordRewardSnapshot,
   recordRewardSnapshotBatch,
+  retireCollectTarget,
+  retireCollectTargets,
+  retireUnlocatableTargets,
 } from './rewards/index.js';
-export type { ArtifactRewards, RewardSnapshot, RewardTargetSeries } from './rewards/index.js';
+export type {
+  ArtifactRewards,
+  CollectStatus,
+  RetiredTarget,
+  RetireReason,
+  RewardSnapshot,
+  RewardTargetSeries,
+} from './rewards/index.js';
 export { getCohort, getVersionChain, listCohorts, listVersionChains } from './cohorts/index.js';
 export type {
   ArtifactCost,
@@ -184,13 +194,15 @@ export type {
   VersionChain,
   VersionChainSummary,
 } from './cohorts/index.js';
-export { getRewardStatus } from './reward-status/index.js';
+export { getRewardStatus, stageCommand, STAGE_META } from './reward-status/index.js';
 export type {
   RewardStatus,
   RewardStatusNextAction,
   RewardStatusStage,
   RewardStatusStageKey,
 } from './reward-status/index.js';
+export { DEFAULT_REWARD_NEXT_ITEMS, getRewardNext } from './reward-next/index.js';
+export type { RewardNext, RewardNextStep } from './reward-next/index.js';
 export { getRewardOverview } from './reward-overview/index.js';
 export type {
   RewardOverview,

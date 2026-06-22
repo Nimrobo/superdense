@@ -9,7 +9,13 @@ import { resolveProjectKey } from './util/project-key.js';
 let dbInstance: Database.Database | null = null;
 
 export const SYSTEM_RUN_ID = 'system';
-export const LATEST_SCHEMA_VERSION = 12;
+export const LATEST_SCHEMA_VERSION = 13;
+
+// Default reward-collection retirement policy: a linked target stops being
+// collectable once its first snapshot is 7 days old, matching the standard
+// reward window. Per-target overrides (retire_after_ms / retire_after_n) win
+// over this default when set at externalization-assess time.
+export const DEFAULT_RETIRE_AFTER_MS = 604800000;
 
 export function getDb(): Database.Database {
   if (dbInstance) return dbInstance;
@@ -227,6 +233,14 @@ function migrate(db: Database.Database): void {
   if (currentVersion < 12) {
     runDataMigrationV12(db);
     db.pragma('user_version = 12');
+  }
+  // V13 gives reward collection a lifecycle and memoizes preflight planning.
+  // Both changes fold onto existing tables: project_profile remembers when
+  // `reward next` last ran, and externalization_target gains a collect_status
+  // so matured targets retire out of the collectable set.
+  if (currentVersion < 13) {
+    runDataMigrationV13(db);
+    db.pragma('user_version = 13');
   }
 
   ensureSystemRun(db);
@@ -726,6 +740,44 @@ function runDataMigrationV12(db: Database.Database): void {
   withImmediateTransaction(db, work);
 }
 
+// V13 folds two concerns onto existing tables, adding no new tables. The
+// preflight memo (reward_next_run_at) lives on project_profile; the reward
+// collection lifecycle (collect_status + retirement policy) lives on the
+// existing externalization_target child rows.
+function runDataMigrationV13(db: Database.Database): void {
+  const work = () => {
+    if (
+      tableExists(db, 'project_profile') &&
+      !columnExists(db, 'project_profile', 'reward_next_run_at')
+    ) {
+      db.exec('ALTER TABLE project_profile ADD COLUMN reward_next_run_at INTEGER;');
+    }
+    // externalization_target arrives at V8; a real V8+ database always has it,
+    // but guard so synthetic partial schemas still migrate cleanly.
+    if (tableExists(db, 'externalization_target')) {
+      if (!columnExists(db, 'externalization_target', 'collect_status')) {
+        db.exec(
+          "ALTER TABLE externalization_target ADD COLUMN collect_status TEXT NOT NULL DEFAULT 'active';",
+        );
+      }
+      if (!columnExists(db, 'externalization_target', 'retire_after_ms')) {
+        db.exec('ALTER TABLE externalization_target ADD COLUMN retire_after_ms INTEGER;');
+      }
+      if (!columnExists(db, 'externalization_target', 'retire_after_n')) {
+        db.exec('ALTER TABLE externalization_target ADD COLUMN retire_after_n INTEGER;');
+      }
+      if (!columnExists(db, 'externalization_target', 'retired_at')) {
+        db.exec('ALTER TABLE externalization_target ADD COLUMN retired_at INTEGER;');
+      }
+      db.exec(
+        `CREATE INDEX IF NOT EXISTS idx_externalization_target_collect
+           ON externalization_target(artifact_id, status, collect_status);`,
+      );
+    }
+  };
+  withImmediateTransaction(db, work);
+}
+
 function ensureSystemRun(db: Database.Database): void {
   const now = Date.now();
   db.prepare(
@@ -762,6 +814,7 @@ function repairSchema(db: Database.Database): void {
     runDataMigrationV10(db);
     runDataMigrationV11(db);
     runDataMigrationV12(db);
+    runDataMigrationV13(db);
     ensureSystemRun(db);
     db.pragma(`user_version = ${LATEST_SCHEMA_VERSION}`);
   });
