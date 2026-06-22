@@ -1,7 +1,11 @@
 import { getDb } from '../db.js';
 import { listCohorts, type CohortSummary } from '../cohorts/index.js';
 import { listCurationInbox, listWorkThreads, type CurationStatus } from '../curation/index.js';
-import { listProjectProfiles, type ProjectProfileSummary } from '../projects/index.js';
+import {
+  getProjectProfileResolution,
+  listProjectProfiles,
+  type ProjectProfileSummary,
+} from '../projects/index.js';
 import {
   getRewardStatus,
   type RewardStatus,
@@ -106,6 +110,12 @@ function projectOverview(project: ProjectProfileSummary): RewardProjectOverview 
     status,
     nextAction: status.nextAction,
   };
+}
+
+export function getRewardProjectOverview(projectId: string): RewardProjectOverview {
+  const resolution = getProjectProfileResolution(projectId);
+  if (!resolution) throw new Error(`project not found: ${projectId}`);
+  return projectOverview(resolution.project);
 }
 
 function defaultCommand(stage: RewardStatusStage): string {

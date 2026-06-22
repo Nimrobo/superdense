@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import {
   getProjectProfileResolution,
+  getRewardProjectOverview,
   listProjectProfiles,
   setProjectAttention,
 } from '@nimrobo/superdense-core';
@@ -27,6 +28,16 @@ export async function registerProjectsRoutes(app: FastifyInstance): Promise<void
       return { error: 'not found' };
     }
     return resolution;
+  });
+
+  app.get('/api/projects/:id/reward-overview', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    try {
+      return { item: getRewardProjectOverview(id) };
+    } catch (err) {
+      reply.status(errorMessage(err).startsWith('project not found:') ? 404 : 400);
+      return { error: errorMessage(err) };
+    }
   });
 
   app.patch('/api/projects/:id/attention', async (req, reply) => {
