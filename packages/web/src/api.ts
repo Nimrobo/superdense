@@ -510,6 +510,71 @@ export interface RewardOverview {
   typeSummaries: CohortSummary[];
 }
 
+export type HypothesisStatus = 'open' | 'supported' | 'refuted' | 'inconclusive';
+export type PredictionDirection = 'increase' | 'decrease' | 'maintain';
+
+export interface PredictionTarget {
+  metric: string;
+  direction: PredictionDirection;
+  magnitude: number;
+}
+
+export interface HypothesisWindow {
+  durationMs: number;
+  label: string | null;
+}
+
+export interface HypothesisStatement {
+  action: string;
+  diagnostic: PredictionTarget;
+  northStar: PredictionTarget;
+  window: HypothesisWindow;
+  mechanism: string;
+}
+
+export interface Hypothesis {
+  id: string;
+  projectId: string;
+  leverKey: string;
+  statement: HypothesisStatement;
+  status: HypothesisStatus;
+  createdAt: number;
+  resolvedAt: number | null;
+  verdictEvidence: Record<string, unknown> | null;
+}
+
+export type ExperimentStatus = 'open' | 'complete' | 'inconclusive';
+export type ExperimentVerdict = Exclude<HypothesisStatus, 'open'>;
+
+export interface ExperimentRewardWindow {
+  startAt: number | null;
+  endAt: number | null;
+  durationMs: number | null;
+  label: string | null;
+}
+
+export interface ExperimentMember {
+  experimentId: string;
+  runId: string;
+  artifactId: string | null;
+  role: string;
+  addedAt: number;
+}
+
+export interface Experiment {
+  id: string;
+  hypothesisId: string;
+  status: ExperimentStatus;
+  targetReps: number;
+  rewardWindow: ExperimentRewardWindow;
+  predictedSummary: string;
+  observedSummary: Record<string, unknown> | null;
+  verdict: ExperimentVerdict | null;
+  createdAt: number;
+  resolvedAt: number | null;
+  members: ExperimentMember[];
+}
+
 async function j<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     ...init,
@@ -611,6 +676,8 @@ export const api = {
     j<{ project: Project; redirectedFrom: string | null }>(
       `/api/projects/${encodeURIComponent(id)}`,
     ),
+  getProjectRewardOverview: (id: string) =>
+    j<{ item: RewardProjectOverview }>(`/api/projects/${encodeURIComponent(id)}/reward-overview`),
   setProjectAttention: (id: string, needed: boolean, reasons?: string[]) =>
     j<{ project: Project }>(`/api/projects/${encodeURIComponent(id)}/attention`, {
       method: 'PATCH',
@@ -666,6 +733,42 @@ export const api = {
     return j<RewardStatus>(`/api/reward/status${qs ? `?${qs}` : ''}`);
   },
   rewardOverview: () => j<RewardOverview>('/api/reward/overview'),
+  listHypotheses: (
+    opts: {
+      projectId?: string;
+      status?: HypothesisStatus;
+      leverKey?: string;
+      limit?: number;
+    } = {},
+  ) => {
+    const sp = new URLSearchParams();
+    if (opts.projectId) sp.set('projectId', opts.projectId);
+    if (opts.status) sp.set('status', opts.status);
+    if (opts.leverKey) sp.set('leverKey', opts.leverKey);
+    if (opts.limit != null) sp.set('limit', String(opts.limit));
+    const qs = sp.toString();
+    return j<{ items: Hypothesis[] }>(`/api/hypotheses${qs ? `?${qs}` : ''}`);
+  },
+  getHypothesis: (id: string) =>
+    j<{ hypothesis: Hypothesis }>(`/api/hypotheses/${encodeURIComponent(id)}`),
+  listExperiments: (
+    opts: {
+      projectId?: string;
+      hypothesisId?: string;
+      status?: ExperimentStatus;
+      limit?: number;
+    } = {},
+  ) => {
+    const sp = new URLSearchParams();
+    if (opts.projectId) sp.set('projectId', opts.projectId);
+    if (opts.hypothesisId) sp.set('hypothesisId', opts.hypothesisId);
+    if (opts.status) sp.set('status', opts.status);
+    if (opts.limit != null) sp.set('limit', String(opts.limit));
+    const qs = sp.toString();
+    return j<{ items: Experiment[] }>(`/api/experiments${qs ? `?${qs}` : ''}`);
+  },
+  getExperiment: (id: string) =>
+    j<{ experiment: Experiment }>(`/api/experiments/${encodeURIComponent(id)}`),
 };
 
 export interface InsightRecipe {

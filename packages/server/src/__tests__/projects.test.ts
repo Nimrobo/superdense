@@ -3,6 +3,7 @@ import Fastify from 'fastify';
 
 vi.mock('@nimrobo/superdense-core', () => ({
   getProjectProfileResolution: vi.fn(),
+  getRewardProjectOverview: vi.fn(),
   listProjectProfiles: vi.fn(),
   setProjectAttention: vi.fn(),
 }));
@@ -41,6 +42,24 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(core.listProjectProfiles).mockReturnValue([project]);
   vi.mocked(core.getProjectProfileResolution).mockReturnValue({ project, redirectedFrom: null });
+  vi.mocked(core.getRewardProjectOverview).mockReturnValue({
+    project,
+    curation: {
+      pending: 0,
+      consumed: 1,
+      skipped: 0,
+      deferred: 0,
+      remaining: 0,
+      attachedConsumed: 1,
+    },
+    threads: { open: 0, ready: 0, artifact: 1, total: 1 },
+    status: {
+      projectId: 'p1',
+      stages: [],
+      nextAction: null,
+    },
+    nextAction: null,
+  });
   vi.mocked(core.setProjectAttention).mockReturnValue(project);
 });
 
@@ -62,6 +81,32 @@ describe('project routes', () => {
     const response = await app.inject({ method: 'GET', url: '/api/projects/alias' });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({ project: { id: 'p1' }, redirectedFrom: 'alias' });
+  });
+
+  it('returns canonical project reward overview', async () => {
+    const app = await buildApp();
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/projects/alias/reward-overview',
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(core.getRewardProjectOverview).toHaveBeenCalledWith('alias');
+    expect(response.json()).toMatchObject({ item: { project: { id: 'p1' } } });
+  });
+
+  it('returns 404 for a missing project reward overview', async () => {
+    vi.mocked(core.getRewardProjectOverview).mockImplementation(() => {
+      throw new Error('project not found: missing');
+    });
+    const app = await buildApp();
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/projects/missing/reward-overview',
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual({ error: 'project not found: missing' });
   });
 
   it('updates and validates human attention', async () => {

@@ -203,7 +203,7 @@ export type {
 } from './reward-status/index.js';
 export { DEFAULT_REWARD_NEXT_ITEMS, getRewardNext } from './reward-next/index.js';
 export type { RewardNext, RewardNextStep } from './reward-next/index.js';
-export { getRewardOverview } from './reward-overview/index.js';
+export { getRewardOverview, getRewardProjectOverview } from './reward-overview/index.js';
 export type {
   RewardOverview,
   RewardOverviewAction,

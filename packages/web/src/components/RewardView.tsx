@@ -1,16 +1,17 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   api,
-  type ArtifactExternalization,
-  type ArtifactRewards,
   type CohortMember,
+  type Experiment,
+  type ExperimentRewardWindow,
+  type Hypothesis,
+  type PredictionTarget,
   type RewardOverview,
   type RewardProjectOverview,
-  type WorkThread,
 } from '../api.js';
 import { formatArtifactCostBadge } from '../costDisplay.js';
 import { RewardTargetList } from '../rewardDisplay.js';
-import { formatRelativeTime, projectLabel } from '../sessionDisplay.js';
+import { formatFullTime, formatRelativeTime, projectLabel } from '../sessionDisplay.js';
 import { WorkThreadView } from './WorkThreadView.js';
 
 interface Props {
@@ -23,11 +24,6 @@ type Detail =
   | { kind: 'type'; type: string }
   | { kind: 'thread'; id: string }
   | null;
-
-type ArtifactDetail = {
-  externalization: ArtifactExternalization | null;
-  rewards: ArtifactRewards | null;
-};
 
 const LAYER_HELP = [
   ['Project profile', 'Teaches Superdense what this project is and what outputs matter.'],
@@ -48,9 +44,52 @@ function projectName(project: RewardProjectOverview['project']): string {
   return project.name ?? projectLabel(project.projectKey);
 }
 
-function lifecycleLabel(thread: WorkThread): string {
-  if (thread.lifecycle === 'artifact') return thread.artifactType ?? 'artifact';
-  return thread.lifecycle === 'ready' ? 'ready to finalize' : 'open';
+function directionSymbol(direction: PredictionTarget['direction']): string {
+  if (direction === 'increase') return 'up';
+  if (direction === 'decrease') return 'down';
+  return 'hold';
+}
+
+function predictionText(target: PredictionTarget): string {
+  return `${target.metric} ${directionSymbol(target.direction)} by ${target.magnitude}`;
+}
+
+function formatDuration(ms: number): string {
+  const day = 24 * 60 * 60 * 1000;
+  const hour = 60 * 60 * 1000;
+  if (ms % day === 0) return `${ms / day}d`;
+  if (ms % hour === 0) return `${ms / hour}h`;
+  return `${ms}ms`;
+}
+
+function hypothesisWindow(hypothesis: Hypothesis): string {
+  const { window } = hypothesis.statement;
+  return window.label ?? formatDuration(window.durationMs);
+}
+
+function rewardWindow(window: ExperimentRewardWindow): string {
+  if (window.label) return window.label;
+  if (window.startAt != null && window.endAt != null) {
+    return `${formatFullTime(window.startAt)} to ${formatFullTime(window.endAt)}`;
+  }
+  if (window.durationMs != null) return formatDuration(window.durationMs);
+  return 'open window';
+}
+
+function compactValue(value: unknown): string {
+  if (value == null) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function observedReason(experiment: Experiment): string | null {
+  const reason = experiment.observedSummary?.reason;
+  return typeof reason === 'string' ? reason : null;
 }
 
 function pendingPipelineUnit(stage: RewardOverview['status']['stages'][number]): string {
@@ -359,97 +398,227 @@ function RewardsByType({
   );
 }
 
-function FoldedThreadCard({
-  thread,
-  artifactDetail,
-  onOpenThread,
+function RewardProjectPipeline({ item }: { item: RewardProjectOverview }) {
+  const stages = item.status.stages.filter(
+    (stage) => stage.key !== 'profile' && stage.key !== 'compare',
+  );
+  return (
+    <section className="card reward-section">
+      <div className="card-title">Reward Pipeline</div>
+      <div className="pipeline-grid pipeline-grid-four">
+        {stages.map((stage) => (
+          <div key={stage.key} className="pipeline-stage">
+            <div className="project-card-top">
+              <strong>{stage.label}</strong>
+              <span className={`project-status ${stage.actionable > 0 ? 'attention' : ''}`}>
+                {stage.key}
+              </span>
+            </div>
+            <div className="pipeline-count">{stage.actionable}</div>
+            <div className="muted small">{stage.unit} actionable</div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function HypothesisRow({
+  hypothesis,
+  experimentCount,
+  selected,
+  onSelect,
 }: {
-  thread: WorkThread;
-  artifactDetail?: ArtifactDetail;
-  onOpenThread: (id: string) => void;
+  hypothesis: Hypothesis;
+  experimentCount: number;
+  selected: boolean;
+  onSelect: (id: string) => void;
 }) {
-  const rewardTargets = artifactDetail?.rewards?.targets ?? [];
+  return (
+    <button
+      type="button"
+      className={`hypothesis-row ${selected ? 'selected' : ''}`}
+      onClick={() => onSelect(hypothesis.id)}
+    >
+      <div className="hypothesis-row-main">
+        <div className="hypothesis-row-title">
+          <strong>{hypothesis.statement.action}</strong>
+          <span className="muted small">{hypothesis.statement.mechanism}</span>
+        </div>
+        <div className="project-card-badges">
+          <span className="project-status">{hypothesis.leverKey}</span>
+          <span className={`project-status hypothesis-${hypothesis.status}`}>
+            {hypothesis.status}
+          </span>
+        </div>
+      </div>
+      <div className="hypothesis-row-meta">
+        <span>diagnostic {predictionText(hypothesis.statement.diagnostic)}</span>
+        <span>north star {predictionText(hypothesis.statement.northStar)}</span>
+        <span>window {hypothesisWindow(hypothesis)}</span>
+        <span>experiments {experimentCount}</span>
+      </div>
+      {hypothesis.verdictEvidence && (
+        <div className="muted small">Evidence: {compactValue(hypothesis.verdictEvidence)}</div>
+      )}
+    </button>
+  );
+}
+
+function RewardHypothesesSection({
+  hypotheses,
+  experiments,
+  selectedHypothesisId,
+  loading,
+  onSelect,
+}: {
+  hypotheses: Hypothesis[];
+  experiments: Experiment[];
+  selectedHypothesisId: string | null;
+  loading: boolean;
+  onSelect: (id: string) => void;
+}) {
+  const experimentCounts = new Map<string, number>();
+  for (const experiment of experiments) {
+    experimentCounts.set(
+      experiment.hypothesisId,
+      (experimentCounts.get(experiment.hypothesisId) ?? 0) + 1,
+    );
+  }
+  return (
+    <section className="card reward-section">
+      <div className="card-title">Hypotheses</div>
+      {loading && hypotheses.length === 0 ? (
+        <div className="empty compact">Loading hypotheses...</div>
+      ) : hypotheses.length === 0 ? (
+        <div className="empty compact">No hypotheses recorded for this project.</div>
+      ) : (
+        <div className="hypothesis-list">
+          {hypotheses.map((hypothesis) => (
+            <HypothesisRow
+              key={hypothesis.id}
+              hypothesis={hypothesis}
+              experimentCount={experimentCounts.get(hypothesis.id) ?? 0}
+              selected={hypothesis.id === selectedHypothesisId}
+              onSelect={onSelect}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function RewardExperimentCard({ experiment }: { experiment: Experiment }) {
+  const reason = observedReason(experiment);
+  const checks = experiment.observedSummary?.checks;
   return (
     <div className="project-card" style={{ cursor: 'default' }}>
       <div className="project-card-top">
-        <strong>{thread.provisionalTitle}</strong>
+        <strong>{experiment.id}</strong>
         <div className="project-card-badges">
-          <span className="project-status">{lifecycleLabel(thread)}</span>
-          {thread.humanOnly && <span className="project-status">Human only</span>}
+          <span className="project-status">{experiment.status}</span>
+          {experiment.verdict && (
+            <span className={`project-status hypothesis-${experiment.verdict}`}>
+              {experiment.verdict}
+            </span>
+          )}
         </div>
       </div>
-      {thread.summary && <div className="project-card-description">{thread.summary}</div>}
-      <div className="muted small">
-        updated {formatRelativeTime(thread.updatedAt)}
-        {thread.readyAt ? ` · ready ${formatRelativeTime(thread.readyAt)}` : ''}
+      <div className="project-card-description">{experiment.predictedSummary}</div>
+      <div className="stat-row">
+        <span>
+          reps {experiment.members.length}/{experiment.targetReps}
+        </span>
+        <span>window {rewardWindow(experiment.rewardWindow)}</span>
       </div>
-      {thread.lifecycle === 'artifact' && (
-        <div className="folded-artifact">
-          <div className="card-subtitle">Folded artifact</div>
-          <div className="project-card-description ellipsis">
-            {payloadPreview(thread.payload) || 'No payload preview.'}
-          </div>
-          <div className="muted small">
-            externalization {artifactDetail?.externalization?.status ?? 'unprocessed'}
-          </div>
-          <RewardTargetList targets={rewardTargets} />
-        </div>
+      {reason && <div className="muted small">Observed: {reason}</div>}
+      {checks != null && <div className="muted small">Checks: {compactValue(checks)}</div>}
+      {experiment.members.length > 0 && (
+        <ul className="plain-list experiment-member-list">
+          {experiment.members.map((member) => (
+            <li key={`${member.runId}-${member.role}`} className="small">
+              <span className="mono">{member.runId}</span>
+              {member.artifactId ? (
+                <>
+                  {' -> '}
+                  <span className="mono">{member.artifactId}</span>
+                </>
+              ) : null}{' '}
+              <span className="muted">({member.role})</span>
+            </li>
+          ))}
+        </ul>
       )}
-      <button
-        type="button"
-        className="back-btn thread-open"
-        onClick={() => onOpenThread(thread.id)}
-      >
-        Open workthread
-      </button>
     </div>
   );
 }
 
-function ProjectDetail({
-  item,
-  onBack,
-  onOpenThread,
+function RewardExperimentsSection({
+  selectedHypothesis,
+  experiments,
+  loading,
 }: {
-  item: RewardProjectOverview;
-  onBack: () => void;
-  onOpenThread: (id: string) => void;
+  selectedHypothesis: Hypothesis | null;
+  experiments: Experiment[];
+  loading: boolean;
 }) {
-  const [threads, setThreads] = useState<WorkThread[] | null>(null);
-  const [artifactDetails, setArtifactDetails] = useState<Record<string, ArtifactDetail>>({});
+  return (
+    <section className="card reward-section">
+      <div className="card-title">Experiments</div>
+      {loading ? (
+        <div className="empty compact">Loading experiments...</div>
+      ) : !selectedHypothesis ? (
+        <div className="empty compact">Select a hypothesis to view its experiments.</div>
+      ) : experiments.length === 0 ? (
+        <div className="empty compact">No experiments recorded for this hypothesis.</div>
+      ) : (
+        <>
+          <div className="selected-hypothesis-context">
+            <strong>{selectedHypothesis.statement.action}</strong>
+            <span className="muted small">{selectedHypothesis.id}</span>
+          </div>
+          {experiments.map((experiment) => (
+            <RewardExperimentCard key={experiment.id} experiment={experiment} />
+          ))}
+        </>
+      )}
+    </section>
+  );
+}
+
+function ProjectDetail({ item, onBack }: { item: RewardProjectOverview; onBack: () => void }) {
+  const [hypotheses, setHypotheses] = useState<Hypothesis[]>([]);
+  const [experiments, setExperiments] = useState<Experiment[]>([]);
+  const [selectedHypothesisId, setSelectedHypothesisId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    setThreads(null);
-    setArtifactDetails({});
-    api
-      .listThreads({ projectId: item.project.id })
-      .then(async (result) => {
-        setThreads(result.items);
-        const artifacts = result.items.filter((thread) => thread.lifecycle === 'artifact');
-        const pairs = await Promise.all(
-          artifacts.map(async (thread) => {
-            const detail = await api.getArtifact(thread.id);
-            return [
-              thread.id,
-              { externalization: detail.externalization, rewards: detail.rewards },
-            ] as const;
-          }),
-        );
-        setArtifactDetails(Object.fromEntries(pairs));
+    setHypotheses([]);
+    setExperiments([]);
+    setSelectedHypothesisId(null);
+    setLoading(true);
+    const emptyHypotheses = { items: [] as Hypothesis[] };
+    const emptyExperiments = { items: [] as Experiment[] };
+    Promise.all([
+      api.listHypotheses({ projectId: item.project.id }).catch(() => emptyHypotheses),
+      api.listExperiments({ projectId: item.project.id }).catch(() => emptyExperiments),
+    ])
+      .then(([hypothesisResult, experimentResult]) => {
+        setHypotheses(hypothesisResult.items);
+        setExperiments(experimentResult.items);
         setError(null);
       })
-      .catch((err) => setError(err instanceof Error ? err.message : String(err)));
+      .catch((err) => setError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setLoading(false));
   }, [item.project.id]);
 
-  const byLifecycle = useMemo(
-    () => ({
-      open: (threads ?? []).filter((thread) => thread.lifecycle === 'open'),
-      ready: (threads ?? []).filter((thread) => thread.lifecycle === 'ready'),
-      artifact: (threads ?? []).filter((thread) => thread.lifecycle === 'artifact'),
-    }),
-    [threads],
-  );
+  const selectedHypothesis =
+    hypotheses.find((hypothesis) => hypothesis.id === selectedHypothesisId) ?? null;
+  const selectedExperiments = selectedHypothesis
+    ? experiments.filter((experiment) => experiment.hypothesisId === selectedHypothesis.id)
+    : [];
 
   return (
     <>
@@ -464,54 +633,19 @@ function ProjectDetail({
       </div>
       <div className="work-body">
         {error && <div className="error">Failed to load: {error}</div>}
-        <section className="card reward-section">
-          <div className="card-title">Profile and Review Progress</div>
-          <div className="muted small">
-            Profile status is the project map. Session review progress shows how much raw agent work
-            has been consumed into reward curation.
-          </div>
-          <div className="stat-row large">
-            <span>pending {item.curation.pending}</span>
-            <span>deferred {item.curation.deferred}</span>
-            <span>consumed {item.curation.consumed}</span>
-            <span>skipped {item.curation.skipped}</span>
-            <span>attached {item.curation.attachedConsumed}</span>
-          </div>
-          {item.project.evidenceSummary.length > 0 && (
-            <ul className="plain-list">
-              {item.project.evidenceSummary.map((evidence, index) => (
-                <li key={index}>{evidence}</li>
-              ))}
-            </ul>
-          )}
-          {item.nextAction && <pre className="command-box">{item.nextAction.command}</pre>}
-        </section>
-
-        {!threads && !error && <div className="empty">Loading workthreads...</div>}
-        {threads && threads.length === 0 && <div className="empty">No workthreads yet.</div>}
-        {(['open', 'ready', 'artifact'] as const).map((lifecycle) => (
-          <section key={lifecycle} className="card reward-section">
-            <div className="card-title">
-              {lifecycle === 'artifact'
-                ? 'Artifacts'
-                : lifecycle === 'ready'
-                  ? 'Ready to Finalize'
-                  : 'Open Workthreads'}
-            </div>
-            {byLifecycle[lifecycle].length === 0 ? (
-              <div className="empty compact">None.</div>
-            ) : (
-              byLifecycle[lifecycle].map((thread) => (
-                <FoldedThreadCard
-                  key={thread.id}
-                  thread={thread}
-                  artifactDetail={artifactDetails[thread.id]}
-                  onOpenThread={onOpenThread}
-                />
-              ))
-            )}
-          </section>
-        ))}
+        <RewardProjectPipeline item={item} />
+        <RewardHypothesesSection
+          hypotheses={hypotheses}
+          experiments={experiments}
+          selectedHypothesisId={selectedHypothesisId}
+          loading={loading}
+          onSelect={setSelectedHypothesisId}
+        />
+        <RewardExperimentsSection
+          selectedHypothesis={selectedHypothesis}
+          experiments={selectedExperiments}
+          loading={loading}
+        />
       </div>
     </>
   );
@@ -666,13 +800,7 @@ export function RewardView({ onOpenSession }: Props) {
   if (detail?.kind === 'project' && overview) {
     const item = overview.projects.find((project) => project.project.id === detail.id);
     if (item) {
-      return (
-        <ProjectDetail
-          item={item}
-          onBack={() => setDetail(null)}
-          onOpenThread={(id) => setDetail({ kind: 'thread', id })}
-        />
-      );
+      return <ProjectDetail item={item} onBack={() => setDetail(null)} />;
     }
   }
 
