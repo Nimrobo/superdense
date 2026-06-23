@@ -49,6 +49,7 @@ import {
   listCohorts,
   listVersionChains,
   getProjectContext,
+  getProjectPathResolution,
   getProjectProfileResolution,
   getQuery,
   SYSTEM_RUN_ID,
@@ -992,6 +993,13 @@ async function handleProject(
   io: CliIo,
 ): Promise<boolean> {
   const action = args[0] ?? 'list';
+  if (action === '.' || action === 'id') {
+    const path = action === 'id' ? (args[1] ?? '.') : action;
+    const result = getProjectPathResolution(path);
+    if (!result) throw new Error(`project not found for path: ${path}`);
+    io.stdout.log(result.project.id);
+    return true;
+  }
   if (action === 'list') {
     printJson(
       {
@@ -2151,6 +2159,8 @@ export async function runCli(
         '  insight prompt <n>  Print a copy-pasteable insight prompt for your coding agent',
         '  project list        List detected projects',
         '      --needs-action  Show unprofiled and human-attention projects only',
+        '  project .           Print the canonical project id for the current directory',
+        '  project id [path]   Print the canonical project id for a path',
         '  project show <id>   Show a canonical project profile',
         '  project context <id>  Gather bounded evidence for profiling',
         '  project apply <id>  Apply an atomic profile merge patch (--patch <json|@file>)',

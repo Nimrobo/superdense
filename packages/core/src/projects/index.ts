@@ -1,10 +1,12 @@
 import { existsSync, readdirSync, statSync } from 'node:fs';
-import { dirname, extname, isAbsolute, join, relative } from 'node:path';
+import { dirname, extname, isAbsolute, join, relative, resolve as resolvePath } from 'node:path';
 import { getDb, SYSTEM_RUN_ID, withImmediateTransaction } from '../db.js';
+import { resolveProjectKey } from '../util/project-key.js';
 import type {
   ArtifactDetector,
   ArtifactShape,
   ProjectContext,
+  ProjectPathResolution,
   ProjectProfile,
   ProjectProfileResolution,
   ProjectProfileStatus,
@@ -161,6 +163,54 @@ export function listProjectProfiles(
       project_key ASC
   `;
   return (getDb().prepare(sql).all() as ProjectProfileRow[]).map(rowToSummary);
+}
+
+function containsPath(parent: string, child: string): boolean {
+  const rel = relative(parent, child);
+  return rel === '' || (!!rel && !rel.startsWith('..') && !isAbsolute(rel));
+}
+
+export function getProjectPathResolution(path: string = '.'): ProjectPathResolution | null {
+  const absolutePath = resolvePath(path || '.');
+  const projectKey = resolveProjectKey(absolutePath);
+  const profiles = listProjectProfiles({ includeCovered: true });
+  let best: {
+    profile: ProjectProfileSummary;
+    matchedBy: 'projectKey' | 'root';
+    matchedPath: string;
+  } | null = null;
+
+  for (const profile of profiles) {
+    const candidates = [
+      { matchedBy: 'projectKey' as const, path: profile.projectKey },
+      ...profile.roots.map((root) => ({ matchedBy: 'root' as const, path: root })),
+    ];
+    for (const candidate of candidates) {
+      if (!candidate.path || !isAbsolute(candidate.path)) continue;
+      const candidatePath = resolvePath(candidate.path);
+      if (!containsPath(candidatePath, projectKey) && !containsPath(candidatePath, absolutePath)) {
+        continue;
+      }
+      if (best && candidatePath.length <= best.matchedPath.length) continue;
+      best = {
+        profile,
+        matchedBy: candidate.matchedBy,
+        matchedPath: candidatePath,
+      };
+    }
+  }
+
+  if (!best) return null;
+  const resolution = getProjectProfileResolution(best.profile.id);
+  if (!resolution) return null;
+  return {
+    ...resolution,
+    path: absolutePath,
+    projectKey,
+    matchedProject: best.profile,
+    matchedBy: best.matchedBy,
+    matchedPath: best.matchedPath,
+  };
 }
 
 function expectString(value: unknown, field: string, opts: { nullable?: boolean } = {}): void {
@@ -573,6 +623,7 @@ export type {
   ArtifactDetector,
   ArtifactShape,
   ProjectContext,
+  ProjectPathResolution,
   ProjectProfile,
   ProjectProfileResolution,
   ProjectProfileStatus,

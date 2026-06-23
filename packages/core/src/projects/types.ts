@@ -42,6 +42,14 @@ export interface ProjectProfileResolution {
   redirectedFrom: string | null;
 }
 
+export interface ProjectPathResolution extends ProjectProfileResolution {
+  path: string;
+  projectKey: string;
+  matchedProject: ProjectProfileSummary;
+  matchedBy: 'projectKey' | 'root';
+  matchedPath: string;
+}
+
 export interface ProjectContext {
   project: ProjectProfile;
   observed: {

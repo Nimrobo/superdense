@@ -63,6 +63,12 @@ export interface WorkThread {
   lineageEvents?: WorkThreadLineageEvent[];
 }
 
+interface AttachedInboxThread {
+  id: string;
+  provisionalTitle: string;
+  lifecycle: ThreadLifecycle;
+}
+
 interface WorkThreadRow {
   id: string;
   project_profile_id: string;
@@ -269,6 +275,27 @@ function projectWhere(projectId: string | undefined, column = 's.project_key') {
   };
 }
 
+function parseAttachedThreads(raw: unknown): AttachedInboxThread[] {
+  if (typeof raw !== 'string') return [];
+  try {
+    const value = JSON.parse(raw) as unknown;
+    if (!Array.isArray(value)) return [];
+    return value.filter((item): item is AttachedInboxThread => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return false;
+      const thread = item as Record<string, unknown>;
+      return (
+        typeof thread.id === 'string' &&
+        typeof thread.provisionalTitle === 'string' &&
+        (thread.lifecycle === 'open' ||
+          thread.lifecycle === 'ready' ||
+          thread.lifecycle === 'artifact')
+      );
+    });
+  } catch {
+    return [];
+  }
+}
+
 function serializeInboxSession(row: Record<string, unknown>) {
   return {
     id: row.id,
@@ -287,6 +314,7 @@ function serializeInboxSession(row: Record<string, unknown>) {
     curationNote: row.curation_note,
     curationPriorityAt: row.priority_at,
     priorityBucket: row.priority_bucket,
+    attachedThreads: parseAttachedThreads(row.attached_threads),
   };
 }
 
@@ -327,6 +355,31 @@ export function listCurationInbox(opts: { projectId?: string; limit?: number } =
           GROUP BY root_id
        )
        SELECT s.*, rp.priority_at,
+              (
+                SELECT COALESCE(
+                  json_group_array(
+                    json_object(
+                      'id', attached.id,
+                      'provisionalTitle', attached.provisional_title,
+                      'lifecycle', attached.lifecycle
+                    )
+                  ),
+                  '[]'
+                )
+                  FROM (
+                    SELECT wt.id,
+                           wt.provisional_title,
+                           CASE
+                             WHEN wt.artifact_type IS NOT NULL THEN 'artifact'
+                             WHEN wt.status = 'ready' THEN 'ready'
+                             ELSE 'open'
+                           END AS lifecycle
+                      FROM work_thread_session wts
+                      JOIN work_thread wt ON wt.id = wts.thread_id
+                     WHERE wts.session_id = s.id
+                     ORDER BY wt.updated_at DESC, wt.id ASC
+                  ) attached
+              ) AS attached_threads,
               CASE
                 WHEN s.curation_status = 'pending' AND rp.priority_at IS NOT NULL THEN 1
                 WHEN s.curation_status = 'pending'

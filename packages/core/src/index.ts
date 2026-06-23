@@ -124,6 +124,7 @@ export type { InsightRecipe, InsightMarker } from './insights/index.js';
 export {
   applyProjectProfilePatch,
   getProjectContext,
+  getProjectPathResolution,
   getProjectProfile,
   getProjectProfileResolution,
   listProjectProfiles,
