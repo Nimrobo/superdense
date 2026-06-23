@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/Nimrobo/superdense/compare/@nimrobo/superdense-v0.8.0...superdense-web-v0.9.0) (2026-06-23)
+
+
+### Features
+
+* reward pipeline UI with hypothesis and experiment tracking ([#81](https://github.com/Nimrobo/superdense/issues/81)) ([31b79aa](https://github.com/Nimrobo/superdense/commit/31b79aac082c69ed174d74b84df5486817421c49))
+
 ## [0.8.0](https://github.com/Nimrobo/superdense/compare/@nimrobo/superdense-v0.7.0...superdense-web-v0.8.0) (2026-06-22)
 
 

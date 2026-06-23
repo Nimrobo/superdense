@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.9.0](https://github.com/Nimrobo/superdense/compare/@nimrobo/superdense-v0.8.0...superdense-core-v0.9.0) (2026-06-23)
+
+
+### Features
+
+* add curation diagnostics to explain pending sessions ([#84](https://github.com/Nimrobo/superdense/issues/84)) ([fff7839](https://github.com/Nimrobo/superdense/commit/fff78398cdacd85bef645c4358b711394efa8395))
+* reward collection lifecycle, reward next/retire commands, settled thread curation ([#80](https://github.com/Nimrobo/superdense/issues/80)) ([d940139](https://github.com/Nimrobo/superdense/commit/d940139912c955ff230d525d8dde7d745fc052f3))
+* reward pipeline UI with hypothesis and experiment tracking ([#81](https://github.com/Nimrobo/superdense/issues/81)) ([31b79aa](https://github.com/Nimrobo/superdense/commit/31b79aac082c69ed174d74b84df5486817421c49))
+
+
+### Bug Fixes
+
+* resolve project ids from paths ([#83](https://github.com/Nimrobo/superdense/issues/83)) ([ef1269c](https://github.com/Nimrobo/superdense/commit/ef1269c1af3406ffc8987d3fe8bded60caf278bf))
+
 ## [0.8.0](https://github.com/Nimrobo/superdense/compare/@nimrobo/superdense-v0.7.0...superdense-core-v0.8.0) (2026-06-22)
 
 
