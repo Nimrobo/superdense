@@ -60,6 +60,7 @@ import {
 import {
   applyProjectProfilePatch,
   getProjectContext,
+  getProjectPathResolution,
   getProjectProfileResolution,
   listProjectProfiles,
   setProjectAttention,
@@ -535,6 +536,42 @@ describe('sessions', () => {
     expect(() =>
       applyProjectProfilePatch(canonical.id, { coveredProjectIds: [canonical.id] }),
     ).toThrow('a project cannot cover itself');
+  });
+
+  it('project profiles: resolves canonical project ids from filesystem paths', () => {
+    clearDb();
+    upsertSession({ ...BASE, id: 'main', pwd: '/repo/main' });
+    upsertSession({ ...BASE, id: 'nested', pwd: '/repo/main/packages/cli' });
+    upsertSession({
+      ...BASE,
+      id: 'conductor',
+      pwd: '/Users/x/conductor/workspaces/superdense/provo-v1/packages/core',
+    });
+    const profiles = listProjectProfiles();
+    const canonical = profiles.find((profile) => profile.projectKey === '/repo/main')!;
+    const alias = profiles.find((profile) => profile.projectKey === '/repo/main/packages/cli')!;
+    const conductor = profiles.find(
+      (profile) => profile.projectKey === '/Users/x/conductor/workspaces/superdense',
+    )!;
+
+    applyProjectProfilePatch(canonical.id, {
+      roots: ['/repo/main'],
+      artifactShapes: [],
+      evidenceSummary: ['One repository with a nested package'],
+      coveredProjectIds: [alias.id],
+    });
+
+    expect(getProjectPathResolution('/repo/main')?.project.id).toBe(canonical.id);
+    expect(getProjectPathResolution('/repo/main/src/index.ts')?.project.id).toBe(canonical.id);
+    expect(getProjectPathResolution('/repo/main/packages/cli/src/index.ts')).toMatchObject({
+      redirectedFrom: alias.id,
+      project: { id: canonical.id },
+    });
+    expect(
+      getProjectPathResolution('/Users/x/conductor/workspaces/superdense/provo-v1/packages/web')
+        ?.project.id,
+    ).toBe(conductor.id);
+    expect(getProjectPathResolution('/missing/project')).toBeNull();
   });
 
   it('project profiles: canonical coverage rolls up alias history and later observations', () => {

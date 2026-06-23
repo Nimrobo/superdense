@@ -152,6 +152,64 @@ describe('curation inbox', () => {
     });
   });
 
+  it('includes attached thread summaries on pending session inbox items', () => {
+    upsertSession(session('codex:a', 100));
+    applyCurationBatch({
+      actions: [
+        {
+          type: 'thread.create',
+          id: 't1',
+          projectProfileId: projectId(),
+          provisionalTitle: 'Feature',
+        },
+        { type: 'thread.attach', threadId: 't1', sessionId: 'codex:a', role: 'contributor' },
+      ],
+    });
+
+    expect(listCurationInbox({ limit: 10 }).items).toEqual([
+      expect.objectContaining({
+        kind: 'session',
+        id: 'codex:a',
+        attachedThreads: [{ id: 't1', provisionalTitle: 'Feature', lifecycle: 'open' }],
+      }),
+    ]);
+  });
+
+  it('orders multiple attached thread summaries and reports their lifecycles', () => {
+    upsertSession(session('codex:a', 100));
+    const profileId = projectId();
+    applyCurationBatch({
+      actions: [
+        {
+          type: 'thread.create',
+          id: 'older',
+          projectProfileId: profileId,
+          provisionalTitle: 'Older',
+        },
+        {
+          type: 'thread.create',
+          id: 'newer',
+          projectProfileId: profileId,
+          provisionalTitle: 'Newer',
+        },
+        { type: 'thread.attach', threadId: 'older', sessionId: 'codex:a', role: 'contributor' },
+        { type: 'thread.attach', threadId: 'newer', sessionId: 'codex:a', role: 'contributor' },
+        { type: 'thread.mark-ready', threadId: 'newer', rationale: 'ready for artifact' },
+      ],
+    });
+    getDb().prepare('UPDATE work_thread SET updated_at = ? WHERE id = ?').run(10, 'older');
+    getDb().prepare('UPDATE work_thread SET updated_at = ? WHERE id = ?').run(20, 'newer');
+
+    expect(listCurationInbox({ limit: 10 }).items[0]).toMatchObject({
+      kind: 'session',
+      id: 'codex:a',
+      attachedThreads: [
+        { id: 'newer', provisionalTitle: 'Newer', lifecycle: 'ready' },
+        { id: 'older', provisionalTitle: 'Older', lifecycle: 'open' },
+      ],
+    });
+  });
+
   it('accounts for roots across repeated bounded sweeps without rereading skipped sessions', () => {
     for (const id of ['codex:a', 'codex:b', 'codex:c']) upsertSession(session(id, 100));
     const seen: string[] = [];

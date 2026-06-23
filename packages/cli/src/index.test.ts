@@ -53,6 +53,7 @@ vi.mock('@nimrobo/superdense-core', () => ({
   getEnrichment: vi.fn(),
   getExternalization: vi.fn(),
   getProjectContext: vi.fn(),
+  getProjectPathResolution: vi.fn(),
   getProjectProfileResolution: vi.fn(),
   getQuery: vi.fn(),
   getRewardStatus: vi.fn(),
@@ -537,6 +538,15 @@ beforeEach(() => {
   vi.mocked(core.runQueryEvaluation).mockResolvedValue({ evaluated: 0 });
   vi.mocked(core.listProjectProfiles).mockReturnValue([project]);
   vi.mocked(core.getProjectProfileResolution).mockReturnValue({ project, redirectedFrom: null });
+  vi.mocked(core.getProjectPathResolution).mockReturnValue({
+    project: { ...project, coveredProjects: [] },
+    redirectedFrom: null,
+    path: '/repo',
+    projectKey: '/repo',
+    matchedProject: project,
+    matchedBy: 'projectKey',
+    matchedPath: '/repo',
+  });
   vi.mocked(core.getProjectContext).mockReturnValue({
     project,
     observed: {
@@ -1361,6 +1371,26 @@ describe('superdense cli agent commands', () => {
       description: 'Updated',
     });
     expect(json(apply.stdout[0]!)).toMatchObject({ project: { id: 'p1' } });
+  });
+
+  it('prints a canonical project id for cwd shorthand and explicit paths', async () => {
+    const shorthand = io();
+    await runCli(['project', '.'], shorthand.io);
+    expect(core.getProjectPathResolution).toHaveBeenCalledWith('.');
+    expect(shorthand.stdout).toEqual(['p1']);
+
+    const explicit = io();
+    await runCli(['project', 'id', '/repo/subdir'], explicit.io);
+    expect(core.getProjectPathResolution).toHaveBeenCalledWith('/repo/subdir');
+    expect(explicit.stdout).toEqual(['p1']);
+  });
+
+  it('throws when no project matches a path lookup', async () => {
+    vi.mocked(core.getProjectPathResolution).mockReturnValue(null);
+
+    await expect(runCli(['project', 'id', '/missing'], io().io)).rejects.toThrow(
+      'project not found for path: /missing',
+    );
   });
 
   it('shows project profiling context and resolves attention', async () => {
