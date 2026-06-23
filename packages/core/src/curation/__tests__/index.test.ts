@@ -119,6 +119,31 @@ describe('curation inbox', () => {
     ]);
   });
 
+  it('reports a clean pending session as new with no curation problems', () => {
+    upsertSession(session('codex:a', 100));
+
+    expect(listCurationInbox({ limit: 10 }).items[0]).toMatchObject({
+      kind: 'session',
+      id: 'codex:a',
+      curationDiagnostic: 'new',
+      curationProblems: [],
+    });
+  });
+
+  it('reports partial curation when a pending session has curatedAt', () => {
+    upsertSession(session('codex:a', 100));
+    getDb()
+      .prepare('UPDATE sessions SET curated_at = ?, curated_revision = ? WHERE id = ?')
+      .run(200, sessionRevision(getSession('codex:a')!), 'codex:a');
+
+    expect(listCurationInbox({ limit: 10 }).items[0]).toMatchObject({
+      kind: 'session',
+      id: 'codex:a',
+      curationDiagnostic: 'partial',
+      curationProblems: ['session has curatedAt but status is still pending'],
+    });
+  });
+
   it('re-marks reviewed sessions as pending without lowering an existing priority', () => {
     upsertSession(session('codex:a', 100));
     const db = getDb();
@@ -171,6 +196,11 @@ describe('curation inbox', () => {
         kind: 'session',
         id: 'codex:a',
         attachedThreads: [{ id: 't1', provisionalTitle: 'Feature', lifecycle: 'open' }],
+        curationDiagnostic: 'partial',
+        curationProblems: [
+          'session is attached to 1 thread(s) while root remains pending',
+          '1 attached thread(s) are still open',
+        ],
       }),
     ]);
   });
@@ -207,6 +237,26 @@ describe('curation inbox', () => {
         { id: 'newer', provisionalTitle: 'Newer', lifecycle: 'ready' },
         { id: 'older', provisionalTitle: 'Older', lifecycle: 'open' },
       ],
+      curationDiagnostic: 'partial',
+      curationProblems: [
+        'session is attached to 2 thread(s) while root remains pending',
+        '1 attached thread(s) are still open',
+      ],
+    });
+  });
+
+  it('reports stale curation when reviewed revision differs from current session revision', () => {
+    upsertSession(session('codex:a', 100));
+    applyCurationBatch({ actions: [{ type: 'session.skip', sessionId: 'codex:a' }] });
+
+    upsertSession(session('codex:a', 200, { messageCount: 2 }));
+    reconcileIndexedSession('codex:a', true);
+
+    expect(listCurationInbox({ limit: 10 }).items[0]).toMatchObject({
+      kind: 'session',
+      id: 'codex:a',
+      curationDiagnostic: 'stale',
+      curationProblems: ['reviewed revision differs from current session revision'],
     });
   });
 

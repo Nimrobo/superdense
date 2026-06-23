@@ -20,6 +20,12 @@ Review one bounded batch of indexed root sessions. This is mutable Layer 3A cura
 
    Inbox items carry a `kind`. `kind: "session"` items are loose roots to triage as usual. `kind: "thread"` items are **settled open threads** — folders whose sessions are all handled but which were never marked ready, so nothing else would surface them. For each, attach any newly relevant session, then resolve it: `thread.mark-ready` when it represents one identifiable output, `thread.merge` into a sibling, or `thread.discard` when it is an empty folder created by mistake (no attached sessions). Leaving it open is not a resolution — it will keep returning.
 
+   Session items also carry `curationDiagnostic` and `curationProblems`. Treat
+   these as explanations for why the root is still in Curate; `curationStatus`
+   remains the source of truth. A `partial` diagnostic means prior curation work
+   exists but the root was never durably resolved. A `stale` diagnostic means a
+   prior decision is obsolete because the indexed session revision changed.
+
 3. Review likely neighbors together. Use this exact wording:
 
    > These sessions may be related. Review them together.
@@ -34,7 +40,18 @@ Review one bounded batch of indexed root sessions. This is mutable Layer 3A cura
 
    If indexed context is insufficient, follow the shared escalation policy in `reward/README.md`.
 
-5. Use profile shapes, plan slugs, branches, intent, time, and distinctive files as retrieval hints. For each session, decide whether to attach it to an existing thread, create a new thread, skip it, or defer it. Consume useful attached sessions in the same batch. Apply the decisions in one atomic batch:
+5. Use profile shapes, plan slugs, branches, intent, time, and distinctive files as retrieval hints. For each handled root session, end with exactly one durable decision:
+   `session.consume` when represented by attached thread/artifact work,
+   `session.skip` when it has no reward-relevant output, or `session.defer`
+   when it genuinely cannot be resolved yet. Do not treat `curatedAt`,
+   existing attached threads, or existing artifacts as completion while the
+   root session is still `pending`.
+
+   Apply curation decisions in one atomic batch whenever possible: create or
+   update the thread, attach contributor/evidence sessions, mark ready when the
+   output is identifiable, and consume/skip/defer the handled root. A partial
+   batch that creates threads or artifacts but leaves the source root pending
+   will keep returning in Curate.
 
    ```bash
    superdense curation apply --input '<json|@file>'

@@ -12,6 +12,7 @@ import {
 import type { Session } from '../types.js';
 
 export type CurationStatus = 'pending' | 'consumed' | 'skipped' | 'deferred';
+export type CurationDiagnostic = 'new' | 'partial' | 'stale' | 'deferred';
 export type WorkThreadRole = 'contributor' | 'evidence';
 export type ThreadExternalizationStatus = 'not_external' | 'external';
 
@@ -296,7 +297,57 @@ function parseAttachedThreads(raw: unknown): AttachedInboxThread[] {
   }
 }
 
+function revisionFromInboxRow(row: Record<string, unknown>): string {
+  return JSON.stringify([
+    row.file_mtime ?? null,
+    row.modified_at ?? null,
+    row.message_count ?? null,
+  ]);
+}
+
+function describeCurationState(
+  row: Record<string, unknown>,
+  attachedThreads: AttachedInboxThread[],
+): { curationDiagnostic: CurationDiagnostic; curationProblems: string[] } {
+  if (row.curation_status === 'deferred') {
+    return {
+      curationDiagnostic: 'deferred',
+      curationProblems: ['session was explicitly deferred'],
+    };
+  }
+
+  const problems: string[] = [];
+  const curatedRevision = row.curated_revision;
+  if (typeof curatedRevision === 'string' && curatedRevision !== revisionFromInboxRow(row)) {
+    return {
+      curationDiagnostic: 'stale',
+      curationProblems: ['reviewed revision differs from current session revision'],
+    };
+  }
+
+  if (row.curated_at != null) {
+    problems.push('session has curatedAt but status is still pending');
+  }
+  if (attachedThreads.length > 0) {
+    problems.push(
+      `session is attached to ${attachedThreads.length} thread(s) while root remains pending`,
+    );
+    const openCount = attachedThreads.filter((thread) => thread.lifecycle === 'open').length;
+    if (openCount > 0) {
+      problems.push(`${openCount} attached thread(s) are still open`);
+    }
+  }
+
+  if (problems.length > 0) {
+    return { curationDiagnostic: 'partial', curationProblems: problems };
+  }
+
+  return { curationDiagnostic: 'new', curationProblems: [] };
+}
+
 function serializeInboxSession(row: Record<string, unknown>) {
+  const attachedThreads = parseAttachedThreads(row.attached_threads);
+  const diagnostic = describeCurationState(row, attachedThreads);
   return {
     id: row.id,
     agent: row.agent,
@@ -314,7 +365,8 @@ function serializeInboxSession(row: Record<string, unknown>) {
     curationNote: row.curation_note,
     curationPriorityAt: row.priority_at,
     priorityBucket: row.priority_bucket,
-    attachedThreads: parseAttachedThreads(row.attached_threads),
+    attachedThreads,
+    ...diagnostic,
   };
 }
 
