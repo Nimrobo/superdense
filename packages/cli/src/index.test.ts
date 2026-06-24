@@ -365,6 +365,7 @@ const originalClaudeSkillsDir = process.env.CLAUDE_SKILLS_DIR;
 const originalCodexSkillsDir = process.env.CODEX_SKILLS_DIR;
 const originalSkipUpdateCheck = process.env.SUPERDENSE_SKIP_UPDATE_CHECK;
 const originalDocsBaseUrl = process.env.SUPERDENSE_DOCS_BASE_URL;
+const originalOutcomeDocsBaseUrl = process.env.SUPERDENSE_OUTCOME_DOCS_BASE_URL;
 const originalCwd = process.cwd();
 const originalStdinIsTty = Object.getOwnPropertyDescriptor(process.stdin, 'isTTY');
 const tempRoots: string[] = [];
@@ -422,6 +423,7 @@ beforeEach(() => {
   delete process.env.CODEX_SKILLS_DIR;
   delete process.env.SUPERDENSE_SKIP_UPDATE_CHECK;
   delete process.env.SUPERDENSE_DOCS_BASE_URL;
+  delete process.env.SUPERDENSE_OUTCOME_DOCS_BASE_URL;
   vi.mocked(core.getSession).mockReturnValue(session);
   vi.mocked(core.getSessionCost).mockReturnValue({
     sessionId: 'codex:abc123',
@@ -748,6 +750,8 @@ afterEach(() => {
   else process.env.SUPERDENSE_SKIP_UPDATE_CHECK = originalSkipUpdateCheck;
   if (originalDocsBaseUrl == null) delete process.env.SUPERDENSE_DOCS_BASE_URL;
   else process.env.SUPERDENSE_DOCS_BASE_URL = originalDocsBaseUrl;
+  if (originalOutcomeDocsBaseUrl == null) delete process.env.SUPERDENSE_OUTCOME_DOCS_BASE_URL;
+  else process.env.SUPERDENSE_OUTCOME_DOCS_BASE_URL = originalOutcomeDocsBaseUrl;
   if (originalStdinIsTty) Object.defineProperty(process.stdin, 'isTTY', originalStdinIsTty);
   else delete (process.stdin as Partial<typeof process.stdin>).isTTY;
 });
@@ -1932,6 +1936,98 @@ describe('superdense cli agent commands', () => {
 
     await expect(runCli(['reward', 'docs', 'artifacts'], io().io)).rejects.toThrow(
       'reward docs unavailable: https://www.nimroboai.com/docs/reward/artifacts (offline) - check your connection',
+    );
+  });
+
+  it('fetches the full outcome pack from the default base URL, defaulting to pack', async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => '# Outcome Pack',
+    } as Response);
+
+    const packOut = io();
+    await runCli(['outcome', 'docs', 'pack'], packOut.io);
+    expect(fetch).toHaveBeenLastCalledWith(
+      'https://www.nimroboai.com/docs/outcome/pack',
+      expect.objectContaining({
+        headers: { accept: 'text/markdown, text/plain;q=0.9, */*;q=0.1' },
+      }),
+    );
+    expect(packOut.stdout).toEqual(['# Outcome Pack']);
+
+    const defaultOut = io();
+    await runCli(['outcome', 'docs'], defaultOut.io);
+    expect(fetch).toHaveBeenLastCalledWith(
+      'https://www.nimroboai.com/docs/outcome/pack',
+      expect.any(Object),
+    );
+    expect(defaultOut.stdout).toEqual(['# Outcome Pack']);
+  });
+
+  it('fetches outcome pack list, search, and exact-name get using an overridable base URL', async () => {
+    process.env.SUPERDENSE_OUTCOME_DOCS_BASE_URL = 'https://docs.test/outcome/';
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => 'outcome docs',
+    } as Response);
+
+    const listOut = io();
+    await runCli(['outcome-pack', 'list'], listOut.io);
+    expect(fetch).toHaveBeenLastCalledWith('https://docs.test/outcome/packs', expect.any(Object));
+    expect(listOut.stdout).toEqual(['outcome docs']);
+
+    const searchOut = io();
+    await runCli(['outcome-pack', 'search', 'landing', 'page'], searchOut.io);
+    expect(fetch).toHaveBeenLastCalledWith(
+      'https://docs.test/outcome/packs/search/landing%20page',
+      expect.any(Object),
+    );
+    expect(searchOut.stdout).toEqual(['outcome docs']);
+
+    const getOut = io();
+    await runCli(['outcome-pack', 'get', 'x-reach'], getOut.io);
+    expect(fetch).toHaveBeenLastCalledWith(
+      'https://docs.test/outcome/packs/x-reach/raw',
+      expect.any(Object),
+    );
+    expect(getOut.stdout).toEqual(['outcome docs']);
+  });
+
+  it('validates outcome docs and outcome pack selectors', async () => {
+    await expect(runCli(['outcome', 'docs', 'concepts'], io().io)).rejects.toThrow(
+      'unknown outcome docs command: concepts',
+    );
+
+    await expect(
+      runCli(['outcome', 'docs', 'example', '--name', 'x-reach'], io().io),
+    ).rejects.toThrow('unknown outcome docs command: example');
+
+    await expect(runCli(['outcome-pack', 'search'], io().io)).rejects.toThrow(
+      'outcome-pack search requires <keyword>',
+    );
+
+    await expect(runCli(['outcome-pack', 'get'], io().io)).rejects.toThrow(
+      'outcome-pack get requires <exact-name>',
+    );
+
+    await expect(runCli(['outcome-pack', 'get', 'x-reach', 'extra'], io().io)).rejects.toThrow(
+      'outcome-pack get requires exactly one <exact-name>',
+    );
+
+    await expect(runCli(['outcome-pack', 'nonsense'], io().io)).rejects.toThrow(
+      'unknown outcome-pack command: nonsense',
+    );
+
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('surfaces outcome docs fetch failures with the attempted URL and connectivity hint', async () => {
+    vi.mocked(fetch).mockRejectedValue(new Error('offline'));
+
+    await expect(runCli(['outcome', 'docs', 'pack'], io().io)).rejects.toThrow(
+      'outcome docs unavailable: https://www.nimroboai.com/docs/outcome/pack (offline) - check your connection',
     );
   });
 

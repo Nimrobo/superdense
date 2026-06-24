@@ -10,6 +10,17 @@ Set up one outcome folder as the control plane for improving a real-world outcom
 
 Read `references/outcome-loop.md` before writing or repairing files.
 
+## Outcome Packs
+
+If the user asks to set up an outcome pack, resolve the pack before scaffolding files:
+
+1. Use `superdense outcome-pack get <exact-name>` when the user provides an exact pack name such as `x-reach`.
+2. Use `superdense outcome-pack search <keyword>` when the user provides a descriptive name or fuzzy intent such as "X reach" or "landing page".
+3. Use `superdense outcome-pack list` when the available pack names are unknown.
+4. Treat `list` and `search` responses as JSON. Use the returned `name` field as the exact name for `get`.
+5. Treat `get` as the source markdown for the pack's starting `goal.md`, `run.md`, and `gate.md` shape.
+6. Adapt the fetched pack to the user's actual folder, target surfaces, analytics, guardrails, and constraints. Do not copy it blindly when local context contradicts it.
+
 ## Workflow
 
 1. Locate or choose the outcome folder. One folder manages one outcome. It may sit above target repos/accounts.
