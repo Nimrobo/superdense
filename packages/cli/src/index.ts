@@ -137,6 +137,8 @@ const REWARD_DOC_SECTIONS = ['usage', 'install', 'troubleshoot'] as const;
 
 type RewardDocSection = (typeof REWARD_DOC_SECTIONS)[number];
 
+const DEFAULT_OUTCOME_DOCS_BASE_URL = 'https://www.nimroboai.com/docs/outcome';
+
 interface CliIo {
   stdout: Pick<typeof console, 'log'>;
   stderr: Pick<typeof console, 'error'>;
@@ -1274,7 +1276,16 @@ function rewardDocsBaseUrl(): string {
   return base.replace(/\/+$/, '');
 }
 
-function rewardDocsPath(...segments: string[]): string {
+function outcomeDocsBaseUrl(): string {
+  const base =
+    typeof process.env.SUPERDENSE_OUTCOME_DOCS_BASE_URL === 'string' &&
+    process.env.SUPERDENSE_OUTCOME_DOCS_BASE_URL.trim() !== ''
+      ? process.env.SUPERDENSE_OUTCOME_DOCS_BASE_URL.trim()
+      : DEFAULT_OUTCOME_DOCS_BASE_URL;
+  return base.replace(/\/+$/, '');
+}
+
+function docsPath(...segments: string[]): string {
   return `/${segments.map((segment) => encodeURIComponent(segment)).join('/')}`;
 }
 
@@ -1282,8 +1293,7 @@ function isRewardDocSection(value: string): value is RewardDocSection {
   return REWARD_DOC_SECTIONS.includes(value as RewardDocSection);
 }
 
-async function fetchRewardDocs(path: string): Promise<string> {
-  const url = `${rewardDocsBaseUrl()}${path}`;
+async function fetchDocsMarkdown(url: string, label: string): Promise<string> {
   try {
     const response = await fetch(url, {
       headers: { accept: 'text/markdown, text/plain;q=0.9, */*;q=0.1' },
@@ -1296,9 +1306,17 @@ async function fetchRewardDocs(path: string): Promise<string> {
     return await response.text();
   } catch (err) {
     throw new Error(
-      `reward docs unavailable: ${url} (${err instanceof Error ? err.message : String(err)}) - check your connection`,
+      `${label} unavailable: ${url} (${err instanceof Error ? err.message : String(err)}) - check your connection`,
     );
   }
+}
+
+async function fetchRewardDocs(path: string): Promise<string> {
+  return fetchDocsMarkdown(`${rewardDocsBaseUrl()}${path}`, 'reward docs');
+}
+
+async function fetchOutcomeDocs(path: string): Promise<string> {
+  return fetchDocsMarkdown(`${outcomeDocsBaseUrl()}${path}`, 'outcome docs');
 }
 
 async function handleRewardDocs(
@@ -1308,7 +1326,7 @@ async function handleRewardDocs(
 ): Promise<boolean> {
   const action = args[0];
   if (action === 'artifacts') {
-    io.stdout.log(await fetchRewardDocs(rewardDocsPath('artifacts')));
+    io.stdout.log(await fetchRewardDocs(docsPath('artifacts')));
     return true;
   }
 
@@ -1320,7 +1338,7 @@ async function handleRewardDocs(
     }
 
     if (artifact) {
-      io.stdout.log(await fetchRewardDocs(rewardDocsPath('artifacts', artifact, 'connectors')));
+      io.stdout.log(await fetchRewardDocs(docsPath('artifacts', artifact, 'connectors')));
       return true;
     }
 
@@ -1330,11 +1348,76 @@ async function handleRewardDocs(
         "reward docs connectors --section must be 'usage', 'install', or 'troubleshoot'",
       );
     }
-    io.stdout.log(await fetchRewardDocs(rewardDocsPath('connectors', connector!, section)));
+    io.stdout.log(await fetchRewardDocs(docsPath('connectors', connector!, section)));
     return true;
   }
 
   throw new Error(`unknown reward docs command: ${args.join(' ') || '(none)'}`);
+}
+
+// Fetches the live Outcome Pack setup docs published under /docs/outcome. A first-timer (or
+// their agent) uses this to scaffold their first outcome loop without leaving the terminal.
+async function handleOutcomeDocs(
+  args: string[],
+  _flags: Record<string, string | boolean>,
+  io: CliIo,
+): Promise<boolean> {
+  const action = args[0] ?? 'pack';
+
+  if (action === 'pack') {
+    io.stdout.log(await fetchOutcomeDocs(docsPath('pack')));
+    return true;
+  }
+
+  throw new Error(`unknown outcome docs command: ${args.join(' ') || '(none)'}`);
+}
+
+async function handleOutcome(
+  args: string[],
+  flags: Record<string, string | boolean>,
+  io: CliIo,
+): Promise<boolean> {
+  const action = args[0];
+  if (action === 'docs') {
+    return handleOutcomeDocs(args.slice(1), flags, io);
+  }
+  throw new Error(`unknown outcome command: ${args.join(' ') || '(none)'}`);
+}
+
+async function handleOutcomePack(
+  args: string[],
+  _flags: Record<string, string | boolean>,
+  io: CliIo,
+): Promise<boolean> {
+  const action = args[0];
+
+  if (action === 'list') {
+    io.stdout.log(await fetchOutcomeDocs(docsPath('packs')));
+    return true;
+  }
+
+  if (action === 'search') {
+    const keyword = args.slice(1).join(' ').trim();
+    if (!keyword) {
+      throw new Error('outcome-pack search requires <keyword>');
+    }
+    io.stdout.log(await fetchOutcomeDocs(docsPath('packs', 'search', keyword)));
+    return true;
+  }
+
+  if (action === 'get') {
+    const name = args[1];
+    if (!name) {
+      throw new Error('outcome-pack get requires <exact-name>');
+    }
+    if (args.length > 2) {
+      throw new Error('outcome-pack get requires exactly one <exact-name>');
+    }
+    io.stdout.log(await fetchOutcomeDocs(docsPath('packs', name, 'raw')));
+    return true;
+  }
+
+  throw new Error(`unknown outcome-pack command: ${args.join(' ') || '(none)'}`);
 }
 
 async function handleReward(
@@ -2078,6 +2161,16 @@ export async function runCli(
     return 0;
   }
 
+  if (cmd === 'outcome') {
+    await handleOutcome(args, flags, io);
+    return 0;
+  }
+
+  if (cmd === 'outcome-pack') {
+    await handleOutcomePack(args, flags, io);
+    return 0;
+  }
+
   if (cmd === 'hypothesis') {
     await handleHypothesis(args, flags, io);
     return 0;
@@ -2187,6 +2280,10 @@ export async function runCli(
         '  reward docs artifacts  Fetch live reward artifact guidance markdown',
         '  reward docs connectors --artifact <type>  Fetch live connector guidance for an artifact type',
         '  reward docs connectors --connector <name> [--section usage|install|troubleshoot]',
+        '  outcome docs [pack]     Fetch the full Outcome Pack first-time setup doc',
+        '  outcome-pack list       List available outcome packs',
+        '  outcome-pack search <keyword>  Search available outcome packs',
+        '  outcome-pack get <exact-name>  Fetch one outcome pack by exact name',
         '  hypothesis record --input <json|@file>  Record a structured falsifiable outcome hypothesis',
         '  hypothesis list --project <id>  List hypotheses [--status <s>] [--lever <k>] [--full]',
         '  hypothesis show <id>  Show a hypothesis [--full]',
