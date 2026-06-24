@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.8.0](https://github.com/Nimrobo/superdense/compare/@nimrobo/superdense-v0.7.0...superdense-server-v0.8.0) (2026-06-23)
+
+
+### Features
+
+* reward pipeline UI with hypothesis and experiment tracking ([#81](https://github.com/Nimrobo/superdense/issues/81)) ([31b79aa](https://github.com/Nimrobo/superdense/commit/31b79aac082c69ed174d74b84df5486817421c49))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @nimrobo/superdense-core bumped to 0.9.0
+
 ## [0.7.0](https://github.com/Nimrobo/superdense/compare/superdense-server-v0.6.1...superdense-server-v0.7.0) (2026-06-22)
 
 
