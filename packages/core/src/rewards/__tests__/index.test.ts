@@ -92,7 +92,7 @@ afterEach(() => {
 describe('reward collection (Layer 4)', () => {
   it('adds the V9 reward_snapshot table', () => {
     const db = getDb();
-    expect(db.pragma('user_version', { simple: true })).toBe(13);
+    expect(db.pragma('user_version', { simple: true })).toBe(14);
     expect(
       db
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'reward_snapshot'")
@@ -106,7 +106,7 @@ describe('reward collection (Layer 4)', () => {
 
     _repairForTests(db);
 
-    expect(db.pragma('user_version', { simple: true })).toBe(13);
+    expect(db.pragma('user_version', { simple: true })).toBe(14);
     expect(
       db
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'reward_snapshot'")

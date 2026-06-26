@@ -9,7 +9,10 @@ import {
   withDbRetry,
   SYSTEM_RUN_ID,
 } from '../db.js';
+import { sessionRevision, sessionRevisionMatchesFields } from '../session-revision.js';
 import type { Session } from '../types.js';
+
+export { sessionRevision } from '../session-revision.js';
 
 export type CurationStatus = 'pending' | 'consumed' | 'skipped' | 'deferred';
 export type CurationDiagnostic = 'new' | 'partial' | 'stale' | 'deferred';
@@ -151,16 +154,6 @@ function rowToThread(row: WorkThreadRow): WorkThread {
   };
 }
 
-export function sessionRevision(
-  session: Pick<Session, 'fileMtime' | 'modifiedAt' | 'messageCount'>,
-) {
-  return JSON.stringify([
-    session.fileMtime ?? null,
-    session.modifiedAt ?? null,
-    session.messageCount ?? null,
-  ]);
-}
-
 export function resolveRootSessionId(sessionId: string): string {
   let current = sessionId;
   const visited = new Set<string>();
@@ -239,12 +232,8 @@ export function reconcileIndexedSession(sessionId: string, changed: boolean): vo
               curated_revision = CASE WHEN id = ? THEN curated_revision ELSE NULL END
         WHERE id = ?
           AND curation_status IN ('consumed', 'skipped', 'deferred')
-          AND (
-            ? = 1
-            OR curated_revision IS NULL
-            OR curated_revision != json_array(file_mtime, modified_at, message_count)
-          )`,
-    ).run(sessionId, rootSessionId, changed && sessionId !== rootSessionId ? 1 : 0);
+          AND (? = 1 OR curated_revision IS NULL)`,
+    ).run(sessionId, rootSessionId, changed ? 1 : 0);
   };
   withImmediateTransaction(db, work);
 }
@@ -297,14 +286,6 @@ function parseAttachedThreads(raw: unknown): AttachedInboxThread[] {
   }
 }
 
-function revisionFromInboxRow(row: Record<string, unknown>): string {
-  return JSON.stringify([
-    row.file_mtime ?? null,
-    row.modified_at ?? null,
-    row.message_count ?? null,
-  ]);
-}
-
 function describeCurationState(
   row: Record<string, unknown>,
   attachedThreads: AttachedInboxThread[],
@@ -318,7 +299,14 @@ function describeCurationState(
 
   const problems: string[] = [];
   const curatedRevision = row.curated_revision;
-  if (typeof curatedRevision === 'string' && curatedRevision !== revisionFromInboxRow(row)) {
+  if (
+    typeof curatedRevision === 'string' &&
+    !sessionRevisionMatchesFields(curatedRevision, {
+      fileMtime: row.file_mtime,
+      modifiedAt: row.modified_at,
+      messageCount: row.message_count,
+    })
+  ) {
     return {
       curationDiagnostic: 'stale',
       curationProblems: ['reviewed revision differs from current session revision'],
