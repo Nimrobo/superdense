@@ -10,7 +10,6 @@ import {
   SYSTEM_RUN_ID,
 } from '../db.js';
 import { sessionRevision, sessionRevisionMatchesFields } from '../session-revision.js';
-import type { Session } from '../types.js';
 
 export { sessionRevision } from '../session-revision.js';
 
