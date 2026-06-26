@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.10.0](https://github.com/Nimrobo/superdense/compare/@nimrobo/superdense-v0.9.0...superdense-core-v0.10.0) (2026-06-26)
+
+
+### Features
+
+* add curation diagnostics to explain pending sessions ([#84](https://github.com/Nimrobo/superdense/issues/84)) ([fff7839](https://github.com/Nimrobo/superdense/commit/fff78398cdacd85bef645c4358b711394efa8395))
+
+
+### Bug Fixes
+
+* handle session revision precision drift in curation reconciliation ([#87](https://github.com/Nimrobo/superdense/issues/87)) ([394e0a4](https://github.com/Nimrobo/superdense/commit/394e0a40fdd3654c4fa94f718a0e81ee1189fd96))
+* resolve project ids from paths ([#83](https://github.com/Nimrobo/superdense/issues/83)) ([ef1269c](https://github.com/Nimrobo/superdense/commit/ef1269c1af3406ffc8987d3fe8bded60caf278bf))
+
 ## [0.9.0](https://github.com/Nimrobo/superdense/compare/@nimrobo/superdense-v0.8.0...superdense-core-v0.9.0) (2026-06-23)
 
 
