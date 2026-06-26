@@ -437,6 +437,35 @@ describe('curation actions', () => {
     ]);
   });
 
+  it('does not reopen skipped roots when only revision JSON precision differs', () => {
+    upsertSession(session('codex:a', 1782215554235.882));
+    applyCurationBatch({ actions: [{ type: 'session.skip', sessionId: 'codex:a' }] });
+
+    reconcileIndexedSession('codex:a', false);
+
+    expect(getSession('codex:a')).toMatchObject({ curationStatus: 'skipped' });
+  });
+
+  it('does not reopen consumed roots when only revision JSON precision differs', () => {
+    upsertSession(session('codex:a', 1782215554235.882));
+    applyCurationBatch({
+      actions: [
+        {
+          type: 'thread.create',
+          id: 't1',
+          projectProfileId: projectId(),
+          provisionalTitle: 'One',
+        },
+        { type: 'thread.attach', threadId: 't1', sessionId: 'codex:a', role: 'contributor' },
+        { type: 'session.consume', sessionId: 'codex:a' },
+      ],
+    });
+
+    reconcileIndexedSession('codex:a', false);
+
+    expect(getSession('codex:a')).toMatchObject({ curationStatus: 'consumed' });
+  });
+
   it('resets a reviewed root when a linked subagent revision changes', () => {
     upsertSession(session('codex:root', 100));
     upsertSession(session('codex:child', 100, { isSubagent: true, parentSessionId: 'codex:root' }));
@@ -576,7 +605,7 @@ describe('artifact finalization (Layer 3B)', () => {
     _repairForTests(db);
     _repairForTests(db);
 
-    expect(db.pragma('user_version', { simple: true })).toBe(13);
+    expect(db.pragma('user_version', { simple: true })).toBe(14);
     expect(getWorkThread('t1')).toMatchObject({
       lifecycle: 'ready',
       readinessRationale: 'Migrated from pre-V10 finalized thread',

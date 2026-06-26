@@ -94,6 +94,27 @@ function clearDb() {
   );
 }
 
+function attachSessionToThread(sessionId: string) {
+  const db = getDb();
+  db.prepare(
+    `INSERT INTO project_profile (
+       id, project_key, status, first_seen_at, last_seen_at, updated_at
+     ) VALUES ('project-1', '/repo', 'unprofiled', 1, 1, 1)
+     ON CONFLICT(id) DO NOTHING`,
+  ).run();
+  db.prepare(
+    `INSERT INTO work_thread (
+       id, project_profile_id, provisional_title, status, created_at, updated_at
+     ) VALUES ('thread-1', 'project-1', 'Thread', 'ready', 1, 1)
+     ON CONFLICT(id) DO NOTHING`,
+  ).run();
+  db.prepare(
+    `INSERT INTO work_thread_session (thread_id, session_id, role, rationale)
+     VALUES ('thread-1', ?, 'contributor', NULL)
+     ON CONFLICT(thread_id, session_id) DO NOTHING`,
+  ).run(sessionId);
+}
+
 function makeRunFor(savedQueryId: string): string {
   const id = createQueryRun({
     savedQueryId,
@@ -179,7 +200,7 @@ describe('sessions', () => {
 
       _migrateForTests(db);
 
-      expect(db.pragma('user_version', { simple: true })).toBe(13);
+      expect(db.pragma('user_version', { simple: true })).toBe(14);
       expect(db.prepare('SELECT project_key FROM sessions WHERE id = ?').get('old')).toEqual({
         project_key: '/Users/x/conductor/workspaces/superdense',
       });
@@ -248,7 +269,7 @@ describe('sessions', () => {
 
       _migrateForTests(db);
 
-      expect(db.pragma('user_version', { simple: true })).toBe(13);
+      expect(db.pragma('user_version', { simple: true })).toBe(14);
 
       const tables = (
         db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{
@@ -338,7 +359,7 @@ describe('sessions', () => {
 
       _migrateForTests(db);
 
-      expect(db.pragma('user_version', { simple: true })).toBe(13);
+      expect(db.pragma('user_version', { simple: true })).toBe(14);
       const sessionCols = (
         db.prepare('PRAGMA table_info(sessions)').all() as Array<{
           name: string;
@@ -386,7 +407,7 @@ describe('sessions', () => {
 
       _migrateForTests(db);
 
-      expect(db.pragma('user_version', { simple: true })).toBe(13);
+      expect(db.pragma('user_version', { simple: true })).toBe(14);
       const tables = (
         db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{
           name: string;
@@ -440,7 +461,7 @@ describe('sessions', () => {
 
       _repairForTests(db);
 
-      expect(db.pragma('user_version', { simple: true })).toBe(13);
+      expect(db.pragma('user_version', { simple: true })).toBe(14);
       expect(
         db.prepare('SELECT project_key, status, last_seen_at FROM project_profile').all(),
       ).toEqual([{ project_key: '/repo', status: 'unprofiled', last_seen_at: 2000 }]);
@@ -462,6 +483,92 @@ describe('sessions', () => {
     } finally {
       db.close();
     }
+  });
+
+  it('V14 repair consumes attached partial rows with revision precision drift', () => {
+    clearDb();
+    upsertSession({
+      ...BASE,
+      id: 'codex:a',
+      agent: 'codex',
+      sessionId: 'a',
+      modifiedAt: 1782215554235.88,
+      fileMtime: 1782215554235.88,
+      messageCount: null,
+    });
+    attachSessionToThread('codex:a');
+    getDb()
+      .prepare(
+        `UPDATE sessions
+            SET curation_status = 'pending',
+                curated_at = 1,
+                curated_revision = ?,
+                curation_priority_at = 99
+          WHERE id = 'codex:a'`,
+      )
+      .run('[1782215554235.882,1782215554235.882,null]');
+
+    _repairForTests(getDb());
+    _repairForTests(getDb());
+
+    expect(
+      getDb()
+        .prepare('SELECT curation_status, curation_priority_at FROM sessions WHERE id = ?')
+        .get('codex:a'),
+    ).toEqual({ curation_status: 'consumed', curation_priority_at: null });
+  });
+
+  it('V14 repair leaves unattached partial rows pending', () => {
+    clearDb();
+    upsertSession({
+      ...BASE,
+      id: 'codex:a',
+      agent: 'codex',
+      sessionId: 'a',
+      modifiedAt: 1782215554235.88,
+      fileMtime: 1782215554235.88,
+      messageCount: null,
+    });
+    getDb()
+      .prepare(
+        `UPDATE sessions
+            SET curation_status = 'pending',
+                curated_at = 1,
+                curated_revision = ?
+          WHERE id = 'codex:a'`,
+      )
+      .run('[1782215554235.882,1782215554235.882,null]');
+
+    _repairForTests(getDb());
+
+    expect(getSession('codex:a')).toMatchObject({ curationStatus: 'pending' });
+  });
+
+  it('V14 repair leaves stale attached partial rows pending', () => {
+    clearDb();
+    upsertSession({
+      ...BASE,
+      id: 'codex:a',
+      agent: 'codex',
+      sessionId: 'a',
+      modifiedAt: 200,
+      fileMtime: 200,
+      messageCount: null,
+    });
+    attachSessionToThread('codex:a');
+    getDb()
+      .prepare(
+        `UPDATE sessions
+            SET curation_status = 'pending',
+                curated_at = 1,
+                curated_revision = ?
+          WHERE id = 'codex:a'`,
+      )
+      .run('[100,100,null]');
+
+    _repairForTests(getDb());
+
+    expect(getSession('codex:a')).toMatchObject({ curationStatus: 'pending' });
   });
 
   it('project profiles: session indexing registers blanks and safe patches preserve omitted fields', () => {
@@ -754,7 +861,7 @@ describe('sessions', () => {
 
       _migrateForTests(db);
 
-      expect(db.pragma('user_version', { simple: true })).toBe(13);
+      expect(db.pragma('user_version', { simple: true })).toBe(14);
 
       const tables = (
         db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{
@@ -863,7 +970,7 @@ describe('sessions', () => {
 
       _migrateForTests(db);
 
-      expect(db.pragma('user_version', { simple: true })).toBe(13);
+      expect(db.pragma('user_version', { simple: true })).toBe(14);
       for (const table of ['hypothesis', 'experiment', 'experiment_member']) {
         expect(
           db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name = ?").get(table),

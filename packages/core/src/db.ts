@@ -3,13 +3,14 @@ import Database from 'better-sqlite3';
 import { DB_PATH, ensureSuperdenseDirs } from './paths.js';
 import { normalizeQueryDefinition, type QueryDefinition } from './query/types.js';
 import { rowToSession, type SessionRow } from './session-row.js';
+import { sessionRevisionMatchesFields } from './session-revision.js';
 import type { Query, QueryMatch, Session } from './types.js';
 import { resolveProjectKey } from './util/project-key.js';
 
 let dbInstance: Database.Database | null = null;
 
 export const SYSTEM_RUN_ID = 'system';
-export const LATEST_SCHEMA_VERSION = 13;
+export const LATEST_SCHEMA_VERSION = 14;
 
 // Default reward-collection retirement policy: a linked target stops being
 // collectable once its first snapshot is 7 days old, matching the standard
@@ -241,6 +242,11 @@ function migrate(db: Database.Database): void {
   if (currentVersion < 13) {
     runDataMigrationV13(db);
     db.pragma('user_version = 13');
+  }
+  // V14 repairs curation rows reopened by pre-V14 revision string drift.
+  if (currentVersion < 14) {
+    runDataMigrationV14(db);
+    db.pragma('user_version = 14');
   }
 
   ensureSystemRun(db);
@@ -517,6 +523,7 @@ function runDataMigrationV6(db: Database.Database, backfillHistoricalRevisions: 
         UPDATE sessions
            SET curated_revision = json_array(file_mtime, modified_at, message_count)
          WHERE curated_revision IS NULL
+           AND curated_at IS NULL
       `);
     }
   };
@@ -778,6 +785,61 @@ function runDataMigrationV13(db: Database.Database): void {
   withImmediateTransaction(db, work);
 }
 
+// V14 fixes rows reopened by older revision comparisons that mixed JS JSON
+// precision with SQLite JSON numeric formatting. Only attached partial rows are
+// safe to auto-close; unattached rows might have been skipped or deferred.
+function runDataMigrationV14(db: Database.Database): void {
+  const work = () => {
+    if (!tableExists(db, 'sessions') || !tableExists(db, 'work_thread_session')) return;
+    if (
+      !columnExists(db, 'sessions', 'curation_status') ||
+      !columnExists(db, 'sessions', 'curated_at') ||
+      !columnExists(db, 'sessions', 'curated_revision') ||
+      !columnExists(db, 'sessions', 'curation_priority_at')
+    ) {
+      return;
+    }
+
+    const rows = db
+      .prepare(
+        `SELECT s.id, s.curated_revision, s.file_mtime, s.modified_at, s.message_count
+           FROM sessions s
+          WHERE s.curation_status = 'pending'
+            AND s.curated_at IS NOT NULL
+            AND s.curated_revision IS NOT NULL
+            AND EXISTS (
+              SELECT 1 FROM work_thread_session wts WHERE wts.session_id = s.id
+            )`,
+      )
+      .all() as Array<{
+      id: string;
+      curated_revision: string | null;
+      file_mtime: number | null;
+      modified_at: number | null;
+      message_count: number | null;
+    }>;
+
+    const repair = db.prepare(
+      `UPDATE sessions
+          SET curation_status = 'consumed',
+              curation_priority_at = NULL
+        WHERE id = ?`,
+    );
+    for (const row of rows) {
+      if (
+        sessionRevisionMatchesFields(row.curated_revision, {
+          fileMtime: row.file_mtime,
+          modifiedAt: row.modified_at,
+          messageCount: row.message_count,
+        })
+      ) {
+        repair.run(row.id);
+      }
+    }
+  };
+  withImmediateTransaction(db, work);
+}
+
 function ensureSystemRun(db: Database.Database): void {
   const now = Date.now();
   db.prepare(
@@ -815,6 +877,7 @@ function repairSchema(db: Database.Database): void {
     runDataMigrationV11(db);
     runDataMigrationV12(db);
     runDataMigrationV13(db);
+    runDataMigrationV14(db);
     ensureSystemRun(db);
     db.pragma(`user_version = ${LATEST_SCHEMA_VERSION}`);
   });
