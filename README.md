@@ -5,6 +5,8 @@
 [![Node.js](https://img.shields.io/node/v/@nimrobo/superdense)](https://www.npmjs.com/package/@nimrobo/superdense)
 [![License](https://img.shields.io/npm/l/@nimrobo/superdense)](./LICENSE)
 
+**Website & docs: [nimroboai.com](https://nimroboai.com)** · [npm](https://www.npmjs.com/package/@nimrobo/superdense)
+
 **Make your agents loop on a real-world goal and keep getting better at hitting it, every run.**
 
 Define the goal in a folder, and your agents run an outcome loop toward it: remember what already worked, ship the next move, measure how it landed. Superdense is the layer that powers it: it ships the skills, feeds each run the evidence of what worked, and keeps the record of every outcome. No cloud.
@@ -123,6 +125,12 @@ Packages:
 - `packages/core` — indexer, filters, enrichers, compactors, query engine, sqlite store.
 - `packages/server` — Fastify server serving the JSON API and static web UI.
 - `packages/web` — React UI.
+
+## Learn more
+
+- **[nimroboai.com](https://nimroboai.com)** — the outcome-loop concept, the reward layer, and worked examples.
+- **[Outcome packs](https://nimroboai.com/docs/outcome)** — ready-made goal playbooks you can drop into a folder.
+- **[Reward connectors](https://nimroboai.com/docs/reward)** — wiring real-world outcomes (GitHub, analytics, npm) back into each run.
 
 ## License
 
