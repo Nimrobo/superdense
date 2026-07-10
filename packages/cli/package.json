@@ -47,6 +47,7 @@
     "type": "git",
     "url": "https://github.com/Nimrobo/superdense"
   },
+  "homepage": "https://nimroboai.com",
   "keywords": [
     "claude",
     "claude-code",
