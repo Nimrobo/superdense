@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.11.1](https://github.com/Nimrobo/superdense/compare/@nimrobo/superdense-v0.11.0...@nimrobo/superdense-v0.11.1) (2026-07-10)
+
+
+### Bug Fixes
+
+* **cli:** point npm package homepage to nimroboai.com ([#90](https://github.com/Nimrobo/superdense/issues/90)) ([0d76e34](https://github.com/Nimrobo/superdense/commit/0d76e342c0b15efa766806f3dc3f5e300b991291))
+
+
+### Documentation
+
+* **readme:** add website & docs funnel to nimroboai.com ([#89](https://github.com/Nimrobo/superdense/issues/89)) ([a67d89a](https://github.com/Nimrobo/superdense/commit/a67d89a027e64eefa749cbb575aa85b00d2ea074))
+
 ## [0.11.0](https://github.com/Nimrobo/superdense/compare/@nimrobo/superdense-v0.10.0...@nimrobo/superdense-v0.11.0) (2026-06-26)
 
 
