@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.1](https://github.com/Nimrobo/superdense/compare/@nimrobo/superdense-v0.10.0...superdense-core-v0.10.1) (2026-07-10)
+
+
+### Bug Fixes
+
+* handle session revision precision drift in curation reconciliation ([#87](https://github.com/Nimrobo/superdense/issues/87)) ([394e0a4](https://github.com/Nimrobo/superdense/commit/394e0a40fdd3654c4fa94f718a0e81ee1189fd96))
+
 ## [0.10.0](https://github.com/Nimrobo/superdense/compare/@nimrobo/superdense-v0.9.0...superdense-core-v0.10.0) (2026-06-26)
 
 

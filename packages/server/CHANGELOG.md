@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.9.1](https://github.com/Nimrobo/superdense/compare/@nimrobo/superdense-v0.9.0...superdense-server-v0.9.1) (2026-07-10)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @nimrobo/superdense-core bumped to 0.10.1
+
 ## [0.9.0](https://github.com/Nimrobo/superdense/compare/@nimrobo/superdense-v0.8.0...superdense-server-v0.9.0) (2026-06-26)
 
 
