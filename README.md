@@ -5,11 +5,13 @@
 [![Node.js](https://img.shields.io/node/v/@nimrobo/superdense)](https://www.npmjs.com/package/@nimrobo/superdense)
 [![License](https://img.shields.io/npm/l/@nimrobo/superdense)](./LICENSE)
 
-**Website & docs: [nimroboai.com](https://nimroboai.com)** · [npm](https://www.npmjs.com/package/@nimrobo/superdense)
+**Website & docs: [nimroboai.com](https://nimroboai.com)** · [Outcome loop guide](https://nimroboai.com/docs/outcome) · [npm](https://www.npmjs.com/package/@nimrobo/superdense)
 
 **Make your agents loop on a real-world goal and keep getting better at hitting it, every run.**
 
 Define the goal in a folder, and your agents run an outcome loop toward it: remember what already worked, ship the next move, measure how it landed. Superdense is the layer that powers it: it ships the skills, feeds each run the evidence of what worked, and keeps the record of every outcome. No cloud.
+
+New to outcome loops? Start with the [outcome-loop docs](https://nimroboai.com/docs/outcome) to see the goal/run/gate files, explore-vs-exploit flow, and reward evidence model.
 
 ![Superdense outcome loop: sessions, artifacts, and outcomes orbiting Superdense as the layer](docs/assets/superdense-substrate-ring.png)
 
